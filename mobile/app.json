@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "VOLTA EV",
+    "slug": "volta-ev",
+    "scheme": "voltaev",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "userInterfaceStyle": "dark",
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "package": "com.mjsky.voltaev"
+    },
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "Aplicatia foloseste camera pentru scanarea codului QR al statiei.",
+        "NSLocationWhenInUseUsageDescription": "Aplicatia foloseste locatia pentru afisarea statiilor apropiate pe harta."
+      }
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-camera",
+      "expo-location",
+      "@maplibre/maplibre-react-native"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ae607878-80a1-4696-8dd1-6c19c0132f51"
+      }
+    },
+    "owner": "mjsky"
+  }
+}

@@ -1,0 +1,6 @@
+vendor
+backend_mvp_src
+.run-logs
+graphify-out.backup-*
+backoffice/node_modules
+backoffice/dist

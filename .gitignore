@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build / cache
+dist/
+.expo/
+.wrangler/
+.graphify-venv/
+
+# Logs
+.run-logs/
+*.log
+
+# Backups
+graphify-out.backup-*/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
