@@ -29,19 +29,31 @@ class DatabaseSeeder extends Seeder
         );
 
         $stations = [
-            ['name' => 'Station A1', 'location' => 'Main Parking - Slot 1', 'latitude' => 47.010452, 'longitude' => 28.86381, 'status' => 'available', 'power_kw' => 22, 'connector_type' => 'Type 2'],
-            ['name' => 'Station A2', 'location' => 'Main Parking - Slot 2', 'latitude' => 47.011214, 'longitude' => 28.861845, 'status' => 'available', 'power_kw' => 50, 'connector_type' => 'CCS2'],
-            ['name' => 'Station B1', 'location' => 'Visitor Parking - Slot 1', 'latitude' => 47.008977, 'longitude' => 28.866073, 'status' => 'offline', 'power_kw' => 11, 'connector_type' => 'Type 2'],
+            [
+                'name' => 'VOLTA 1',
+                'location' => 'str. Pădurii 19, Chișinău',
+                'latitude' => 46.980428,
+                'longitude' => 28.890762,
+                'status' => 'available',
+                'power_kw' => 22,
+                'connector_type' => 'Type 2',
+            ],
         ];
+
+        $seededNames = collect($stations)->pluck('name');
 
         foreach ($stations as $station) {
             Station::query()->updateOrCreate(
                 ['name' => $station['name']],
                 $station + [
                     'currency' => 'MDL',
-                    'qr_code' => 'station:' . str_replace(' ', '-', strtolower($station['name'])),
+                    'qr_code' => 'station:volta-1',
                 ]
             );
         }
+
+        Station::query()
+            ->whereNotIn('name', $seededNames)
+            ->delete();
     }
 }

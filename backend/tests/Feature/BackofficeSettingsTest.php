@@ -13,7 +13,7 @@ class BackofficeSettingsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_backoffice_settings_update_profile_currency_and_tariff(): void
+    public function test_backoffice_settings_update_profile_and_tariff_keeps_mdl(): void
     {
         $admin = User::query()->create([
             'name' => 'Backoffice Admin',
@@ -39,7 +39,7 @@ class BackofficeSettingsTest extends TestCase
             'id' => $admin->id,
             'first_name' => 'Ana',
             'last_name' => 'Popescu',
-            'currency' => 'EUR',
+            'currency' => 'MDL',
             'name' => 'Ana Popescu',
         ]);
 

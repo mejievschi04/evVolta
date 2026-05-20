@@ -519,7 +519,7 @@ function StationsView({ rows, loading, onCreate, onEdit, onDelete, onDownloadQr,
   );
 }
 
-function SessionsView({ rows, loading, onStop }) {
+function SessionsView({ rows, loading, onStop, onDelete }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((session) => matchesQuery(session, query, [
     (item) => item.user?.name,
@@ -553,6 +553,9 @@ function SessionsView({ rows, loading, onStop }) {
                 Opreste
               </button>
             )}
+            <button className="icon-button danger-icon" onClick={() => onDelete(session)} type="button" aria-label="Sterge sesiunea">
+              <X size={16} />
+            </button>
           </div>
         </>
       )}
@@ -560,7 +563,7 @@ function SessionsView({ rows, loading, onStop }) {
   );
 }
 
-function InvoicesView({ rows, loading, onDownload, onSend }) {
+function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((invoice) => matchesQuery(invoice, query, [
     (item) => item.invoice_number,
@@ -595,6 +598,9 @@ function InvoicesView({ rows, loading, onDownload, onSend }) {
             </button>
             <button className="primary-button mini-button" onClick={() => onSend(invoice)} type="button">
               Trimite
+            </button>
+            <button className="icon-button danger-icon" onClick={() => onDelete(invoice)} type="button" aria-label="Sterge factura">
+              <X size={16} />
             </button>
           </div>
         </>
@@ -638,7 +644,7 @@ function AuditView({ rows, loading }) {
   );
 }
 
-function UsersView({ rows, loading, dashboard, onCreate, onSaveSettings }) {
+function UsersView({ rows, loading, onCreate }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((user) => matchesQuery(user, query, [
     (item) => item.name,
@@ -649,49 +655,72 @@ function UsersView({ rows, loading, dashboard, onCreate, onSaveSettings }) {
   if (loading) return <LoadingState />;
 
   return (
-    <div className="split-grid">
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Utilizatori</h2>
-            <p>Conturi clienti</p>
-          </div>
-          <button className="primary-button" onClick={onCreate} type="button">
-            <Plus size={18} />
-            User nou
-          </button>
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>Utilizatori</h2>
+          <p>Conturi clienti</p>
         </div>
-        <Toolbar value={query} onChange={setQuery} />
-        {rows.length === 0 ? (
-          <EmptyState title="Nu exista utilizatori" />
-        ) : visibleRows.length === 0 ? (
-          <EmptyState title="Niciun user gasit" detail="Schimba termenul de cautare." />
-        ) : (
-          visibleRows.map((user) => (
-            <div className="compact-row" key={user.id}>
-              <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
-              <div>
-                <strong>{user.name ?? '-'}</strong>
-                <p>{user.email ?? '-'}</p>
-              </div>
-              <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
-            </div>
-          ))
-        )}
+        <button className="primary-button" onClick={onCreate} type="button">
+          <Plus size={18} />
+          User nou
+        </button>
       </div>
-      <SettingsView dashboard={dashboard} compact onSubmit={onSaveSettings} />
+      <Toolbar value={query} onChange={setQuery} />
+      {rows.length === 0 ? (
+        <EmptyState title="Nu exista utilizatori" />
+      ) : visibleRows.length === 0 ? (
+        <EmptyState title="Niciun user gasit" detail="Schimba termenul de cautare." />
+      ) : (
+        visibleRows.map((user) => (
+          <div className="compact-row" key={user.id}>
+            <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
+            <div>
+              <strong>{user.name ?? '-'}</strong>
+              <p>{user.email ?? '-'}</p>
+            </div>
+            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
+          </div>
+        ))
+      )}
     </div>
   );
 }
 
+const requestStatusFilters = [
+  { id: '', label: 'Toate' },
+  { id: 'pending', label: 'In asteptare' },
+  { id: 'approved', label: 'Aprobate' },
+  { id: 'rejected', label: 'Respinse' }
+];
+
 function RequestsView({ rows, loading, onApprove, onReject }) {
   const [query, setQuery] = useState('');
-  const visibleRows = rows.filter((request) => matchesQuery(request, query, [
-    (item) => item.name,
-    (item) => item.email,
-    (item) => item.phone,
-    (item) => item.status
-  ]));
+  const [statusFilter, setStatusFilter] = useState('');
+  const pendingCount = rows.filter((request) => request.status === 'pending').length;
+  const sortedRows = [...rows].sort((left, right) => {
+    const order = { pending: 0, approved: 1, rejected: 2 };
+    const statusDiff = (order[left.status] ?? 9) - (order[right.status] ?? 9);
+
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+
+    return right.id - left.id;
+  });
+  const visibleRows = sortedRows.filter((request) => {
+    if (statusFilter && request.status !== statusFilter) {
+      return false;
+    }
+
+    return matchesQuery(request, query, [
+      (item) => item.name,
+      (item) => item.email,
+      (item) => item.phone,
+      (item) => item.status,
+      (item) => statusLabel(item.status)
+    ]);
+  });
 
   if (loading) return <LoadingState />;
 
@@ -700,32 +729,60 @@ function RequestsView({ rows, loading, onApprove, onReject }) {
       <div className="panel-header">
         <div>
           <h2>Cereri inregistrare</h2>
-          <p>Aprobari conturi noi</p>
+          <p>{pendingCount > 0 ? `${pendingCount} in asteptare` : 'Istoric cereri procesate'}</p>
         </div>
         <ClipboardList size={20} />
+      </div>
+      <div className="status-filters">
+        {requestStatusFilters.map((filter) => (
+          <button
+            className={statusFilter === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
+            key={filter.id || 'all'}
+            onClick={() => setStatusFilter(filter.id)}
+            type="button"
+          >
+            {filter.label}
+          </button>
+        ))}
       </div>
       <Toolbar value={query} onChange={setQuery} />
       {rows.length === 0 ? (
         <EmptyState title="Nu exista cereri" />
       ) : visibleRows.length === 0 ? (
-        <EmptyState title="Nicio cerere gasita" detail="Schimba termenul de cautare." />
+        <EmptyState title="Nicio cerere gasita" detail="Schimba filtrul sau termenul de cautare." />
       ) : (
-        visibleRows.map((request) => (
-          <div className="request-row" key={request.id}>
-            <div>
-              <strong>{request.name}</strong>
-              <p>{request.email}</p>
+        visibleRows.map((request) => {
+          const isPending = request.status === 'pending';
+
+          return (
+            <div className="request-row" key={request.id}>
+              <div>
+                <strong>{request.name}</strong>
+                <p>{request.email}</p>
+                {request.phone && <p>{request.phone}</p>}
+                {request.processed_at && (
+                  <p className="request-meta">
+                    Procesata: {new Date(request.processed_at).toLocaleString('ro-RO')}
+                  </p>
+                )}
+              </div>
+              <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
+              <div className="row-actions">
+                {isPending ? (
+                  <>
+                    <button className="secondary-button" onClick={() => onReject(request)} type="button">Respinge</button>
+                    <button className="primary-button" onClick={() => onApprove(request)} type="button">
+                      <CheckCircle2 size={17} />
+                      Aproba
+                    </button>
+                  </>
+                ) : (
+                  <span className="request-meta">Cont creat in Utilizatori</span>
+                )}
+              </div>
             </div>
-            <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
-            <div className="row-actions">
-              <button className="secondary-button" onClick={() => onReject(request)} type="button">Respinge</button>
-              <button className="primary-button" onClick={() => onApprove(request)} type="button">
-                <CheckCircle2 size={17} />
-                Aproba
-              </button>
-            </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
@@ -747,13 +804,7 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
       <div className={compact ? 'settings-grid compact' : 'settings-grid'}>
         <label>
           Moneda
-          <select defaultValue={currentUser?.currency ?? ''} name="currency">
-            <option value="">Nesetat</option>
-            <option>MDL</option>
-            <option>EUR</option>
-            <option>RON</option>
-            <option>USD</option>
-          </select>
+          <input readOnly value="MDL (Leu moldovenesc)" />
         </label>
         <label>
           Tarif kWh
@@ -877,15 +928,6 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               <input defaultValue={entity?.connector_type ?? ''} name="connector_type" placeholder="Type 2 / CCS" />
             </label>
             <label>
-              Moneda
-              <select name="currency" defaultValue={entity?.currency ?? 'MDL'}>
-                <option>MDL</option>
-                <option>EUR</option>
-                <option>RON</option>
-                <option>USD</option>
-              </select>
-            </label>
-            <label>
               OCPP identity
               <input defaultValue={entity?.ocpp_identity ?? ''} name="ocpp_identity" placeholder="volta-station-01" />
             </label>
@@ -925,18 +967,9 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               Email
               <input name="email" type="email" required />
             </label>
-            <label>
-              Moneda
-              <select name="currency" defaultValue="MDL" required>
-                <option>MDL</option>
-                <option>EUR</option>
-                <option>RON</option>
-                <option>USD</option>
-              </select>
-            </label>
             <label className="full-field">
               Parola
-              <input name="password" type="password" required placeholder="Minim 12 caractere, litere mari/mici si cifre" />
+              <input name="password" type="password" required placeholder="Minim 6 caractere" />
             </label>
           </div>
         )}
@@ -966,10 +999,10 @@ function ActiveView({ activeSection, data, loading, actions }) {
         onPreviewQr={actions.previewQr}
       />
     ),
-    sessions: <SessionsView rows={data.sessions} loading={loading} onStop={actions.stopSession} />,
-    users: <UsersView rows={data.users} loading={loading} dashboard={data.dashboard} onCreate={actions.openUserForm} onSaveSettings={actions.saveSettings} />,
+    sessions: <SessionsView rows={data.sessions} loading={loading} onStop={actions.stopSession} onDelete={actions.deleteSession} />,
+    users: <UsersView rows={data.users} loading={loading} onCreate={actions.openUserForm} />,
     requests: <RequestsView rows={data.requests} loading={loading} onApprove={actions.approveRequest} onReject={actions.rejectRequest} />,
-    invoices: <InvoicesView rows={data.invoices} loading={loading} onDownload={actions.downloadInvoice} onSend={actions.sendInvoice} />,
+    invoices: <InvoicesView rows={data.invoices} loading={loading} onDownload={actions.downloadInvoice} onSend={actions.sendInvoice} onDelete={actions.deleteInvoice} />,
     audit: <AuditView rows={data.audit} loading={loading} />,
     settings: <SettingsView dashboard={data.dashboard} onSubmit={actions.saveSettings} />
   };
@@ -1062,6 +1095,30 @@ export default function App() {
     );
   }
 
+  async function deleteSession(session) {
+    const label = session.station?.name ?? `sesiunea #${session.id}`;
+    if (!window.confirm(`Stergi ${label}? Facturile legate de sesiune vor fi sterse.`)) {
+      return;
+    }
+
+    await runAction(
+      () => mutateJson(`/backoffice/sessions/${session.id}/delete`),
+      'Sesiunea a fost stearsa.'
+    );
+  }
+
+  async function deleteInvoice(invoice) {
+    const label = invoice.invoice_number ?? `#${invoice.id}`;
+    if (!window.confirm(`Stergi factura ${label}?`)) {
+      return;
+    }
+
+    await runAction(
+      () => mutateJson(`/backoffice/invoices/${invoice.id}/delete`),
+      'Factura a fost stearsa.'
+    );
+  }
+
   function openStationQr(station, preview = false) {
     const path = preview ? 'qr-preview' : 'qr';
     window.open(`/backoffice/stations/${station.id}/${path}`, '_blank', 'noopener,noreferrer');
@@ -1079,7 +1136,11 @@ export default function App() {
   }
 
   async function approveRequest(request) {
-    const password = window.prompt('Parola pentru userul aprobat (minim 12 caractere, litere mari/mici si cifre):');
+    if (request.status !== 'pending') {
+      return;
+    }
+
+    const password = window.prompt('Parola pentru userul aprobat (minim 6 caractere):');
     if (!password) {
       return;
     }
@@ -1094,6 +1155,10 @@ export default function App() {
   }
 
   async function rejectRequest(request) {
+    if (request.status !== 'pending') {
+      return;
+    }
+
     await runAction(
       () => mutateJson(`/backoffice/registration-requests/${request.id}/reject`),
       'Cererea a fost respinsa.'
@@ -1142,10 +1207,12 @@ export default function App() {
     },
     deleteStation,
     stopSession,
+    deleteSession,
     downloadQr: (station) => openStationQr(station),
     previewQr: (station) => openStationQr(station, true),
     downloadInvoice,
     sendInvoice,
+    deleteInvoice,
     approveRequest,
     rejectRequest,
     saveSettings

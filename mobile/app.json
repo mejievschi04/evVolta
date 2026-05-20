@@ -26,7 +26,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Aplicatia foloseste camera pentru scanarea codului QR al statiei.",
         "NSLocationWhenInUseUsageDescription": "Aplicatia foloseste locatia pentru afisarea statiilor apropiate pe harta."
-      }
+      },
+      "bundleIdentifier": "com.mjsky.voltaev"
     },
     "plugins": [
       "expo-asset",

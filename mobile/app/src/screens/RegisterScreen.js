@@ -16,7 +16,14 @@ import { useNavigation } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import apiClient from "../api/client";
 import { getApiErrorMessage } from "../utils/apiErrors";
-import { colors, layout, typography } from "../theme";
+import { colors, motion } from "../theme";
+
+const C = {
+  bg: colors.bg,
+  accent: colors.accent,
+  text: colors.text,
+  onAccent: colors.accentText,
+};
 
 function formatValidationMessage(error) {
   return getApiErrorMessage(error, "Incearca din nou.");
@@ -27,7 +34,6 @@ export default function RegisterScreen() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const canSubmit = useMemo(() => {
@@ -51,7 +57,6 @@ export default function RegisterScreen() {
         name: trimmedName,
         email: trimmedEmail,
         phone: phone.trim() || null,
-        message: message.trim() || null,
       });
       Alert.alert("Trimis", data?.message ?? "Cererea a fost inregistrata.", [
         { text: "OK", onPress: () => navigation.navigate("Login") },
@@ -65,117 +70,79 @@ export default function RegisterScreen() {
 
   return (
     <View style={styles.page}>
-      <View style={styles.bgAccentTop} pointerEvents="none" />
-      <View style={styles.bgAccentBottom} pointerEvents="none" />
-
       <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <ScrollView
             contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.card}>
-              <View style={styles.brandRow}>
-                <View style={styles.logoShell}>
-                  <MaterialCommunityIcons name="ev-station" size={24} color={colors.accentText} />
-                </View>
-                <View style={styles.brandTexts}>
-                  <Text style={styles.badge}>CERERE CONT</Text>
-                  <Text style={styles.title}>Inregistrare</Text>
-                </View>
+            <View style={styles.header}>
+              <View style={styles.headerBadge}>
+                <MaterialCommunityIcons name="ev-station" size={40} color={C.onAccent} />
               </View>
-              <Text style={styles.sub}>
-                Contul se activeaza dupa ce un administrator aproba cererea ta. Vei primi acces cand ti se
-                comunica parola initiala.
-              </Text>
-              <View style={styles.stepsRow}>
-                <View style={styles.stepCard}>
-                  <MaterialCommunityIcons name="account-check-outline" size={16} color={colors.accent} />
-                  <Text style={styles.stepText}>Cerere</Text>
-                </View>
-                <View style={styles.stepCard}>
-                  <MaterialCommunityIcons name="shield-check-outline" size={16} color={colors.accent} />
-                  <Text style={styles.stepText}>Aprobare</Text>
-                </View>
-                <View style={styles.stepCard}>
-                  <MaterialCommunityIcons name="login-variant" size={16} color={colors.accent} />
-                  <Text style={styles.stepText}>Activare</Text>
-                </View>
-              </View>
+              <Text style={styles.eyebrow}>VOLTA EV</Text>
+              <Text style={styles.title}>Inregistrare</Text>
+            </View>
 
-              <Text style={styles.label}>Nume complet</Text>
-              <TextInput
-                style={styles.input}
+            <View style={styles.formCard}>
+              <Field
+                label="Nume complet"
+                icon="account-outline"
                 value={name}
                 onChangeText={setName}
-                autoCapitalize="words"
                 placeholder="ex. Ion Popescu"
-                placeholderTextColor={colors.textMuted}
+                autoCapitalize="words"
               />
 
-              <Text style={styles.label}>E-mail</Text>
-              <TextInput
-                style={styles.input}
+              <Field
+                label="E-mail"
+                icon="email-outline"
                 value={email}
                 onChangeText={setEmail}
-                autoCapitalize="none"
-                autoCorrect={false}
+                placeholder="ex. ion@firma.md"
                 keyboardType="email-address"
+                autoCapitalize="none"
                 autoComplete="email"
                 textContentType="emailAddress"
-                placeholder="ex. ion@firma.md"
-                placeholderTextColor={colors.textMuted}
               />
 
-              <Text style={styles.label}>Telefon (optional)</Text>
-              <TextInput
-                style={styles.input}
+              <Field
+                label="Telefon (optional)"
+                icon="phone-outline"
                 value={phone}
                 onChangeText={setPhone}
-                keyboardType="phone-pad"
                 placeholder="+373 ..."
-                placeholderTextColor={colors.textMuted}
-              />
-
-              <Text style={styles.label}>Mesaj pentru admin (optional)</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={message}
-                onChangeText={setMessage}
-                placeholder="ex. Vehicul flota, punct de lucru..."
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
+                keyboardType="phone-pad"
               />
 
               <Pressable
                 style={({ pressed }) => [
                   styles.primaryBtn,
-                  !canSubmit && styles.primaryBtnDisabled,
-                  pressed && canSubmit && styles.primaryBtnPressed,
+                  !canSubmit && styles.btnDisabled,
+                  pressed && canSubmit && styles.btnPressed,
                 ]}
                 onPress={submit}
                 disabled={!canSubmit}
               >
                 {loading ? (
                   <View style={styles.loadingRow}>
-                    <ActivityIndicator color={colors.accentText} />
+                    <ActivityIndicator color={C.onAccent} />
                     <Text style={styles.primaryBtnText}>Se trimite...</Text>
                   </View>
                 ) : (
                   <Text style={styles.primaryBtnText}>Trimite cererea</Text>
                 )}
               </Pressable>
-
-              <Pressable style={styles.linkWrap} onPress={() => navigation.navigate("Login")}>
-                <Text style={styles.link}>Ai deja cont? Autentificare</Text>
-              </Pressable>
             </View>
+
+            <Pressable
+              style={({ pressed }) => [styles.linkBtn, pressed && styles.btnPressed]}
+              onPress={() => navigation.navigate("Login")}
+            >
+              <MaterialCommunityIcons name="arrow-left" size={18} color={C.accent} />
+              <Text style={styles.linkBtnText}>Ai deja cont? Autentificare</Text>
+            </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -183,150 +150,135 @@ export default function RegisterScreen() {
   );
 }
 
+function Field({ label, icon, value, onChangeText, placeholder, keyboardType, autoCapitalize, autoComplete, textContentType }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.inputWrap}>
+        <MaterialCommunityIcons name={icon} size={18} color={C.accent} />
+        <TextInput
+          style={styles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="rgba(234, 240, 255, 0.4)"
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={false}
+          autoComplete={autoComplete}
+          textContentType={textContentType}
+        />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  page: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
+  page: { flex: 1, backgroundColor: C.bg },
   flex: { flex: 1 },
-  bgAccentTop: {
-    position: "absolute",
-    top: -160,
-    right: -120,
-    width: 340,
-    height: 340,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,238,0,0.1)",
-  },
-  bgAccentBottom: {
-    position: "absolute",
-    bottom: -160,
-    left: -140,
-    width: 360,
-    height: 360,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,238,0,0.07)",
-  },
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingVertical: 28,
-    justifyContent: "center",
+    paddingTop: 48,
+    paddingBottom: 32,
+    gap: 24,
   },
-  card: {
-    borderRadius: layout.cardRadiusLg,
-    padding: 22,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: colors.bgSoft,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 6,
-  },
-  brandRow: {
-    flexDirection: "row",
+
+  header: {
     alignItems: "center",
-    gap: 18,
-    marginBottom: 12,
+    gap: 6,
+    paddingHorizontal: 8,
   },
-  brandTexts: {
-    flex: 1,
-    justifyContent: "center",
-    gap: 8,
-  },
-  logoShell: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.accent,
+  headerBadge: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    backgroundColor: C.accent,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 8,
   },
-  badge: {
-    alignSelf: "flex-start",
-    color: colors.accentText,
-    backgroundColor: colors.accent,
+  eyebrow: {
+    color: C.accent,
     fontSize: 10,
     fontWeight: "900",
-    letterSpacing: 1.4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    overflow: "hidden",
+    letterSpacing: 1.6,
   },
   title: {
-    color: colors.text,
-    ...typography.titleMd,
+    color: C.text,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: -0.5,
   },
-  sub: {
-    color: colors.textMuted,
-    ...typography.subtitle,
-    lineHeight: 19,
-    marginBottom: 12,
-  },
-  stepsRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 14,
-  },
-  stepCard: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: layout.cardRadiusSm,
+
+  formCard: {
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
+    borderColor: C.accent,
+    backgroundColor: C.bg,
+    padding: 18,
+    gap: 14,
   },
-  stepText: {
-    color: colors.text,
+  field: { gap: 6 },
+  fieldLabel: {
+    color: C.text,
+    opacity: 0.55,
     fontSize: 11,
     fontWeight: "800",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
   },
-  label: {
-    color: colors.textMuted,
-    ...typography.label,
-    marginBottom: 6,
-    marginTop: 4,
+  inputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: C.accent,
+    borderRadius: 14,
+    backgroundColor: C.bg,
+    paddingHorizontal: 12,
+    minHeight: 50,
   },
   input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: layout.inputRadius,
-    backgroundColor: colors.card,
-    color: colors.text,
-    paddingHorizontal: 14,
+    flex: 1,
+    color: C.text,
+    paddingHorizontal: 10,
     paddingVertical: 12,
     fontSize: 15,
+    fontWeight: "600",
   },
-  textArea: { minHeight: 100, paddingTop: 12 },
+
   primaryBtn: {
-    marginTop: 18,
-    backgroundColor: colors.accent,
-    borderRadius: layout.buttonRadius,
-    paddingVertical: 14,
+    marginTop: 4,
+    minHeight: 52,
+    borderRadius: 14,
+    backgroundColor: C.accent,
     alignItems: "center",
-  },
-  primaryBtnPressed: {
-    opacity: 0.92,
-  },
-  primaryBtnDisabled: {
-    opacity: 0.55,
+    justifyContent: "center",
   },
   primaryBtnText: {
-    color: colors.accentText,
-    ...typography.button,
-    letterSpacing: 0.6,
+    color: C.onAccent,
+    fontSize: 15,
+    fontWeight: "900",
   },
   loadingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  linkWrap: { marginTop: 16, alignItems: "center" },
-  link: { color: colors.accent, ...typography.button },
+
+  linkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+  },
+  linkBtnText: {
+    color: C.accent,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  btnDisabled: { opacity: 0.45 },
+  btnPressed: { opacity: motion.pressOpacity, transform: [{ scale: motion.pressScale }] },
 });

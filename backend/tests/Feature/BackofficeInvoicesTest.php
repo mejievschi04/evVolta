@@ -70,4 +70,51 @@ class BackofficeInvoicesTest extends TestCase
             'subject_id' => $invoice->id,
         ]);
     }
+
+    public function test_backoffice_invoice_can_be_deleted(): void
+    {
+        $admin = User::query()->create([
+            'name' => 'Backoffice Admin',
+            'email' => 'admin@example.test',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $user = User::query()->create([
+            'name' => 'Driver One',
+            'email' => 'driver@example.test',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'user_id' => $user->id,
+            'month' => '2026-04',
+            'currency' => 'MDL',
+            'invoice_type' => 'monthly',
+            'invoice_number' => 'EVM-202604-9',
+            'period_start' => '2026-04-01',
+            'period_end' => '2026-04-30',
+            'total_kwh' => 4.2,
+            'total_amount' => 18.9,
+            'sessions_count' => 1,
+            'status' => 'unpaid',
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/invoices/' . $invoice->id . '/delete')
+            ->assertOk()
+            ->assertJsonPath('message', 'Factura a fost stearsa.');
+
+        $this->assertDatabaseMissing('invoices', [
+            'id' => $invoice->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'backoffice.invoice.deleted',
+            'actor_user_id' => $admin->id,
+            'subject_id' => $invoice->id,
+        ]);
+    }
 }

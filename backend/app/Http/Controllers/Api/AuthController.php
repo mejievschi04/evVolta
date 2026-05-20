@@ -51,7 +51,6 @@ class AuthController extends Controller
                 'max:255',
                 Rule::unique('users', 'email')->ignore($user->id),
             ],
-            'currency' => 'required|string|size:3',
         ]);
 
         $firstName = trim((string) ($data['first_name'] ?? ''));
@@ -64,7 +63,7 @@ class AuthController extends Controller
             'last_name' => $lastName !== '' ? $lastName : null,
             'name' => $fullName !== '' ? $fullName : ($fallbackName !== '' ? $fallbackName : $user->name),
             'email' => strtolower($data['email']),
-            'currency' => strtoupper($data['currency']),
+            'currency' => 'MDL',
         ])->save();
 
         return response()->json([

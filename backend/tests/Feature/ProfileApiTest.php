@@ -40,13 +40,13 @@ class ProfileApiTest extends TestCase
             ->assertJsonPath('user.first_name', 'Ion')
             ->assertJsonPath('user.last_name', 'Popescu')
             ->assertJsonPath('user.email', 'ion@example.test')
-            ->assertJsonPath('user.currency', 'EUR');
+            ->assertJsonPath('user.currency', 'MDL');
 
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
             'name' => 'Ion Popescu',
             'email' => 'ion@example.test',
-            'currency' => 'EUR',
+            'currency' => 'MDL',
         ]);
     }
 

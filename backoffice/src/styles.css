@@ -767,6 +767,26 @@ button {
   margin-bottom: 10px;
 }
 
+.status-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.status-filters .active-filter {
+  border-color: rgba(228, 255, 33, 0.55);
+  color: var(--ink);
+  background: linear-gradient(145deg, #f8ff7a, var(--neon));
+}
+
+.request-meta {
+  margin-top: 4px;
+  color: #b8c79a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .compact-actions {
   justify-content: flex-end;
 }

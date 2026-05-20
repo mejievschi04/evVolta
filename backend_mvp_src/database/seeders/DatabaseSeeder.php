@@ -26,16 +26,24 @@ class DatabaseSeeder extends Seeder
         );
 
         $stations = [
-            ['name' => 'Station A1', 'location' => 'Main Parking - Slot 1', 'status' => 'available'],
-            ['name' => 'Station A2', 'location' => 'Main Parking - Slot 2', 'status' => 'available'],
-            ['name' => 'Station B1', 'location' => 'Visitor Parking - Slot 1', 'status' => 'offline'],
+            [
+                'name' => 'VOLTA 1',
+                'location' => 'str. Pădurii 19, Chișinău',
+                'status' => 'available',
+            ],
         ];
+
+        $seededNames = collect($stations)->pluck('name');
 
         foreach ($stations as $station) {
             Station::query()->updateOrCreate(
                 ['name' => $station['name']],
-                $station + ['qr_code' => 'station:' . str_replace(' ', '-', strtolower($station['name']))]
+                $station + ['qr_code' => 'station:volta-1']
             );
         }
+
+        Station::query()
+            ->whereNotIn('name', $seededNames)
+            ->delete();
     }
 }

@@ -27,6 +27,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::get('/stations/{station}/qr', [DashboardController::class, 'downloadStationQr'])->name('backoffice.stations.qr');
         Route::get('/sessions', [DashboardController::class, 'sessions'])->name('backoffice.sessions');
         Route::post('/sessions/{session}/stop', [DashboardController::class, 'stopSession'])->name('backoffice.sessions.stop');
+        Route::post('/sessions/{session}/delete', [DashboardController::class, 'deleteSession'])->name('backoffice.sessions.delete');
         Route::get('/users', [DashboardController::class, 'users'])->name('backoffice.users');
         Route::post('/users', [DashboardController::class, 'storeUser'])->name('backoffice.users.store');
         Route::get('/registration-requests', [DashboardController::class, 'registrationRequests'])->name('backoffice.registration_requests');
@@ -35,6 +36,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::get('/invoices', [DashboardController::class, 'invoices'])->name('backoffice.invoices');
         Route::get('/invoices/{invoice}/download', [DashboardController::class, 'downloadInvoice'])->name('backoffice.invoices.download');
         Route::post('/invoices/{invoice}/send', [DashboardController::class, 'sendInvoice'])->name('backoffice.invoices.send');
+        Route::post('/invoices/{invoice}/delete', [DashboardController::class, 'deleteInvoice'])->name('backoffice.invoices.delete');
         Route::post('/settings', [DashboardController::class, 'updateSettings'])->name('backoffice.settings.update');
         Route::post('/tariff', [DashboardController::class, 'updateTariff'])->name('backoffice.tariff.update');
     });

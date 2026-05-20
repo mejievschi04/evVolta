@@ -24,7 +24,6 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Validation\Rules\Password;
 use RuntimeException;
 use Illuminate\Support\Str;
 
@@ -196,7 +195,6 @@ class DashboardController extends Controller
             'qr_code' => 'nullable|string|max:255',
             'power_kw' => 'nullable|numeric|min:0',
             'connector_type' => 'nullable|string|max:100',
-            'currency' => 'nullable|string|size:3|in:MDL,EUR,USD,RON',
             'ocpp_identity' => 'nullable|string|max:120|unique:stations,ocpp_identity',
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
         ]);
@@ -207,6 +205,7 @@ class DashboardController extends Controller
         $data['ocpp_connection_status'] = $data['ocpp_identity']
             ? Station::OCPP_CONNECTION_DISCONNECTED
             : Station::OCPP_CONNECTION_NOT_CONFIGURED;
+        $data['currency'] = 'MDL';
 
         $station = Station::query()->create($data);
 
@@ -240,7 +239,6 @@ class DashboardController extends Controller
             'qr_code' => 'nullable|string|max:255',
             'power_kw' => 'nullable|numeric|min:0',
             'connector_type' => 'nullable|string|max:100',
-            'currency' => 'nullable|string|size:3|in:MDL,EUR,USD,RON',
             'ocpp_identity' => 'nullable|string|max:120|unique:stations,ocpp_identity,' . $station->id,
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
         ]);
@@ -255,6 +253,7 @@ class DashboardController extends Controller
             $data['last_heartbeat_at'] = null;
             $data['last_ocpp_message_at'] = null;
         }
+        $data['currency'] = 'MDL';
 
         $station->update($data);
 
@@ -434,6 +433,63 @@ class DashboardController extends Controller
         return $this->respondMutation($request, 'Sesiunea a fost oprita din admin.');
     }
 
+    public function deleteSession(Request $request, ChargingSession $session): JsonResponse|RedirectResponse
+    {
+        try {
+            DB::transaction(function () use ($session): void {
+            $session = ChargingSession::query()
+                ->whereKey($session->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $session) {
+                throw new RuntimeException('Sesiunea nu a fost gasita.', 404);
+            }
+
+            $station = Station::query()
+                ->whereKey($session->station_id)
+                ->lockForUpdate()
+                ->first();
+
+            Invoice::query()
+                ->where('source_session_id', $session->id)
+                ->delete();
+
+            if (! $session->end_time && $station) {
+                $station->update(['status' => Station::STATUS_AVAILABLE]);
+            }
+
+            $this->auditLogService->record(
+                action: 'backoffice.session.deleted',
+                actor: $this->backofficeActor(),
+                subjectType: ChargingSession::class,
+                subjectId: $session->id,
+                station: $station,
+                session: $session,
+                metadata: [
+                    'user_id' => $session->user_id,
+                    'station_id' => $session->station_id,
+                    'was_active' => $session->end_time === null,
+                ]
+            );
+
+            $session->delete();
+            });
+        } catch (RuntimeException $exception) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $exception->getMessage(),
+                ], $exception->getCode() >= 400 ? $exception->getCode() : 422);
+            }
+
+            return back()->withErrors([
+                'session_delete' => $exception->getMessage(),
+            ]);
+        }
+
+        return $this->respondMutation($request, 'Sesiunea a fost stearsa.');
+    }
+
     public function users(Request $request): JsonResponse
     {
         return response()->json([
@@ -452,8 +508,7 @@ class DashboardController extends Controller
             'last_name' => 'nullable|string|max:100',
             'name' => 'nullable|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
-            'currency' => 'required|string|size:3|in:MDL,EUR,USD,RON',
-            'password' => ['required', 'string', Password::min(12)->mixedCase()->numbers()],
+            'password' => ['required', 'string', 'min:6'],
         ]);
 
         $name = trim((string) ($data['name'] ?? ''));
@@ -466,7 +521,7 @@ class DashboardController extends Controller
             'first_name' => $firstName !== '' ? $firstName : null,
             'last_name' => $lastName !== '' ? $lastName : null,
             'email' => $data['email'],
-            'currency' => $data['currency'],
+            'currency' => 'MDL',
             'password' => Hash::make($data['password']),
         ]);
 
@@ -489,8 +544,22 @@ class DashboardController extends Controller
 
     public function registrationRequests(Request $request): JsonResponse
     {
+        $status = trim((string) $request->query('status', ''));
+        $allowedStatuses = [
+            RegistrationRequest::STATUS_PENDING,
+            RegistrationRequest::STATUS_APPROVED,
+            RegistrationRequest::STATUS_REJECTED,
+        ];
+
+        $query = RegistrationRequest::query();
+
+        if ($status !== '' && in_array($status, $allowedStatuses, true)) {
+            $query->where('status', $status);
+        }
+
         return response()->json([
-            'data' => RegistrationRequest::query()
+            'data' => $query
+                ->orderByRaw("CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END")
                 ->latest('id')
                 ->limit(100)
                 ->get(),
@@ -508,7 +577,7 @@ class DashboardController extends Controller
         }
 
         $data = $request->validate([
-            'password' => ['required', 'string', Password::min(12)->mixedCase()->numbers(), 'confirmed'],
+            'password' => ['required', 'string', 'min:6', 'confirmed'],
         ]);
 
         DB::transaction(function () use ($registrationRequest, $data) {
@@ -516,6 +585,7 @@ class DashboardController extends Controller
                 'name' => $registrationRequest->name,
                 'email' => $registrationRequest->email,
                 'password' => $data['password'],
+                'currency' => 'MDL',
             ]);
 
             $registrationRequest->update([
@@ -613,6 +683,26 @@ class DashboardController extends Controller
         return $this->respondMutation($request, 'Factura a fost trimisa pe email.');
     }
 
+    public function deleteInvoice(Request $request, Invoice $invoice): JsonResponse|RedirectResponse
+    {
+        $this->auditLogService->record(
+            action: 'backoffice.invoice.deleted',
+            actor: $this->backofficeActor(),
+            subjectType: Invoice::class,
+            subjectId: $invoice->id,
+            metadata: [
+                'invoice_number' => $invoice->invoice_number,
+                'user_id' => $invoice->user_id,
+                'month' => $invoice->month,
+                'total_amount' => $invoice->total_amount,
+            ]
+        );
+
+        $invoice->delete();
+
+        return $this->respondMutation($request, 'Factura a fost stearsa.');
+    }
+
     public function updateTariff(Request $request): JsonResponse|RedirectResponse
     {
         $data = $request->validate([
@@ -643,7 +733,6 @@ class DashboardController extends Controller
         $data = $request->validate([
             'first_name' => 'nullable|string|max:100',
             'last_name' => 'nullable|string|max:100',
-            'currency' => 'required|string|size:3|in:MDL,EUR,USD,RON',
             'price_per_kwh' => 'required|numeric|min:0',
         ]);
 
@@ -667,7 +756,7 @@ class DashboardController extends Controller
             $user->update([
                 'first_name' => $firstName,
                 'last_name' => $lastName,
-                'currency' => $data['currency'],
+                'currency' => 'MDL',
                 'name' => $updatedName !== '' ? $updatedName : $user->name,
             ]);
 
