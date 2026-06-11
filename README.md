@@ -62,7 +62,8 @@ BACKOFFICE_UI_URL=http://127.0.0.1:5173
 
 ## Deploy pe VPS
 
-Ghid complet: [`docs/VPS_DEPLOY.md`](docs/VPS_DEPLOY.md)
+- **Docker (recomandat):** [`docs/DOCKER_DEPLOY.md`](docs/DOCKER_DEPLOY.md)
+- **Manual / nginx nativ:** [`docs/VPS_DEPLOY.md`](docs/VPS_DEPLOY.md)
 
 Domeniu productie: **`ocpp.volta.md`**
 

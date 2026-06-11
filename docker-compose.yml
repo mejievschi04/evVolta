@@ -1,0 +1,94 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-evvolta}
+      POSTGRES_USER: ${DB_USERNAME:-evvolta}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env.docker}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-evvolta} -d ${DB_DATABASE:-evvolta}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_CONNECTION: pgsql
+    volumes:
+      - ./.env.docker:/var/www/backend/.env
+      - app_storage:/var/www/backend/storage
+      - app_cache:/var/www/backend/bootstrap/cache
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ocpp:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    restart: unless-stopped
+    command: ["php", "artisan", "ocpp:serve", "--host=0.0.0.0", "--port=9010"]
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_CONNECTION: pgsql
+      RUN_MIGRATIONS: "false"
+      CACHE_CONFIG: "false"
+    volumes:
+      - ./.env.docker:/var/www/backend/.env
+      - app_storage:/var/www/backend/storage
+      - app_cache:/var/www/backend/bootstrap/cache
+    depends_on:
+      app:
+        condition: service_started
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_CONNECTION: pgsql
+      RUN_MIGRATIONS: "false"
+      CACHE_CONFIG: "false"
+    volumes:
+      - ./.env.docker:/var/www/backend/.env
+      - app_storage:/var/www/backend/storage
+      - app_cache:/var/www/backend/bootstrap/cache
+    depends_on:
+      app:
+        condition: service_started
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - app
+      - ocpp
+
+volumes:
+  pgdata:
+  app_storage:
+  app_cache:
