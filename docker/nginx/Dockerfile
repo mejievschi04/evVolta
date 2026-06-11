@@ -9,5 +9,5 @@ RUN npm run build
 FROM nginx:1.27-alpine
 
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY docker/nginx/laravel-php.conf /etc/nginx/conf.d/laravel-php.conf
+COPY docker/nginx/laravel-php.conf /etc/nginx/snippets/laravel-php.conf
 COPY --from=backoffice-build /app/dist /var/www/backoffice/dist
