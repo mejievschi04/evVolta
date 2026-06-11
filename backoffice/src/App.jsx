@@ -3,6 +3,7 @@ import {
   Activity,
   BatteryCharging,
   Bell,
+  Calendar,
   CheckCircle2,
   CircleDollarSign,
   ClipboardList,
@@ -24,6 +25,7 @@ import {
   Search,
   Settings,
   Square,
+  TrendingUp,
   Unlock,
   ShieldCheck,
   X,
@@ -143,26 +145,11 @@ function useBackofficeData() {
       setState((current) => ({ ...current, loading: true }));
     }
 
+    const errors = [];
+    let dashboardPayload = null;
+
     try {
-      const dashboard = await fetchJson(endpoints.dashboard);
-      const results = await Promise.all(
-        Object.entries(endpoints)
-          .filter(([key]) => key !== 'dashboard')
-          .map(async ([key, url]) => [key, await fetchJson(url)])
-      );
-      const nextData = { ...emptyData, dashboard };
-
-      for (const [key, payload] of results) {
-        if (key === 'wallet') {
-          nextData.walletTopups = payload.data ?? [];
-          nextData.walletSummary = payload.summary ?? null;
-          continue;
-        }
-
-        nextData[key] = key === 'dashboard' ? payload : payload.data ?? [];
-      }
-
-      setState({ data: nextData, loading: false, error: '', authRequired: false });
+      dashboardPayload = await fetchJson(`${endpoints.dashboard}?days=14`);
     } catch (error) {
       if (error.status === 401) {
         setState({
@@ -174,13 +161,56 @@ function useBackofficeData() {
         return;
       }
 
-      setState({
-        data: emptyData,
-        loading: false,
-        error: error.message || 'Nu am putut incarca datele reale.',
-        authRequired: false
-      });
+      errors.push(error.message || 'Dashboard indisponibil.');
     }
+
+    const results = await Promise.allSettled(
+      Object.entries(endpoints)
+        .filter(([key]) => key !== 'dashboard')
+        .map(async ([key, url]) => [key, await fetchJson(url)])
+    );
+
+    setState((current) => {
+      const nextData = { ...current.data };
+
+      if (dashboardPayload) {
+        nextData.dashboard = dashboardPayload;
+      }
+
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          const reason = result.reason;
+          if (reason?.status === 401) {
+            return {
+              data: emptyData,
+              loading: false,
+              error: '',
+              authRequired: true
+            };
+          }
+
+          errors.push(reason?.message || 'Nu am putut incarca o sectiune.');
+          continue;
+        }
+
+        const [key, payload] = result.value;
+
+        if (key === 'wallet') {
+          nextData.walletTopups = payload.data ?? [];
+          nextData.walletSummary = payload.summary ?? null;
+          continue;
+        }
+
+        nextData[key] = payload.data ?? [];
+      }
+
+      return {
+        data: nextData,
+        loading: false,
+        error: errors[0] || '',
+        authRequired: false
+      };
+    });
   }
 
   useEffect(() => {
@@ -255,7 +285,7 @@ function stationHasCoordinates(station) {
 }
 
 function stationMarkerColor(station) {
-  const availability = station.live_status?.availability || station.status;
+  const availability = station.display_status ?? station.live_status?.availability ?? station.status;
 
   if (availability === 'available') return '#7ddf8a';
   if (availability === 'charging') return '#ffee00';
@@ -322,6 +352,14 @@ function sessionKwhDelivered(session) {
 
 function sessionPowerKw(session) {
   return session?.power_kw_live ?? session?.telemetry?.power_kw ?? null;
+}
+
+function effectiveStationStatus(station) {
+  return station.display_status ?? station.live_status?.availability ?? station.status;
+}
+
+function effectiveOcppConnectionStatus(station) {
+  return station.live_status?.connection_status ?? station.ocpp_connection_status;
 }
 
 function statusLabel(status) {
@@ -467,6 +505,332 @@ function TopMetric({ label, value, icon: Icon }) {
   );
 }
 
+function DetailMetric({ label, value, helper }) {
+  return (
+    <div className="detail-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {helper ? <small>{helper}</small> : null}
+    </div>
+  );
+}
+
+function DashboardNetworkCard({ stats, stationStatus }) {
+  const total = Number(stats?.stations ?? 0);
+  const connected = Number(stationStatus?.connected ?? 0);
+  const statusItems = [
+    { key: 'available', label: 'Disponibile', value: stationStatus?.available ?? 0, variant: 'success' },
+    { key: 'charging', label: 'In incarcare', value: stationStatus?.charging ?? 0, variant: 'warning' },
+    { key: 'offline', label: 'Offline', value: stationStatus?.offline ?? 0, variant: 'danger' }
+  ];
+  const stationTotal = statusItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>Retea statii</h2>
+          <p>Status operational si OCPP live</p>
+        </div>
+        <RadioTower size={20} />
+      </div>
+
+      <div className="dash-network-layout">
+        <div className="dash-network-total">
+          <span>Total statii</span>
+          <strong>{formatNumber(total)}</strong>
+          <p>{formatNumber(connected)} conectate OCPP</p>
+        </div>
+
+        <div className="meter-stack">
+          {statusItems.map((item) => {
+            const width = stationTotal ? Math.max((Number(item.value) / stationTotal) * 100, item.value ? 8 : 0) : 0;
+
+            return (
+              <div className="meter-row" key={item.key}>
+                <div>
+                  <Badge variant={item.variant}>{item.label}</Badge>
+                  <strong>{formatNumber(item.value)}</strong>
+                </div>
+                <span className={`meter-track meter-${item.variant}`}>
+                  <span style={{ width: `${width}%` }} />
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="dash-ocpp-pills">
+        <span className="dash-ocpp-pill tone-success">{formatNumber(stationStatus?.connected ?? 0)} online</span>
+        <span className="dash-ocpp-pill tone-warning">{formatNumber(stationStatus?.disconnected ?? 0)} offline</span>
+        <span className="dash-ocpp-pill">{formatNumber(stationStatus?.not_configured ?? 0)} neconfigurat</span>
+      </div>
+    </section>
+  );
+}
+
+function StationModernCard({
+  station,
+  onOpenDetail,
+  onEdit,
+  onDelete,
+  onDownloadQr,
+  onPreviewQr,
+  onDiagnostics,
+  onRefreshStatus,
+  onUnlockConnector,
+  onStopActiveSession
+}) {
+  const status = effectiveStationStatus(station);
+  const ocppStatus = effectiveOcppConnectionStatus(station);
+  const connectors = station.live_status?.connectors ?? [];
+  const isConnected = ocppStatus === 'connected';
+
+  return (
+    <article className={`station-card-modern tone-${statusVariant(status)}`}>
+      <div className="station-card-top">
+        <div className="station-card-icon">
+          <Zap size={18} />
+        </div>
+        <div className="station-card-main">
+          <button className="station-name-link" onClick={() => onOpenDetail(station)} type="button">
+            <strong>{station.name}</strong>
+          </button>
+          <p className="station-card-location">
+            <MapPin size={13} />
+            {station.location || 'Fara adresa'}
+          </p>
+          <p className="station-card-identity">
+            <RadioTower size={13} />
+            {station.ocpp_identity || 'fara OCPP identity'}
+          </p>
+        </div>
+        <div className="station-card-badges">
+          <Badge variant={statusVariant(status)}>{statusLabel(status)}</Badge>
+          <Badge variant={statusVariant(ocppStatus)}>{connectionLabel(ocppStatus)}</Badge>
+        </div>
+      </div>
+
+      <div className="station-card-chips">
+        <span className="station-chip">{station.power_kw ? `${formatKwh(station.power_kw, 1)} kW` : '— kW'}</span>
+        <span className="station-chip">{station.connector_type || 'Type2'}</span>
+        <span className="station-chip">{formatNumber(station.sessions_count)} sesiuni</span>
+        {station.active_sessions_count > 0 ? (
+          <span className="station-chip station-chip-live">{formatNumber(station.active_sessions_count)} active</span>
+        ) : null}
+      </div>
+
+      {connectors.length > 0 ? <StationConnectorsLive connectors={connectors} /> : null}
+
+      <div className="station-card-actions">
+        <div className="station-card-actions-main">
+          <button className="secondary-button mini-button" onClick={() => onOpenDetail(station)} type="button">
+            <Eye size={14} />
+            Detalii
+          </button>
+          {isConnected ? (
+            <>
+              <button className="secondary-button mini-button" onClick={() => onRefreshStatus(station)} type="button">
+                <RefreshCw size={14} />
+                Refresh
+              </button>
+              {station.active_sessions_count > 0 ? (
+                <button className="secondary-button mini-button danger-text" onClick={() => onStopActiveSession(station)} type="button">
+                  <Square size={14} />
+                  Stop
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+        <div className="station-card-actions-icons">
+          {isConnected ? (
+            <button className="icon-button" onClick={() => onUnlockConnector(station)} type="button" title="UnlockConnector">
+              <Unlock size={15} />
+            </button>
+          ) : null}
+          {station.ocpp_connection_url ? (
+            <button
+              className="icon-button"
+              onClick={() => navigator.clipboard?.writeText(station.ocpp_connection_url)}
+              type="button"
+              title="Copiaza URL OCPP"
+            >
+              <Copy size={15} />
+            </button>
+          ) : null}
+          <button className="icon-button" onClick={() => onPreviewQr(station)} type="button" title="Preview QR">
+            <Search size={15} />
+          </button>
+          <button className="icon-button" onClick={() => onDiagnostics(station)} type="button" title="GetDiagnostics">
+            <ClipboardList size={15} />
+          </button>
+          <button className="icon-button" onClick={() => onDownloadQr(station)} type="button" title="Descarca QR">
+            <Download size={15} />
+          </button>
+          <button className="icon-button" onClick={() => onEdit(station)} type="button" title="Editeaza">
+            <MoreHorizontal size={16} />
+          </button>
+          <button className="icon-button danger-icon" onClick={() => onDelete(station)} type="button" title="Sterge">
+            <X size={15} />
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+const DEFAULT_DASHBOARD_PERIOD = { mode: 'preset', days: 14 };
+
+function buildDashboardUrl(period = DEFAULT_DASHBOARD_PERIOD) {
+  const base = endpoints.dashboard;
+
+  if (period.mode === 'day' && period.date) {
+    return `${base}?date=${period.date}`;
+  }
+
+  if (period.mode === 'range' && period.from && period.to) {
+    return `${base}?from=${period.from}&to=${period.to}`;
+  }
+
+  return `${base}?days=${period.days ?? 14}`;
+}
+
+function isDefaultDashboardPeriod(period) {
+  return period.mode === 'preset' && period.days === 14;
+}
+
+function formatDashboardPeriodLabel(periodInfo) {
+  if (!periodInfo?.from) {
+    return '14 zile';
+  }
+
+  if (periodInfo.granularity === 'hour') {
+    return new Date(`${periodInfo.from}T12:00:00`).toLocaleDateString('ro-RO', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  }
+
+  const from = new Date(`${periodInfo.from}T12:00:00`);
+  const to = new Date(`${periodInfo.to}T12:00:00`);
+
+  if (periodInfo.from === periodInfo.to) {
+    return from.toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  return `${from.toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} – ${to.toLocaleDateString('ro-RO', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })}`;
+}
+
+function TrendBars({ items = [], valueKey = 'sessions', label = 'Sesiuni', granularity = 'day' }) {
+  const peak = items.reduce((max, item) => Math.max(max, Number(item[valueKey] || 0)), 0);
+  const hourly = granularity === 'hour';
+  const barStyle = hourly
+    ? undefined
+    : { gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` };
+
+  return (
+    <div className="trend-chart">
+      <div className="trend-chart-head">
+        <span>{label}</span>
+        <strong>{formatNumber(items.reduce((sum, item) => sum + Number(item[valueKey] || 0), 0))} total</strong>
+      </div>
+      <div className={`trend-bars${hourly ? ' trend-bars-hourly' : ''}`} style={barStyle}>
+        {items.map((item) => {
+          const value = Number(item[valueKey] || 0);
+          const height = peak ? Math.max((value / peak) * 100, value ? 10 : 0) : 0;
+
+          return (
+            <div className="trend-bar-col" key={item.date} title={`${item.label}: ${formatNumber(value)}`}>
+              <div className="trend-bar-track">
+                <span className="trend-bar-fill" style={{ height: `${height}%` }} />
+              </div>
+              <small>{item.label}</small>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DashboardPeriodBar({ period, onChange, loading }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [pickDate, setPickDate] = useState(today);
+  const [rangeFrom, setRangeFrom] = useState('');
+  const [rangeTo, setRangeTo] = useState('');
+
+  return (
+    <section className="dash-period-bar">
+      <div className="dash-period-main">
+        <div className="dash-period-title">
+          <Calendar size={18} />
+          <div>
+            <strong>Perioada analizata</strong>
+            <p>Alege interval preset, o zi sau un interval personalizat</p>
+          </div>
+        </div>
+        <div className="dash-period-presets">
+          {[7, 14, 30].map((days) => (
+            <button
+              className={`dash-period-pill${period.mode === 'preset' && period.days === days ? ' active' : ''}`}
+              disabled={loading}
+              key={days}
+              onClick={() => onChange({ mode: 'preset', days })}
+              type="button"
+            >
+              {days} zile
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="dash-period-custom">
+        <label className="dash-period-field">
+          <span>Zi anume</span>
+          <input
+            max={today}
+            onChange={(event) => {
+              const nextDate = event.target.value;
+              setPickDate(nextDate);
+              if (nextDate) {
+                onChange({ mode: 'day', date: nextDate });
+              }
+            }}
+            type="date"
+            value={period.mode === 'day' ? period.date : pickDate}
+          />
+        </label>
+        <div className="dash-period-range">
+          <label className="dash-period-field compact">
+            <span>De la</span>
+            <input max={today} onChange={(event) => setRangeFrom(event.target.value)} type="date" value={rangeFrom} />
+          </label>
+          <span className="dash-period-sep">—</span>
+          <label className="dash-period-field compact">
+            <span>Pana la</span>
+            <input max={today} onChange={(event) => setRangeTo(event.target.value)} type="date" value={rangeTo} />
+          </label>
+          <button
+            className="dash-period-apply"
+            disabled={loading || !rangeFrom || !rangeTo}
+            onClick={() => onChange({ mode: 'range', from: rangeFrom, to: rangeTo })}
+            type="button"
+          >
+            Aplica
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function initialsFrom(value = 'Admin') {
   const words = value
     .split(/[\s@.]+/)
@@ -476,10 +840,14 @@ function initialsFrom(value = 'Admin') {
   return (words.map((word) => word[0]).join('') || 'EV').toUpperCase();
 }
 
-function EmptyState({ title = 'Nu exista date reale inca', detail = 'Porneste backend-ul si autentifica backoffice-ul ca sa incarcam informatiile.' }) {
+function EmptyState({
+  title = 'Nu exista date reale inca',
+  detail = 'Porneste backend-ul si autentifica backoffice-ul ca sa incarcam informatiile.',
+  compact = false
+}) {
   return (
-    <div className="empty-state">
-      <Activity size={24} />
+    <div className={`empty-state${compact ? ' empty-state-compact' : ''}`}>
+      <Activity size={compact ? 18 : 24} />
       <strong>{title}</strong>
       <p>{detail}</p>
     </div>
@@ -522,118 +890,241 @@ function LoginView({ error, loading, onSubmit }) {
   );
 }
 
-function DashboardView({ dashboard, loading, activeSessions = [] }) {
+function DashboardView({ dashboard: initialDashboard, loading: parentLoading, activeSessions = [] }) {
+  const [period, setPeriod] = useState(DEFAULT_DASHBOARD_PERIOD);
+  const [dashboard, setDashboard] = useState(initialDashboard);
+  const [periodLoading, setPeriodLoading] = useState(false);
+  const [periodError, setPeriodError] = useState('');
+
+  useEffect(() => {
+    if (initialDashboard && isDefaultDashboardPeriod(period)) {
+      setDashboard(initialDashboard);
+    }
+  }, [initialDashboard, period]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboardForPeriod() {
+      setPeriodLoading(true);
+      setPeriodError('');
+
+      try {
+        const payload = await fetchJson(buildDashboardUrl(period));
+        if (!cancelled) {
+          setDashboard(payload);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPeriodError(error.message || 'Nu am putut incarca perioada selectata.');
+        }
+      } finally {
+        if (!cancelled) {
+          setPeriodLoading(false);
+        }
+      }
+    }
+
+    loadDashboardForPeriod();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [period]);
+
   const stats = dashboard?.stats;
+  const analytics = dashboard?.analytics;
   const stationStatus = dashboard?.stationStatus;
   const ocpp = dashboard?.ocpp;
-  const statusItems = [
-    { key: 'available', label: 'Disponibile', value: stationStatus?.available ?? 0, variant: 'success' },
-    { key: 'charging', label: 'In incarcare', value: stationStatus?.charging ?? 0, variant: 'warning' },
-    { key: 'offline', label: 'Offline', value: stationStatus?.offline ?? 0, variant: 'danger' }
-  ];
-  const stationTotal = statusItems.reduce((total, item) => total + Number(item.value || 0), 0);
+  const periodInfo = analytics?.period ?? dashboard?.period;
+  const periodStats = analytics?.periodStats;
+  const granularity = periodInfo?.granularity ?? 'day';
+  const periodLabel = formatDashboardPeriodLabel(periodInfo);
+  const trendUnit = granularity === 'hour' ? 'ora' : 'zi';
+  const topStations = analytics?.topStations ?? analytics?.topStationsMonth ?? [];
+  const currency = analytics?.currency ?? 'MDL';
+  const formatCurrency = (value) =>
+    value === null || value === undefined
+      ? '-'
+      : `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 2 }).format(value)} ${currency}`;
 
-  if (loading) return <LoadingState />;
+  if (parentLoading && !dashboard) return <LoadingState />;
 
   return (
-    <div className="view-stack">
-      <section className="stats-grid stats-grid-wide">
-        <StatCard label="Utilizatori" value={formatNumber(stats?.users)} helper="total conturi" icon={Users} />
-        <StatCard label="Statii" value={formatNumber(stats?.stations)} helper={`${formatNumber(stats?.availableStations)} disponibile`} icon={Zap} />
-        <StatCard label="Sesiuni azi" value={formatNumber(stats?.sessionsToday)} helper={`${formatNumber(stats?.activeSessions)} active`} icon={Activity} />
-        <StatCard label="OCPP live" value={formatNumber(stats?.connectedStations)} helper={`mod ${ocpp?.mode ?? '-'}`} icon={RadioTower} />
-        <StatCard label="Venituri" value={formatMoney(stats?.totalRevenue)} helper="total facturat" icon={CircleDollarSign} />
-        <StatCard label="Cereri" value={formatNumber(stats?.pendingRequests)} helper="in asteptare" icon={ClipboardList} />
+    <div className="view-stack dashboard-v2">
+      <DashboardPeriodBar loading={periodLoading} onChange={setPeriod} period={period} />
+      {periodError && <div className="error-banner">{periodError}</div>}
+
+      <section className="stats-grid dash-kpi-grid">
         <StatCard
-          label="Alimentari azi"
-          value={formatMoney(stats?.walletTopupsVolumeToday)}
-          helper={`${formatNumber(stats?.walletTopupsPaidToday)} platite`}
-          icon={Wallet}
+          helper={`${formatNumber(periodStats?.closedSessions)} inchise · ${formatNumber(stats?.activeSessions)} active acum`}
+          icon={Activity}
+          label="Sesiuni in perioada"
+          value={formatNumber(periodStats?.sessions)}
+        />
+        <StatCard
+          helper={`medie ${formatKwh(analytics?.averages?.sessionKwh30d)} kWh/sesiune`}
+          icon={BatteryCharging}
+          label="Energie in perioada"
+          value={`${formatKwh(periodStats?.kwh)} kWh`}
+        />
+        <StatCard
+          helper={`${formatCurrency(periodStats?.walletTopups)} alimentari wallet`}
+          icon={CircleDollarSign}
+          label="Incasari in perioada"
+          value={formatCurrency(periodStats?.revenue)}
+        />
+        <StatCard
+          helper={`${formatNumber(analytics?.revenue?.unpaidInvoices)} facturi neplatite`}
+          icon={Receipt}
+          label="Restanta totala"
+          value={formatCurrency(analytics?.revenue?.unpaidTotal)}
         />
       </section>
 
-      <section className="content-grid">
-        <div className="panel wide">
-          <div className="panel-header">
-            <div>
-              <h2>Retea statii</h2>
-              <p>Distributie live din backend</p>
+      <section className="content-grid dash-main-grid">
+        <div className="dash-main-column">
+          <section className={`panel${periodLoading ? ' panel-loading' : ''}`}>
+            <div className="panel-header">
+              <div>
+                <h2>Performanta · {periodLabel}</h2>
+                <p>
+                  Sesiuni, energie livrata si incasari pe {trendUnit}
+                  {periodInfo?.days ? ` · ${periodInfo.days} zile` : ''}
+                </p>
+              </div>
+              <TrendingUp size={20} />
             </div>
-            <RadioTower size={20} />
-          </div>
-          <div className="network-panel">
-            <div className="network-total">
-              <span>Total statii</span>
-              <strong>{formatNumber(stats?.stations)}</strong>
+            <div className="analytics-trends">
+              <TrendBars
+                granularity={granularity}
+                items={analytics?.dailyTrend ?? []}
+                label={`Sesiuni / ${trendUnit}`}
+                valueKey="sessions"
+              />
+              <TrendBars
+                granularity={granularity}
+                items={analytics?.dailyTrend ?? []}
+                label={`kWh livrati / ${trendUnit}`}
+                valueKey="kwh"
+              />
+              <TrendBars
+                granularity={granularity}
+                items={analytics?.dailyTrend ?? []}
+                label={`Incasari ${currency} / ${trendUnit}`}
+                valueKey="revenue"
+              />
             </div>
-            <div className="meter-stack">
-              {statusItems.map((item) => {
-                const width = stationTotal ? Math.max((Number(item.value) / stationTotal) * 100, item.value ? 8 : 0) : 0;
+          </section>
 
-                return (
-                  <div className="meter-row" key={item.key}>
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>Sesiuni active</h2>
+                <p>Telemetrie live din contor</p>
+              </div>
+              <BatteryCharging size={20} />
+            </div>
+            {activeSessions.length === 0 ? (
+              <EmptyState title="Nicio sesiune activa" detail="Cand un utilizator incarca, apare aici cu kWh si kW live." compact />
+            ) : (
+              <div className="table">
+                {activeSessions.map((session) => (
+                  <div className="table-row four" key={session.id}>
                     <div>
-                      <Badge variant={item.variant}>{item.label}</Badge>
-                      <strong>{formatNumber(item.value)}</strong>
+                      <strong>{session.user?.name ?? '-'}</strong>
+                      <p>{session.station?.name ?? '-'}</p>
                     </div>
-                    <span className={`meter-track meter-${item.variant}`}>
-                      <span style={{ width: `${width}%` }} />
+                    <span className="live-kwh">
+                      {formatKwh(sessionKwhDelivered(session))} kWh
+                      {sessionPowerKw(session) != null ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW` : ''}
                     </span>
+                    <Badge variant="warning">Activa</Badge>
+                    <span>{session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Status statii</h2>
-              <p>Retea curenta</p>
-            </div>
-            <Activity size={20} />
-          </div>
-          <div className="status-list">
-            {statusItems.map((item) => (
-              <div key={item.key}>
-                <Badge variant={item.variant}>{item.label}</Badge>
-                <strong>{formatNumber(item.value)}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+        <aside className="dash-side-column">
+          <DashboardNetworkCard stats={stats} stationStatus={stationStatus} />
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>Sesiuni active acum</h2>
-            <p>Telemetrie live din contor (refresh automat)</p>
-          </div>
-          <BatteryCharging size={20} />
-        </div>
-        {activeSessions.length === 0 ? (
-          <EmptyState title="Nicio sesiune activa" detail="Cand un utilizator incarca, apare aici cu kWh si kW live." />
-        ) : (
-          <div className="table">
-            {activeSessions.map((session) => (
-              <div className="table-row four" key={session.id}>
-                <div>
-                  <strong>{session.user?.name ?? '-'}</strong>
-                  <p>{session.station?.name ?? '-'}</p>
-                </div>
-                <span className="live-kwh">
-                  {formatKwh(sessionKwhDelivered(session))} kWh
-                  {sessionPowerKw(session) != null ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW` : ''}
-                </span>
-                <Badge variant="warning">Activa</Badge>
-                <span>{session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}</span>
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>Sumar</h2>
+                <p>Financiar, utilizatori si operational</p>
               </div>
-            ))}
-          </div>
-        )}
+              <Wallet size={20} />
+            </div>
+            <div className="detail-metrics-grid dash-side-metrics">
+              <DetailMetric label="Total facturat" value={formatCurrency(analytics?.revenue?.invoicedTotal ?? stats?.totalRevenue)} helper={`${formatCurrency(analytics?.revenue?.paidTotal)} incasat`} />
+              <DetailMetric label="Alimentari luna" value={formatCurrency(analytics?.wallet?.topupsMonth)} helper={`azi ${formatCurrency(analytics?.wallet?.topupsToday ?? stats?.walletTopupsVolumeToday)}`} />
+              <DetailMetric label="Utilizatori" value={formatNumber(stats?.users)} helper={`${formatNumber(analytics?.users?.customer)} prepay`} />
+              <DetailMetric label="Cereri" value={formatNumber(stats?.pendingRequests)} helper="in asteptare" />
+              <DetailMetric label="kWh luna" value={`${formatKwh(analytics?.energy?.month)} kWh`} helper={`${formatNumber(analytics?.sessions?.month)} sesiuni`} />
+              <DetailMetric label="OCPP" value={formatNumber(stats?.connectedStations)} helper={`mod ${ocpp?.mode ?? '-'}`} />
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>Top statii</h2>
+                <p>{periodLabel}</p>
+              </div>
+              <MapPin size={20} />
+            </div>
+            {topStations.length === 0 ? (
+              <EmptyState title="Nicio sesiune" detail="Topul apare dupa primele incarcari." compact />
+            ) : (
+              <div className="rank-list">
+                {topStations.map((station, index) => (
+                  <div className="rank-row" key={station.station_id}>
+                    <span className="rank-index">#{index + 1}</span>
+                    <div className="rank-copy">
+                      <strong>{station.station_name}</strong>
+                      <p>{formatNumber(station.sessions_count)} sesiuni · {formatKwh(station.total_kwh)} kWh</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </aside>
       </section>
+    </div>
+  );
+}
+
+function StationConnectorsLive({ connectors = [] }) {
+  if (connectors.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="connector-live-row">
+      {connectors.map((connector) => (
+        <span
+          className={`connector-live-pill ${connector.has_active_session ? 'active' : ''}`}
+          key={connector.id}
+          title={connector.status || connector.availability || ''}
+        >
+          <strong>{connector.label ?? connector.id}</strong>
+          <Badge variant={statusVariant(connector.availability ?? connector.status)}>
+            {connector.status || availabilityLabel(connector.availability) || '—'}
+          </Badge>
+          {(connector.power_kw != null || connector.energy_kwh != null) && (
+            <span className="connector-live-metric">
+              {connector.power_kw != null
+                ? `${formatKwh(connector.power_kw, 2)} kW`
+                : `${formatKwh(connector.energy_kwh)} kWh`}
+            </span>
+          )}
+        </span>
+      ))}
     </div>
   );
 }
@@ -763,6 +1254,14 @@ function StationsMapPanel({ stations, onOpenDetail }) {
   );
 }
 
+const stationStatusFilters = [
+  { id: 'all', label: 'Toate' },
+  { id: 'available', label: 'Disponibile' },
+  { id: 'charging', label: 'In incarcare' },
+  { id: 'offline', label: 'Offline' },
+  { id: 'connected', label: 'OCPP online' }
+];
+
 function StationsView({
   rows,
   loading,
@@ -779,166 +1278,131 @@ function StationsView({
 }) {
   const [query, setQuery] = useState('');
   const [viewMode, setViewMode] = useState('list');
-  const visibleRows = rows.filter((station) => matchesQuery(station, query, [
-    (item) => item.name,
-    (item) => item.location,
-    (item) => item.status,
-    (item) => item.qr_code,
-    (item) => item.ocpp_identity,
-    (item) => item.ocpp_connection_status,
-    (item) => item.live_status?.availability,
-    (item) => item.live_status?.connector_status,
-    (item) => item.connector_type
-  ]));
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  if (loading) return <LoadingState />;
+  const summary = useMemo(
+    () => ({
+      total: rows.length,
+      available: rows.filter((station) => effectiveStationStatus(station) === 'available').length,
+      charging: rows.filter((station) => effectiveStationStatus(station) === 'charging').length,
+      offline: rows.filter((station) => effectiveStationStatus(station) === 'offline').length,
+      connected: rows.filter((station) => effectiveOcppConnectionStatus(station) === 'connected').length,
+      activeSessions: rows.reduce((sum, station) => sum + Number(station.active_sessions_count || 0), 0)
+    }),
+    [rows]
+  );
+
+  const visibleRows = rows.filter((station) => {
+    if (statusFilter === 'connected') {
+      if (effectiveOcppConnectionStatus(station) !== 'connected') return false;
+    } else if (statusFilter !== 'all' && effectiveStationStatus(station) !== statusFilter) {
+      return false;
+    }
+
+    return matchesQuery(station, query, [
+      (item) => item.name,
+      (item) => item.location,
+      (item) => item.status,
+      (item) => item.qr_code,
+      (item) => item.ocpp_identity,
+      (item) => effectiveOcppConnectionStatus(item),
+      (item) => item.live_status?.availability,
+      (item) => item.live_status?.connector_status,
+      (item) => item.connector_type
+    ]);
+  });
+
+  if (loading && !rows.length) return <LoadingState />;
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h2>Statii</h2>
-          <p>Administrare puncte de incarcare</p>
-        </div>
-        <div className="panel-header-actions">
-          <div className="view-toggle">
-            <button
-              className={viewMode === 'list' ? 'secondary-button active-filter' : 'secondary-button'}
-              onClick={() => setViewMode('list')}
-              type="button"
-            >
-              <RadioTower size={16} />
-              Lista
-            </button>
-            <button
-              className={viewMode === 'map' ? 'secondary-button active-filter' : 'secondary-button'}
-              onClick={() => setViewMode('map')}
-              type="button"
-            >
-              <Map size={16} />
-              Harta
+    <div className="view-stack stations-page">
+      <div className="panel stations-panel">
+        <div className="panel-header stations-panel-header">
+          <div>
+            <h2>Statii</h2>
+            <p>Administrare retea, status OCPP si actiuni rapide</p>
+            <div className="stations-inline-stats">
+              <span><strong>{formatNumber(summary.total)}</strong> total</span>
+              <span className="tone-success"><strong>{formatNumber(summary.available)}</strong> libere</span>
+              <span className="tone-warning"><strong>{formatNumber(summary.charging)}</strong> ocupate</span>
+              <span className="tone-danger"><strong>{formatNumber(summary.offline)}</strong> offline</span>
+              <span className="tone-live"><strong>{formatNumber(summary.connected)}</strong> OCPP</span>
+              <span><strong>{formatNumber(summary.activeSessions)}</strong> sesiuni active</span>
+            </div>
+          </div>
+          <div className="panel-header-actions">
+            <div className="view-toggle">
+              <button
+                className={viewMode === 'list' ? 'secondary-button active-filter' : 'secondary-button'}
+                onClick={() => setViewMode('list')}
+                type="button"
+              >
+                <RadioTower size={16} />
+                Carduri
+              </button>
+              <button
+                className={viewMode === 'map' ? 'secondary-button active-filter' : 'secondary-button'}
+                onClick={() => setViewMode('map')}
+                type="button"
+              >
+                <Map size={16} />
+                Harta
+              </button>
+            </div>
+            <button className="primary-button" onClick={onCreate} type="button">
+              <Plus size={18} />
+              Statie noua
             </button>
           </div>
-          <button className="primary-button" onClick={onCreate} type="button">
-            <Plus size={18} />
-            Statie noua
-          </button>
         </div>
-      </div>
-      {viewMode === 'map' ? (
-        <StationsMapPanel onOpenDetail={onOpenDetail} stations={rows} />
-      ) : (
-        <>
-      <Toolbar value={query} onChange={setQuery} />
-      {rows.length === 0 ? (
-        <EmptyState title="Nu exista statii" detail="Cand backend-ul returneaza statii, apar aici automat." />
-      ) : visibleRows.length === 0 ? (
-        <EmptyState title="Nicio statie gasita" detail="Schimba termenul de cautare." />
-      ) : (
-        <div className="table">
-          {visibleRows.map((station) => (
-            <div className="table-row" key={station.id}>
-              <div className="station-cell">
-                <span className="station-dot" />
-                <div>
-                  <button className="station-name-link" onClick={() => onOpenDetail(station)} type="button">
-                    <strong>{station.name}</strong>
+
+        {viewMode === 'map' ? (
+          <StationsMapPanel onOpenDetail={onOpenDetail} stations={visibleRows.length ? visibleRows : rows} />
+        ) : (
+          <>
+            <div className="stations-control-bar">
+              <Toolbar value={query} onChange={setQuery} />
+              <div className="stations-filter-row">
+                {stationStatusFilters.map((filter) => (
+                  <button
+                    className={statusFilter === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
+                    key={filter.id}
+                    onClick={() => setStatusFilter(filter.id)}
+                    type="button"
+                  >
+                    {filter.label}
                   </button>
-                  <p><MapPin size={14} /> {station.location}</p>
-                  <p><RadioTower size={14} /> {station.ocpp_identity ?? 'fara OCPP identity'}</p>
-                </div>
+                ))}
               </div>
-              <div className="station-badges">
-                <Badge variant={statusVariant(station.status)}>{statusLabel(station.status)}</Badge>
-                <Badge variant={statusVariant(station.ocpp_connection_status)}>{connectionLabel(station.ocpp_connection_status)}</Badge>
-                <Badge variant={statusVariant(station.live_status?.availability)}>{availabilityLabel(station.live_status?.availability)}</Badge>
-                {station.live_status?.connected_connector_label && (
-                  <Badge>{station.live_status.connected_connector_label}</Badge>
-                )}
-              </div>
-              <span className="live-kwh">
-                {station.live_status?.power_kw != null
-                  ? `${formatKwh(station.live_status.power_kw, 2)} kW live`
-                  : `${formatNumber(station.power_kw)} kW nominal`}
-                {station.active_sessions_count > 0 ? ` · ${station.active_sessions_count} activa` : ''}
-              </span>
-              <strong>{formatNumber(station.sessions_count)} sesiuni</strong>
-              <div className="row-actions compact-actions">
-                <button
-                  className="icon-button"
-                  onClick={() => onOpenDetail(station)}
-                  type="button"
-                  aria-label="Detalii statie"
-                  title="Detalii statie"
-                >
-                  <Eye size={16} />
-                </button>
-                {station.ocpp_connection_status === 'connected' && (
-                  <>
-                    <button
-                      className="icon-button"
-                      onClick={() => onRefreshStatus(station)}
-                      type="button"
-                      aria-label="Refresh status OCPP"
-                      title="Refresh status OCPP"
-                    >
-                      <RefreshCw size={16} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      onClick={() => onUnlockConnector(station)}
-                      type="button"
-                      aria-label="UnlockConnector"
-                      title="UnlockConnector"
-                    >
-                      <Unlock size={16} />
-                    </button>
-                    {station.active_sessions_count > 0 && (
-                      <button
-                        className="icon-button danger-icon"
-                        onClick={() => onStopActiveSession(station)}
-                        type="button"
-                        aria-label="Opreste sesiunea activa"
-                        title="Remote stop sesiune activa"
-                      >
-                        <Square size={16} />
-                      </button>
-                    )}
-                  </>
-                )}
-                {station.ocpp_connection_url && (
-                  <button className="icon-button" onClick={() => navigator.clipboard?.writeText(station.ocpp_connection_url)} type="button" aria-label="Copiaza URL OCPP">
-                    <Copy size={16} />
-                  </button>
-                )}
-                <button className="icon-button" onClick={() => onPreviewQr(station)} type="button" aria-label="Preview QR">
-                  <Search size={16} />
-                </button>
-                <button
-                  className="icon-button"
-                  onClick={() => onDiagnostics(station)}
-                  type="button"
-                  aria-label="GetDiagnostics"
-                  title="GetDiagnostics OCPP"
-                >
-                  <ClipboardList size={16} />
-                </button>
-                <button className="icon-button" onClick={() => onDownloadQr(station)} type="button" aria-label="Descarca QR">
-                  <Download size={16} />
-                </button>
-                <button className="icon-button" onClick={() => onEdit(station)} type="button" aria-label="Editeaza statia">
-                  <MoreHorizontal size={18} />
-                </button>
-                <button className="icon-button danger-icon" onClick={() => onDelete(station)} type="button" aria-label="Sterge statia">
-                  <X size={16} />
-                </button>
-              </div>
+              <span className="stations-result-count">{formatNumber(visibleRows.length)} afisate</span>
             </div>
-          ))}
-        </div>
-      )}
-        </>
-      )}
+
+            {rows.length === 0 ? (
+              <EmptyState title="Nu exista statii" detail="Cand backend-ul returneaza statii, apar aici automat." />
+            ) : visibleRows.length === 0 ? (
+              <EmptyState title="Nicio statie gasita" detail="Schimba filtrul sau termenul de cautare." />
+            ) : (
+              <div className="stations-card-grid">
+                {visibleRows.map((station) => (
+                  <StationModernCard
+                    key={station.id}
+                    onDelete={onDelete}
+                    onDiagnostics={onDiagnostics}
+                    onDownloadQr={onDownloadQr}
+                    onEdit={onEdit}
+                    onOpenDetail={onOpenDetail}
+                    onPreviewQr={onPreviewQr}
+                    onRefreshStatus={onRefreshStatus}
+                    onStopActiveSession={onStopActiveSession}
+                    onUnlockConnector={onUnlockConnector}
+                    station={station}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -1000,7 +1464,10 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh }) {
               {session.ocpp_transaction_id ? ` · tx ${session.ocpp_transaction_id}` : ''}
             </p>
             {session.charge_budget > 0 && (
-              <p className="request-meta">Buget {formatMoney(session.charge_budget)}</p>
+              <p className="request-meta">
+                Buget {formatMoney(session.charge_budget)}
+                {session.target_kwh > 0 ? ` · limita ${formatKwh(session.target_kwh)} kWh` : ''}
+              </p>
             )}
           </div>
           <span className="live-kwh">
@@ -1604,17 +2071,17 @@ function StationDetailModal({
   onStopActiveSession,
   onDiagnostics
 }) {
+  const [showTech, setShowTech] = useState(false);
+
   if (!detail) {
     return null;
   }
 
   const station = detail.station ?? {};
-  const live = detail.live_status ?? {};
   const hardware = detail.hardware ?? {};
   const connectors = detail.connectors ?? [];
   const activeSessions = detail.active_sessions ?? [];
   const diagnosticsCommands = detail.diagnostics_commands ?? [];
-  const diagnosticsFtpUrl = detail.diagnostics_ftp_url ?? '';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -1622,15 +2089,21 @@ function StationDetailModal({
         <div className="panel-header">
           <div>
             <h2>{station.name ?? 'Statie'}</h2>
-            <p>
+            <p className="station-detail-subtitle">
               {station.location ?? '-'}
               {station.ocpp_identity ? ` · ${station.ocpp_identity}` : ''}
             </p>
+            <div className="station-detail-meta">
+              <Badge variant={statusVariant(effectiveOcppConnectionStatus(station))}>
+                {connectionLabel(effectiveOcppConnectionStatus(station))}
+              </Badge>
+              {hardware.model && <span>{hardware.model}</span>}
+              {station.qr_code && <span>QR {station.qr_code}</span>}
+            </div>
           </div>
           <div className="row-actions">
             <button className="secondary-button mini-button" onClick={onReload} type="button">
               <RefreshCw size={15} />
-              Actualizeaza
             </button>
             <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
               <X size={18} />
@@ -1643,146 +2116,114 @@ function StationDetailModal({
 
         {!loading && (
           <>
-            <div className="billing-summary-grid">
-              <div className="billing-stat">
-                <span>OCPP</span>
-                <strong>{connectionLabel(station.ocpp_connection_status)}</strong>
-              </div>
-              <div className="billing-stat">
-                <span>Ultim heartbeat</span>
-                <strong>{formatDateTime(live.last_heartbeat_at ?? station.last_heartbeat_at)}</strong>
-              </div>
-              <div className="billing-stat">
-                <span>Ultim mesaj</span>
-                <strong>{formatDateTime(live.last_message_at ?? station.last_ocpp_message_at)}</strong>
-              </div>
-              <div className="billing-stat">
-                <span>Vazut acum</span>
-                <strong>{formatSecondsAgo(live.seconds_since_last_seen)}</strong>
-              </div>
-              <div className="billing-stat">
-                <span>Firmware</span>
-                <strong>{hardware.firmware ?? '-'}</strong>
-              </div>
-              <div className="billing-stat">
-                <span>Model</span>
-                <strong>{hardware.model ?? station.connector_type ?? '-'}</strong>
-              </div>
-            </div>
-
-            <div className="detail-section">
-              <h3>Hardware & conectare</h3>
-              <div className="meta-grid">
-                <span>Vendor: <strong>{hardware.vendor ?? '-'}</strong></span>
-                <span>Serial: <strong>{hardware.serial ?? '-'}</strong></span>
-                <span>QR: <strong>{station.qr_code ?? '-'}</strong></span>
-                <span>OCPP v: <strong>{station.ocpp_version ?? '-'}</strong></span>
-                <span className="meta-wide">WS URL: <strong>{station.ocpp_connection_url ?? '-'}</strong></span>
-              </div>
-            </div>
-
-            <div className="detail-section">
-              <h3>Conectori live</h3>
+            <div className="detail-section detail-section-tight">
+              <h3>Conectori</h3>
               {connectors.length === 0 ? (
-                <p className="detail-empty">Nicio telemetrie OCPP inca. Apasa Refresh status.</p>
+                <p className="detail-empty">Nicio telemetrie inca. Apasa Refresh status.</p>
               ) : (
-                <div className="connector-grid">
+                <div className="connector-grid connector-grid-compact">
                   {connectors.map((connector) => (
-                    <article className="connector-card" key={connector.id}>
+                    <article className="connector-card connector-card-compact" key={connector.id}>
                       <div className="connector-card-head">
-                        <strong>Conector {connector.label} (#{connector.id})</strong>
-                        <Badge variant={statusVariant(connector.availability)}>{connector.status || '-'}</Badge>
+                        <strong>Port {connector.label}</strong>
+                        <Badge variant={statusVariant(connector.availability ?? connector.status)}>
+                          {connector.status || availabilityLabel(connector.availability) || '—'}
+                        </Badge>
                       </div>
-                      <div className="connector-metrics">
+                      <div className="connector-metrics connector-metrics-compact">
                         <span className="live-kwh">{formatKwh(connector.telemetry?.energy_kwh)} kWh</span>
-                        <span>{formatKwh(connector.telemetry?.power_kw, 2)} kW</span>
-                        <span>{formatKwh(connector.telemetry?.current_a, 1)} A</span>
-                        <span>{formatNumber(connector.telemetry?.voltage_v)} V</span>
+                        {connector.telemetry?.power_kw != null && (
+                          <span>{formatKwh(connector.telemetry.power_kw, 2)} kW</span>
+                        )}
                       </div>
-                      <p className="request-meta">
-                        RFID: {connector.local_id_tag ?? '—'}
-                        {connector.has_active_session ? ' · sesiune activa' : ''}
-                        {connector.telemetry?.sampled_at ? ` · ${formatDateTime(connector.telemetry.sampled_at)}` : ''}
-                      </p>
+                      {(connector.local_id_tag || connector.has_active_session) && (
+                        <p className="request-meta connector-card-foot">
+                          {connector.local_id_tag ? `RFID ${connector.local_id_tag}` : ''}
+                          {connector.has_active_session ? ' · incarcare activa' : ''}
+                        </p>
+                      )}
                     </article>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="detail-section">
-              <h3>Sesiuni active</h3>
-              {activeSessions.length === 0 ? (
-                <p className="detail-empty">Nicio sesiune activa pe aceasta statie.</p>
-              ) : (
-                <div className="detail-table">
+            {activeSessions.length > 0 && (
+              <div className="detail-section detail-section-tight">
+                <h3>Sesiuni active</h3>
+                <div className="detail-table session-detail-table">
                   {activeSessions.map((session) => (
-                    <div className="detail-row" key={session.id}>
+                    <div className="detail-row session-detail-row" key={session.id}>
                       <div>
                         <strong>{session.user?.name ?? '-'}</strong>
-                        <p>
-                          C{session.ocpp_connector_id ?? '?'}
-                          {session.ocpp_transaction_id ? ` · tx ${session.ocpp_transaction_id}` : ''}
-                        </p>
+                        <p>Port {session.ocpp_connector_id === 2 ? 'B' : session.ocpp_connector_id === 1 ? 'A' : `C${session.ocpp_connector_id ?? '?'}`}</p>
                       </div>
                       <span className="live-kwh">
                         {formatKwh(sessionKwhDelivered(session))} kWh
                         {sessionPowerKw(session) != null ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW` : ''}
                       </span>
-                      <span>{formatDateTime(session.start_time)}</span>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            <div className="detail-section">
-              <h3>Diagnostics OCPP</h3>
-              {diagnosticsFtpUrl && (
-                <p className="request-meta diagnostics-ftp-hint">
-                  Destinatie upload: <strong>{diagnosticsFtpUrl}/</strong>
-                </p>
-              )}
-              {diagnosticsCommands.length === 0 ? (
-                <p className="detail-empty">
-                  Niciun GetDiagnostics inca. Apasa Diagnostics pentru a solicita jurnalul de la statie.
-                </p>
-              ) : (
-                <div className="detail-table diagnostics-table">
-                  {diagnosticsCommands.map((command) => (
-                    <div className="detail-row diagnostics-row" key={command.id}>
-                      <div>
-                        <strong>#{command.id}</strong>
-                        <p>{formatDateTime(command.acknowledged_at ?? command.sent_at ?? command.created_at)}</p>
-                      </div>
-                      <Badge variant={statusVariant(command.upload_status ?? command.status)}>
-                        {command.upload_status
-                          ? diagnosticsUploadLabel(command.upload_status)
-                          : ocppCommandLabel(command.status)}
-                      </Badge>
-                      <div className="diagnostics-result">
-                        <span>{diagnosticsResultSummary(command)}</span>
-                        {command.download_url && (
-                          <button
-                            className="secondary-button mini-button"
-                            onClick={() => navigator.clipboard?.writeText(command.download_url)}
-                            type="button"
-                          >
-                            <Copy size={14} />
-                            Copiaza URL
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+            <div className="station-detail-extras">
+              <button
+                className="secondary-button mini-button"
+                onClick={() => setShowTech((current) => !current)}
+                type="button"
+              >
+                {showTech ? 'Ascunde detalii tehnice' : 'Detalii tehnice'}
+              </button>
+
+              {showTech && (
+                <div className="meta-grid meta-grid-compact">
+                  {hardware.firmware && <span>Firmware: <strong>{hardware.firmware}</strong></span>}
+                  {hardware.vendor && <span>Vendor: <strong>{hardware.vendor}</strong></span>}
+                  {hardware.serial && <span>Serial: <strong>{hardware.serial}</strong></span>}
+                  {station.ocpp_version && <span>OCPP: <strong>{station.ocpp_version}</strong></span>}
+                  {(station.last_heartbeat_at || detail.live_status?.last_heartbeat_at) && (
+                    <span>Heartbeat: <strong>{formatDateTime(detail.live_status?.last_heartbeat_at ?? station.last_heartbeat_at)}</strong></span>
+                  )}
+                  {station.ocpp_connection_url && (
+                    <span className="meta-wide meta-with-action">
+                      WS: <strong>{station.ocpp_connection_url}</strong>
+                      <button
+                        className="secondary-button mini-button"
+                        onClick={() => navigator.clipboard?.writeText(station.ocpp_connection_url)}
+                        type="button"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </span>
+                  )}
                 </div>
+              )}
+
+              {diagnosticsCommands.length > 0 && (
+                <details className="detail-collapsible">
+                  <summary>Diagnostics ({diagnosticsCommands.length})</summary>
+                  <div className="detail-table diagnostics-table">
+                    {diagnosticsCommands.slice(0, 5).map((command) => (
+                      <div className="detail-row diagnostics-row" key={command.id}>
+                        <Badge variant={statusVariant(command.upload_status ?? command.status)}>
+                          {command.upload_status
+                            ? diagnosticsUploadLabel(command.upload_status)
+                            : ocppCommandLabel(command.status)}
+                        </Badge>
+                        <span>{diagnosticsResultSummary(command)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
               )}
             </div>
           </>
         )}
 
         <div className="modal-actions station-detail-actions">
-          {station.ocpp_connection_status === 'connected' && (
+          {effectiveOcppConnectionStatus(station) === 'connected' && (
             <>
               <button className="secondary-button" onClick={() => onRefreshStatus(station)} type="button">
                 <RefreshCw size={16} />

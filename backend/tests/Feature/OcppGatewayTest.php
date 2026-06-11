@@ -28,6 +28,7 @@ class OcppGatewayTest extends TestCase
             'ocpp_identity' => 'volta-test-01',
             'ocpp_version' => '1.6J',
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
         ]);
         $session = ChargingSession::query()->create([
             'user_id' => $user->id,

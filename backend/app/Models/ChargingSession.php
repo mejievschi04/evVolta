@@ -21,6 +21,7 @@ class ChargingSession extends Model
         'end_time',
         'kwh_consumed',
         'charge_budget',
+        'target_kwh',
         'live_metrics',
     ];
 
@@ -29,6 +30,7 @@ class ChargingSession extends Model
         'end_time' => 'datetime',
         'kwh_consumed' => 'float',
         'charge_budget' => 'float',
+        'target_kwh' => 'float',
         'meter_start_kwh' => 'float',
         'meter_stop_kwh' => 'float',
         'live_metrics' => 'array',
@@ -110,6 +112,10 @@ class ChargingSession extends Model
                 ? Station::connectorPortLabel((int) $this->ocpp_connector_id)
                 : null,
             'charge_budget' => $this->charge_budget,
+            'target_kwh' => $this->target_kwh,
+            'kwh_remaining' => $this->target_kwh !== null
+                ? round(max(0, (float) $this->target_kwh - $kwhDelivered), 3)
+                : null,
             'budget_spent' => $this->charge_budget !== null
                 ? round(min(
                     $kwhDelivered * (float) (Tariff::query()->latest('id')->value('price_per_kwh') ?? config('billing.price_per_kwh', 0.20)),

@@ -20,6 +20,7 @@ use App\Services\InvoiceDocumentService;
 use App\Services\OcppService;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\PngWriter;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -84,34 +85,17 @@ class DashboardController extends Controller
         return $userId ? User::query()->find($userId) : null;
     }
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $sessionsToday = ChargingSession::query()
-            ->whereDate('start_time', now()->toDateString())
-            ->count();
+        Station::markStaleOcppConnectionsOffline();
+
+        [$from, $to, $granularity] = $this->resolveDashboardPeriod($request);
+        $analytics = $this->buildDashboardAnalytics($from, $to, $granularity);
 
         return response()->json([
-            'stats' => [
-                'users' => User::query()->count(),
-                'stations' => Station::query()->count(),
-                'availableStations' => Station::query()->where('status', Station::STATUS_AVAILABLE)->count(),
-                'chargingStations' => Station::query()->where('status', Station::STATUS_CHARGING)->count(),
-                'offlineStations' => Station::query()->where('status', Station::STATUS_OFFLINE)->count(),
-                'connectedStations' => Station::query()->where('ocpp_connection_status', Station::OCPP_CONNECTION_CONNECTED)->count(),
-                'sessionsToday' => $sessionsToday,
-                'activeSessions' => ChargingSession::query()->whereNull('end_time')->count(),
-                'totalRevenue' => (float) Invoice::query()->sum('total_amount'),
-                'unpaidInvoices' => Invoice::query()->where('status', 'unpaid')->count(),
-                'pendingRequests' => RegistrationRequest::query()->where('status', RegistrationRequest::STATUS_PENDING)->count(),
-                'walletTopupsPaidToday' => WalletTopup::query()
-                    ->where('status', 'paid')
-                    ->whereDate('paid_at', now()->toDateString())
-                    ->count(),
-                'walletTopupsVolumeToday' => round((float) WalletTopup::query()
-                    ->where('status', 'paid')
-                    ->whereDate('paid_at', now()->toDateString())
-                    ->sum('amount'), 2),
-            ],
+            'stats' => $analytics['stats'],
+            'analytics' => $analytics['details'],
+            'period' => $analytics['details']['period'],
             'stationStatus' => [
                 'available' => Station::query()->where('status', Station::STATUS_AVAILABLE)->count(),
                 'charging' => Station::query()->where('status', Station::STATUS_CHARGING)->count(),
@@ -130,8 +114,290 @@ class DashboardController extends Controller
         ]);
     }
 
+    /**
+     * @return array{0: Carbon, 1: Carbon, 2: 'day'|'hour'}
+     */
+    private function resolveDashboardPeriod(Request $request): array
+    {
+        $date = trim((string) $request->query('date', ''));
+        $fromInput = trim((string) $request->query('from', ''));
+        $toInput = trim((string) $request->query('to', ''));
+        $days = (int) $request->query('days', 0);
+
+        if ($date !== '') {
+            $day = Carbon::parse($date)->startOfDay();
+
+            return [$day, $day->copy()->endOfDay(), 'hour'];
+        }
+
+        if ($fromInput !== '' && $toInput !== '') {
+            $from = Carbon::parse($fromInput)->startOfDay();
+            $to = Carbon::parse($toInput)->endOfDay();
+
+            if ($from->gt($to)) {
+                [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->endOfDay()];
+            }
+
+            $granularity = $from->isSameDay($to) ? 'hour' : 'day';
+
+            return [$from, $to, $granularity];
+        }
+
+        $dayCount = max(1, min(90, $days > 0 ? $days : 14));
+        $to = now()->copy()->endOfDay();
+        $from = now()->copy()->subDays($dayCount - 1)->startOfDay();
+
+        return [$from, $to, 'day'];
+    }
+
+    /**
+     * @return array{stats: array<string, int|float>, details: array<string, mixed>}
+     */
+    private function buildDashboardAnalytics(Carbon $from, Carbon $to, string $granularity): array
+    {
+        $today = now()->toDateString();
+        $monthStart = now()->copy()->startOfMonth();
+        $weekStart = now()->copy()->startOfWeek();
+        $currency = (string) config('billing.currency', 'MDL');
+
+        $sessionsToday = ChargingSession::query()
+            ->whereDate('start_time', $today)
+            ->count();
+
+        $energyForRange = function (Carbon $rangeFrom, ?Carbon $rangeTo = null): float {
+            return round((float) ChargingSession::query()
+                ->whereNotNull('end_time')
+                ->where('start_time', '>=', $rangeFrom)
+                ->when($rangeTo, fn ($query) => $query->where('start_time', '<=', $rangeTo))
+                ->sum('kwh_consumed'), 2);
+        };
+
+        $sessionsForRange = function (Carbon $rangeFrom, ?Carbon $rangeTo = null): int {
+            return ChargingSession::query()
+                ->where('start_time', '>=', $rangeFrom)
+                ->when($rangeTo, fn ($query) => $query->where('start_time', '<=', $rangeTo))
+                ->count();
+        };
+
+        $paidRevenueForRange = function (Carbon $rangeFrom, ?Carbon $rangeTo = null): float {
+            return round((float) Invoice::query()
+                ->where('status', 'paid')
+                ->whereNotNull('paid_at')
+                ->where('paid_at', '>=', $rangeFrom)
+                ->when($rangeTo, fn ($query) => $query->where('paid_at', '<=', $rangeTo))
+                ->sum('total_amount'), 2);
+        };
+
+        $walletTopupsForRange = function (Carbon $rangeFrom, ?Carbon $rangeTo = null): float {
+            return round((float) WalletTopup::query()
+                ->where('status', 'paid')
+                ->whereNotNull('paid_at')
+                ->where('paid_at', '>=', $rangeFrom)
+                ->when($rangeTo, fn ($query) => $query->where('paid_at', '<=', $rangeTo))
+                ->sum('amount'), 2);
+        };
+
+        $closedInPeriod = ChargingSession::query()
+            ->whereNotNull('end_time')
+            ->where('start_time', '>=', $from)
+            ->where('start_time', '<=', $to)
+            ->get(['start_time', 'end_time', 'kwh_consumed']);
+
+        $avgSessionKwh = round((float) $closedInPeriod->avg('kwh_consumed'), 2);
+        $avgSessionMinutes = round((float) $closedInPeriod
+            ->filter(fn (ChargingSession $session) => $session->start_time && $session->end_time)
+            ->avg(fn (ChargingSession $session) => $session->start_time->diffInMinutes($session->end_time)), 1);
+
+        $trend = [];
+        if ($granularity === 'hour') {
+            $day = $from->copy()->startOfDay();
+            for ($hour = 0; $hour < 24; $hour++) {
+                $bucketStart = $day->copy()->addHours($hour);
+                $bucketEnd = $bucketStart->copy()->endOfHour();
+
+                $trend[] = [
+                    'date' => $bucketStart->toIso8601String(),
+                    'label' => $bucketStart->format('H:i'),
+                    'sessions' => ChargingSession::query()
+                        ->where('start_time', '>=', $bucketStart)
+                        ->where('start_time', '<=', $bucketEnd)
+                        ->count(),
+                    'kwh' => round((float) ChargingSession::query()
+                        ->where('start_time', '>=', $bucketStart)
+                        ->where('start_time', '<=', $bucketEnd)
+                        ->whereNotNull('end_time')
+                        ->sum('kwh_consumed'), 2),
+                    'revenue' => round((float) Invoice::query()
+                        ->where('status', 'paid')
+                        ->where('paid_at', '>=', $bucketStart)
+                        ->where('paid_at', '<=', $bucketEnd)
+                        ->sum('total_amount'), 2),
+                ];
+            }
+        } else {
+            $cursor = $from->copy()->startOfDay();
+            $endDay = $to->copy()->startOfDay();
+
+            while ($cursor->lte($endDay)) {
+                $dayString = $cursor->toDateString();
+
+                $trend[] = [
+                    'date' => $dayString,
+                    'label' => $cursor->format('d M'),
+                    'sessions' => ChargingSession::query()->whereDate('start_time', $dayString)->count(),
+                    'kwh' => round((float) ChargingSession::query()
+                        ->whereDate('start_time', $dayString)
+                        ->whereNotNull('end_time')
+                        ->sum('kwh_consumed'), 2),
+                    'revenue' => round((float) Invoice::query()
+                        ->where('status', 'paid')
+                        ->whereDate('paid_at', $dayString)
+                        ->sum('total_amount'), 2),
+                ];
+
+                $cursor->addDay();
+            }
+        }
+
+        $topStations = ChargingSession::query()
+            ->where('start_time', '>=', $from)
+            ->where('start_time', '<=', $to)
+            ->join('stations', 'stations.id', '=', 'charging_sessions.station_id')
+            ->groupBy('charging_sessions.station_id', 'stations.name')
+            ->select(
+                'charging_sessions.station_id',
+                'stations.name as station_name',
+                DB::raw('COUNT(*) as sessions_count'),
+                DB::raw('COALESCE(SUM(charging_sessions.kwh_consumed), 0) as total_kwh')
+            )
+            ->orderByDesc('sessions_count')
+            ->limit(5)
+            ->get()
+            ->map(fn ($row) => [
+                'station_id' => (int) $row->station_id,
+                'station_name' => (string) $row->station_name,
+                'sessions_count' => (int) $row->sessions_count,
+                'total_kwh' => round((float) $row->total_kwh, 2),
+            ])
+            ->values()
+            ->all();
+
+        $paidInvoicesAmount = round((float) Invoice::query()
+            ->where('status', 'paid')
+            ->sum('total_amount'), 2);
+        $unpaidInvoicesAmount = round((float) Invoice::query()
+            ->where('status', '!=', 'paid')
+            ->sum('total_amount'), 2);
+
+        return [
+            'stats' => [
+                'users' => User::query()->count(),
+                'stations' => Station::query()->count(),
+                'availableStations' => Station::query()->where('status', Station::STATUS_AVAILABLE)->count(),
+                'chargingStations' => Station::query()->where('status', Station::STATUS_CHARGING)->count(),
+                'offlineStations' => Station::query()->where('status', Station::STATUS_OFFLINE)->count(),
+                'connectedStations' => Station::query()->where('ocpp_connection_status', Station::OCPP_CONNECTION_CONNECTED)->count(),
+                'sessionsToday' => $sessionsToday,
+                'activeSessions' => ChargingSession::query()->whereNull('end_time')->count(),
+                'totalRevenue' => round((float) Invoice::query()->sum('total_amount'), 2),
+                'unpaidInvoices' => Invoice::query()->where('status', '!=', 'paid')->count(),
+                'pendingRequests' => RegistrationRequest::query()->where('status', RegistrationRequest::STATUS_PENDING)->count(),
+                'walletTopupsPaidToday' => WalletTopup::query()
+                    ->where('status', 'paid')
+                    ->whereDate('paid_at', $today)
+                    ->count(),
+                'walletTopupsVolumeToday' => round((float) WalletTopup::query()
+                    ->where('status', 'paid')
+                    ->whereDate('paid_at', $today)
+                    ->sum('amount'), 2),
+                'energyToday' => $energyForRange(now()->copy()->startOfDay()),
+                'energyMonth' => $energyForRange($monthStart),
+                'revenuePaidMonth' => $paidRevenueForRange($monthStart),
+                'sessionsMonth' => $sessionsForRange($monthStart),
+            ],
+            'details' => [
+                'currency' => $currency,
+                'energy' => [
+                    'today' => $energyForRange(now()->copy()->startOfDay()),
+                    'week' => $energyForRange($weekStart),
+                    'month' => $energyForRange($monthStart),
+                ],
+                'sessions' => [
+                    'today' => $sessionsToday,
+                    'week' => $sessionsForRange($weekStart),
+                    'month' => $sessionsForRange($monthStart),
+                    'closedMonth' => ChargingSession::query()
+                        ->whereNotNull('end_time')
+                        ->where('start_time', '>=', $monthStart)
+                        ->count(),
+                    'active' => ChargingSession::query()->whereNull('end_time')->count(),
+                ],
+                'revenue' => [
+                    'invoicedTotal' => round((float) Invoice::query()->sum('total_amount'), 2),
+                    'paidTotal' => $paidInvoicesAmount,
+                    'unpaidTotal' => $unpaidInvoicesAmount,
+                    'paidToday' => $paidRevenueForRange(now()->copy()->startOfDay()),
+                    'paidWeek' => $paidRevenueForRange($weekStart),
+                    'paidMonth' => $paidRevenueForRange($monthStart),
+                    'paidInvoices' => Invoice::query()->where('status', 'paid')->count(),
+                    'unpaidInvoices' => Invoice::query()->where('status', '!=', 'paid')->count(),
+                ],
+                'users' => [
+                    'customer' => User::query()->where('account_type', User::ACCOUNT_TYPE_CUSTOMER)->count(),
+                    'personal' => User::query()->where('account_type', User::ACCOUNT_TYPE_PERSONAL)->count(),
+                    'walletBalanceTotal' => round((float) User::query()
+                        ->where('account_type', User::ACCOUNT_TYPE_CUSTOMER)
+                        ->sum('wallet_balance'), 2),
+                ],
+                'wallet' => [
+                    'topupsToday' => round((float) WalletTopup::query()
+                        ->where('status', 'paid')
+                        ->whereDate('paid_at', $today)
+                        ->sum('amount'), 2),
+                    'topupsMonth' => round((float) WalletTopup::query()
+                        ->where('status', 'paid')
+                        ->where('paid_at', '>=', $monthStart)
+                        ->sum('amount'), 2),
+                    'topupsAllTime' => round((float) WalletTopup::query()
+                        ->where('status', 'paid')
+                        ->sum('amount'), 2),
+                    'topupsPaidToday' => WalletTopup::query()
+                        ->where('status', 'paid')
+                        ->whereDate('paid_at', $today)
+                        ->count(),
+                ],
+                'averages' => [
+                    'sessionKwh30d' => $avgSessionKwh,
+                    'sessionMinutes30d' => $avgSessionMinutes,
+                ],
+                'period' => [
+                    'from' => $from->toDateString(),
+                    'to' => $to->toDateString(),
+                    'granularity' => $granularity,
+                    'days' => $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) + 1,
+                ],
+                'periodStats' => [
+                    'sessions' => $sessionsForRange($from, $to),
+                    'kwh' => $energyForRange($from, $to),
+                    'revenue' => $paidRevenueForRange($from, $to),
+                    'walletTopups' => $walletTopupsForRange($from, $to),
+                    'closedSessions' => ChargingSession::query()
+                        ->whereNotNull('end_time')
+                        ->where('start_time', '>=', $from)
+                        ->where('start_time', '<=', $to)
+                        ->count(),
+                ],
+                'dailyTrend' => $trend,
+                'topStationsMonth' => $topStations,
+                'topStations' => $topStations,
+            ],
+        ];
+    }
+
     public function stations(Request $request): JsonResponse
     {
+        Station::markStaleOcppConnectionsOffline();
+
         return response()->json([
             'data' => Station::query()
                 ->withCount([
@@ -144,6 +410,7 @@ class DashboardController extends Controller
                 ->map(function (Station $station) {
                     $station->setAttribute('ocpp_connection_url', $this->ocppService->connectionUrl($station));
                     $station->setAttribute('live_status', $station->liveStatus());
+                    $station->setAttribute('display_status', $station->displayStatus());
 
                     return $station;
                 }),
@@ -152,6 +419,9 @@ class DashboardController extends Controller
 
     public function showStation(Station $station): JsonResponse
     {
+        Station::markStaleOcppConnectionsOffline();
+        $station->refresh();
+
         $station->loadCount([
             'sessions',
             'sessions as active_sessions_count' => fn ($query) => $query->whereNull('end_time'),
@@ -251,21 +521,13 @@ class DashboardController extends Controller
     private function stationConnectorDetails(Station $station): array
     {
         $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
-        $rawConnectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
-        $legacy = is_array($configuration['connector'] ?? null) ? $configuration['connector'] : [];
-
-        if ($legacy !== []) {
-            $legacyId = (int) ($legacy['connectorId'] ?? $legacy['connector_id'] ?? 1);
-            $rawConnectors[$legacyId] = array_merge($rawConnectors[$legacyId] ?? [], $legacy);
-        }
-
-        ksort($rawConnectors);
-
+        $rawConnectors = $station->normalizedConnectorsForConfiguration($configuration);
         $liveSummaries = collect($station->liveStatus()['connectors'] ?? [])
             ->keyBy('id');
 
-        return collect($rawConnectors)
-            ->map(function (array $connector, int $connectorId) use ($liveSummaries, $station) {
+        return collect($station->expectedConnectorIds())
+            ->map(function (int $connectorId) use ($rawConnectors, $liveSummaries, $station) {
+                $connector = $rawConnectors[$connectorId] ?? ['connectorId' => $connectorId];
                 $summary = $liveSummaries->get($connectorId, []);
                 $liveMeter = is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : [];
 
@@ -282,12 +544,12 @@ class DashboardController extends Controller
                     'local_id_tag' => $station->localIdTagForConnector($connectorId),
                     'has_active_session' => $station->hasActiveSessionOnConnector($connectorId),
                     'telemetry' => [
-                        'energy_kwh' => isset($liveMeter['energy_kwh']) ? (float) $liveMeter['energy_kwh'] : null,
-                        'power_kw' => isset($liveMeter['power_kw']) ? (float) $liveMeter['power_kw'] : null,
-                        'current_a' => isset($liveMeter['current_a']) ? (float) $liveMeter['current_a'] : null,
-                        'voltage_v' => isset($liveMeter['voltage_v']) ? (float) $liveMeter['voltage_v'] : null,
-                        'soc_percent' => isset($liveMeter['soc_percent']) ? (float) $liveMeter['soc_percent'] : null,
-                        'sampled_at' => $liveMeter['sampled_at'] ?? null,
+                        'energy_kwh' => isset($liveMeter['energy_kwh']) ? (float) $liveMeter['energy_kwh'] : ($summary['energy_kwh'] ?? null),
+                        'power_kw' => isset($liveMeter['power_kw']) ? (float) $liveMeter['power_kw'] : ($summary['power_kw'] ?? null),
+                        'current_a' => isset($liveMeter['current_a']) ? (float) $liveMeter['current_a'] : ($summary['current_a'] ?? null),
+                        'voltage_v' => isset($liveMeter['voltage_v']) ? (float) $liveMeter['voltage_v'] : ($summary['voltage_v'] ?? null),
+                        'soc_percent' => isset($liveMeter['soc_percent']) ? (float) $liveMeter['soc_percent'] : ($summary['soc_percent'] ?? null),
+                        'sampled_at' => $liveMeter['sampled_at'] ?? $summary['sampled_at'] ?? null,
                     ],
                 ];
             })
@@ -485,21 +747,21 @@ class DashboardController extends Controller
     public function refreshStationStatus(Request $request, Station $station): JsonResponse|RedirectResponse
     {
         try {
-            $activeSession = ChargingSession::query()
+            $activeSessions = ChargingSession::query()
                 ->where('station_id', $station->id)
                 ->whereNull('end_time')
-                ->latest('id')
-                ->first();
+                ->get();
 
-            if ($activeSession) {
-                $station = $this->ocppService->refreshSessionTelemetry(
-                    $station,
-                    (int) ($activeSession->ocpp_connector_id ?: 1)
-                );
-            } else {
-                $station = $this->ocppService->refreshConnectorStatus($station, 0, true);
+            if ($activeSessions->isNotEmpty()) {
+                foreach ($activeSessions as $session) {
+                    $station = $this->ocppService->refreshSessionTelemetry(
+                        $station,
+                        (int) ($session->ocpp_connector_id ?: 1)
+                    );
+                }
             }
 
+            $station = $this->ocppService->refreshConnectorStatus($station, 0, true);
             $station = $station->fresh();
 
             $this->auditLogService->record(
@@ -508,17 +770,17 @@ class DashboardController extends Controller
                 subjectType: Station::class,
                 subjectId: $station->id,
                 station: $station,
-                session: $activeSession,
+                session: $activeSessions->first(),
                 metadata: [
-                    'active_session_id' => $activeSession?->id,
-                    'connector_id' => $activeSession?->ocpp_connector_id,
+                    'active_session_ids' => $activeSessions->pluck('id')->all(),
+                    'connector_ids' => $activeSessions->pluck('ocpp_connector_id')->filter()->values()->all(),
                 ]
             );
 
             return $this->respondMutation($request, 'Status OCPP actualizat.', [
                 'data' => [
                     'live_status' => $station->liveStatus(),
-                    'active_session_id' => $activeSession?->id,
+                    'active_session_ids' => $activeSessions->pluck('id')->all(),
                 ],
             ]);
         } catch (RuntimeException $exception) {

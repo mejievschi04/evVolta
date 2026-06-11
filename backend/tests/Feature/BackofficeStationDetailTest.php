@@ -71,13 +71,48 @@ class BackofficeStationDetailTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.station.name', 'VOLTA 1')
             ->assertJsonPath('data.hardware.firmware', '1.0.3')
-            ->assertJsonPath('data.connectors.0.id', 2)
-            ->assertJsonPath('data.connectors.0.local_id_tag', 'A5CD0CBD')
-            ->assertJsonPath('data.connectors.0.telemetry.power_kw', 3.52)
+            ->assertJsonPath('data.connectors.1.id', 2)
+            ->assertJsonPath('data.connectors.1.local_id_tag', 'A5CD0CBD')
+            ->assertJsonPath('data.connectors.1.telemetry.power_kw', 3.52)
             ->assertJsonPath('data.active_sessions.0.id', $session->id)
             ->assertJsonPath('data.live_status.connection_status', Station::OCPP_CONNECTION_CONNECTED);
 
         $this->assertNotEmpty($response->json('data.station.ocpp_connection_url'));
+    }
+
+    public function test_station_detail_includes_both_ports_when_only_one_was_seen_on_ocpp(): void
+    {
+        $admin = $this->createAdminUser();
+
+        $station = Station::query()->create([
+            'name' => 'VOLTA dual',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'ocpp_configuration' => [
+                'chargePointModel' => 'EU1060',
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    2 => [
+                        'connectorId' => 2,
+                        'status' => 'Available',
+                        'live_meter' => ['power_kw' => 0.0, 'energy_kwh' => 0.0],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->getJson("/backoffice/stations/{$station->id}")
+            ->assertOk()
+            ->assertJsonCount(2, 'data.connectors')
+            ->assertJsonPath('data.connectors.0.id', 1)
+            ->assertJsonPath('data.connectors.0.label', 'A')
+            ->assertJsonPath('data.connectors.1.id', 2)
+            ->assertJsonPath('data.connectors.1.label', 'B');
     }
 
     public function test_station_detail_includes_diagnostics_commands(): void

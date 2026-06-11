@@ -39,6 +39,7 @@ class ChargingStopPreparingTest extends TestCase
             'ocpp_identity' => '419400481F59D7',
             'ocpp_version' => '1.6J',
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
             'ocpp_configuration' => [
                 'connectors' => [
                     2 => ['connectorId' => 2, 'status' => 'Preparing'],

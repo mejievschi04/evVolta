@@ -9,6 +9,13 @@ class SecurityTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_unauthenticated_stations_api_returns_json_401(): void
+    {
+        $this->getJson('/api/stations')
+            ->assertUnauthorized()
+            ->assertJsonPath('message', 'Unauthenticated.');
+    }
+
     public function test_api_login_is_rate_limited_after_five_attempts(): void
     {
         for ($attempt = 1; $attempt <= 5; $attempt++) {

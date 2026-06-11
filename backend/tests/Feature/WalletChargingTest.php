@@ -167,4 +167,74 @@ class WalletChargingTest extends TestCase
         $this->assertSame(1.0, $charged);
         $this->assertSame(99.0, (float) $user->fresh()->wallet_balance);
     }
+
+    public function test_customer_can_start_with_target_kwh(): void
+    {
+        Config::set('billing.price_per_kwh', 0.20);
+
+        $user = $this->createAppUser(['wallet_balance' => 300]);
+        $station = $this->walletStation();
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'target_kwh' => 50,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('session.target_kwh', 50)
+            ->assertJsonPath('session.charge_budget', 10);
+
+        $this->assertSame(290.0, (float) $user->fresh()->wallet_balance);
+    }
+
+    public function test_customer_cannot_start_with_both_budget_and_target_kwh(): void
+    {
+        $user = $this->createAppUser(['wallet_balance' => 300]);
+        $station = $this->walletStation();
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'budget_amount' => 100,
+                'target_kwh' => 20,
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_wallet_endpoint_exposes_charge_options(): void
+    {
+        Config::set('billing.price_per_kwh', 0.20);
+
+        $user = $this->createAppUser(['wallet_balance' => 200]);
+
+        $this->actingAs($user, 'api')
+            ->getJson('/api/wallet')
+            ->assertOk()
+            ->assertJsonPath('charge_options.price_per_kwh', 0.2)
+            ->assertJsonPath('charge_options.min_target_kwh', 50)
+            ->assertJsonPath('charge_options.suggested_budgets', [50, 100, 200, 500])
+            ->assertJsonPath('charge_options.suggested_kwh', [10, 20, 30, 50]);
+    }
+
+    public function test_should_stop_when_target_kwh_is_reached(): void
+    {
+        $session = ChargingSession::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'station_id' => Station::query()->create([
+                'name' => 'Stop station',
+                'location' => 'Test',
+                'status' => Station::STATUS_CHARGING,
+                'qr_code' => 'stop-station',
+            ])->id,
+            'start_time' => now()->subMinutes(5),
+            'kwh_consumed' => 20,
+            'target_kwh' => 20,
+            'charge_budget' => 4,
+            'live_metrics' => [
+                'energy_integrated_kwh' => 20,
+            ],
+        ]);
+
+        $this->assertTrue(app(WalletService::class)->shouldStopForBudget($session, 0.20));
+    }
 }

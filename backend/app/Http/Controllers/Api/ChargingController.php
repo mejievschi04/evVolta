@@ -30,20 +30,27 @@ class ChargingController extends Controller
             'station_id' => 'required|exists:stations,id',
             'connector_id' => 'nullable|integer|min:1|max:8',
             'budget_amount' => 'nullable|numeric|min:10|max:50000',
+            'target_kwh' => 'nullable|numeric|min:0.1|max:500',
         ]);
 
         try {
             $station = Station::query()->findOrFail($payload['station_id']);
             $station = $this->ocppService->syncConnectorStateBeforeStart($station);
 
+            if (config('services.ocpp.mode', 'simulator') !== 'simulator' && ! $station->isOcppOnline()) {
+                throw new RuntimeException('Statia nu este conectata la gateway-ul OCPP.', 422);
+            }
+
             $session = DB::transaction(function () use ($payload, $request, $station) {
                 $user = $request->user();
+                $prepaidLimits = null;
 
-                if ($user->usesCardPayment()) {
-                    $this->walletService->assertCanHoldBudget(
-                        $user,
-                        (float) ($payload['budget_amount'] ?? 0)
+                if ($this->walletService->enabled() && $user->usesCardPayment()) {
+                    $prepaidLimits = $this->walletService->resolvePrepaidStart(
+                        isset($payload['budget_amount']) ? (float) $payload['budget_amount'] : null,
+                        isset($payload['target_kwh']) ? (float) $payload['target_kwh'] : null,
                     );
+                    $this->walletService->assertCanHoldBudget($user, $prepaidLimits['budget_amount']);
                 }
 
                 $station = Station::query()
@@ -110,11 +117,12 @@ class ChargingController extends Controller
                     'kwh_consumed' => 0,
                 ]);
 
-                if ($this->walletService->enabled() && $request->user()->usesCardPayment()) {
+                if ($prepaidLimits !== null) {
                     $this->walletService->holdBudgetForSession(
                         $request->user()->fresh(),
                         $session->fresh(),
-                        (float) ($payload['budget_amount'] ?? 0)
+                        $prepaidLimits['budget_amount'],
+                        $prepaidLimits['target_kwh'],
                     );
                 }
 

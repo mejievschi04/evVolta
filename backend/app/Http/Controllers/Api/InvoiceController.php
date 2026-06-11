@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Services\InvoiceDocumentService;
 use App\Services\StripePaymentService;
+use App\Services\UsageStatisticsService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,27 +15,53 @@ use RuntimeException;
 
 class InvoiceController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, UsageStatisticsService $usageStatisticsService): JsonResponse
     {
         $user = $request->user();
-        $query = Invoice::query()->where('user_id', $user->id);
 
         if ($user->usesCardPayment()) {
-            $query->where('invoice_type', 'session');
-        } elseif ($user->usesMonthlyBilling()) {
-            $query->where('invoice_type', 'monthly');
+            $statistics = $usageStatisticsService->forUser($user);
+
+            return response()->json([
+                'invoices' => [],
+                'summary' => [
+                    'billing_model' => 'prepay',
+                    'currency' => $statistics['currency'],
+                    'issue_schedule' => 'Platile se fac din wallet la fiecare sesiune. Nu se emit facturi.',
+                ],
+                'statistics' => $statistics,
+            ]);
         }
 
-        $invoices = $query
+        $invoices = Invoice::query()
+            ->where('user_id', $user->id)
+            ->where('invoice_type', 'monthly')
+            ->orderByDesc('month')
             ->orderByDesc('id')
             ->get()
             ->map(function (Invoice $invoice) use ($user) {
-                $invoice->setAttribute('can_pay_online', $user->usesCardPayment() && $invoice->invoice_type === 'session');
+                $invoice->setAttribute('can_pay_online', $this->canPayOnline($user, $invoice));
 
                 return $invoice;
             });
 
-        return response()->json($invoices);
+        $currency = (string) ($invoices->first()?->currency ?? $user->currency ?? 'MDL');
+        $unpaid = $invoices->where('status', '!=', 'paid');
+        $outstandingAmount = round((float) $unpaid->sum('total_amount'), 2);
+
+        return response()->json([
+            'invoices' => $invoices->values(),
+            'summary' => [
+                'billing_model' => 'monthly',
+                'outstanding_amount' => $outstandingAmount,
+                'unpaid_count' => $unpaid->count(),
+                'currency' => $currency,
+                'issue_day' => 1,
+                'issue_schedule' => $user->usesMonthlyBilling()
+                    ? 'Factura pentru luna trecuta se emite automat in data de 1 a fiecarei luni.'
+                    : 'Contul prepay foloseste wallet. Facturile lunare apar doar pentru conturile personal.',
+            ],
+        ]);
     }
 
     public function download(Request $request, Invoice $invoice, InvoiceDocumentService $invoiceDocumentService): Response
@@ -116,6 +143,15 @@ class InvoiceController extends Controller
         ]);
     }
 
+    private function canPayOnline(\App\Models\User $user, Invoice $invoice): bool
+    {
+        if ($invoice->status === 'paid') {
+            return false;
+        }
+
+        return $user->usesMonthlyBilling() && $invoice->invoice_type === 'monthly';
+    }
+
     private function authorizeInvoice(Request $request, Invoice $invoice): void
     {
         if ((int) $invoice->user_id !== (int) $request->user()->id) {
@@ -125,8 +161,8 @@ class InvoiceController extends Controller
 
     private function assertOnlinePaymentAllowed(\App\Models\User $user, Invoice $invoice): void
     {
-        if (! $user->usesCardPayment() || $invoice->invoice_type !== 'session') {
-            abort(Response::HTTP_FORBIDDEN, 'Plata online cu cardul este disponibila doar pentru facturile de sesiune ale clientilor.');
+        if (! $user->usesMonthlyBilling() || $invoice->invoice_type !== 'monthly') {
+            abort(Response::HTTP_FORBIDDEN, 'Plata online este disponibila doar pentru facturile lunare.');
         }
     }
 }

@@ -27,14 +27,71 @@ class Station extends Model
 
     public function appearsConnectedToGateway(): bool
     {
-        if ($this->ocpp_connection_status === self::OCPP_CONNECTION_CONNECTED) {
+        $lastSeen = $this->last_ocpp_message_at ?? $this->last_heartbeat_at;
+        $graceSeconds = max(90, (int) config('services.ocpp.heartbeat_interval', 60) * 2);
+
+        if ($lastSeen === null || ! $lastSeen->greaterThan(now()->subSeconds($graceSeconds))) {
+            return false;
+        }
+
+        return in_array($this->ocpp_connection_status, [
+            self::OCPP_CONNECTION_CONNECTED,
+            self::OCPP_CONNECTION_DISCONNECTED,
+        ], true);
+    }
+
+    /**
+     * Statia poate fi folosita in UI / start incarcare doar cand OCPP e online.
+     */
+    public function isOcppOnline(): bool
+    {
+        if (config('services.ocpp.mode', 'simulator') === 'simulator') {
             return true;
+        }
+
+        if ($this->ocpp_connection_status !== self::OCPP_CONNECTION_CONNECTED) {
+            return false;
         }
 
         $lastSeen = $this->last_ocpp_message_at ?? $this->last_heartbeat_at;
         $graceSeconds = max(90, (int) config('services.ocpp.heartbeat_interval', 60) * 2);
 
         return $lastSeen !== null && $lastSeen->greaterThan(now()->subSeconds($graceSeconds));
+    }
+
+    /**
+     * Status afisat in backoffice / API (nu poate fi disponibila fara OCPP).
+     */
+    public function displayStatus(): string
+    {
+        $availability = (string) ($this->liveStatus()['availability'] ?? self::STATUS_OFFLINE);
+
+        return match ($availability) {
+            self::STATUS_AVAILABLE, 'preparing' => self::STATUS_AVAILABLE,
+            self::STATUS_CHARGING => self::STATUS_CHARGING,
+            default => self::STATUS_OFFLINE,
+        };
+    }
+
+    /**
+     * Actualizeaza DB cand gateway-ul s-a oprit dar statusul a ramas "connected".
+     */
+    public static function markStaleOcppConnectionsOffline(): int
+    {
+        if (config('services.ocpp.mode', 'simulator') === 'simulator') {
+            return 0;
+        }
+
+        $graceSeconds = max(90, (int) config('services.ocpp.heartbeat_interval', 60) * 2);
+        $cutoff = now()->subSeconds($graceSeconds);
+
+        return self::query()
+            ->where('ocpp_connection_status', self::OCPP_CONNECTION_CONNECTED)
+            ->whereRaw('COALESCE(last_ocpp_message_at, last_heartbeat_at) < ?', [$cutoff])
+            ->update([
+                'ocpp_connection_status' => self::OCPP_CONNECTION_DISCONNECTED,
+                'status' => self::STATUS_OFFLINE,
+            ]);
     }
 
     protected $fillable = [
@@ -76,20 +133,29 @@ class Station extends Model
         $heartbeatInterval = max(30, (int) config('services.ocpp.heartbeat_interval', 60));
         $secondsSinceLastSeen = $lastSeenAt ? now()->diffInSeconds($lastSeenAt) : null;
         $isGatewayMode = config('services.ocpp.mode', 'simulator') !== 'simulator';
-        $appearsConnected = $this->appearsConnectedToGateway();
-        $isStale = $appearsConnected
+        $isOnline = $this->isOcppOnline();
+        $isStale = $isGatewayMode && $isOnline
             && ($secondsSinceLastSeen === null || $secondsSinceLastSeen > ($heartbeatInterval * 2));
         $connectedConnectorId = $this->detectConnectedConnectorId($connectors);
-        $connectorSummaries = $this->connectorsLiveSummary($connectors, $isGatewayMode, $appearsConnected, $isStale);
+        $connectorSummaries = $this->connectorsLiveSummary($connectors, $isGatewayMode, $isOnline, $isStale);
+
+        $availability = $this->availabilityFromOcppStatus($rawConnectorStatus);
+        if ($isGatewayMode && (! $isOnline || $isStale)) {
+            $availability = self::STATUS_OFFLINE;
+        } elseif ($isStale) {
+            $availability = 'stale';
+        }
 
         return [
-            'availability' => $isStale ? 'stale' : $this->availabilityFromOcppStatus($rawConnectorStatus),
+            'availability' => $availability,
             'can_start' => $connectedConnectorId
                 && $this->connectorCanStart($connectedConnectorId)
-                && (! $isGatewayMode || ($appearsConnected && ! $isStale)),
-            'connection_status' => $appearsConnected
-                ? self::OCPP_CONNECTION_CONNECTED
-                : $this->ocpp_connection_status,
+                && (! $isGatewayMode || ($isOnline && ! $isStale)),
+            'connection_status' => $isGatewayMode
+                ? ($isOnline
+                    ? self::OCPP_CONNECTION_CONNECTED
+                    : ($this->ocpp_connection_status ?: self::OCPP_CONNECTION_DISCONNECTED))
+                : ($this->ocpp_connection_status ?: self::OCPP_CONNECTION_NOT_CONFIGURED),
             'connector_id' => $selectedConnectorId,
             'connector_status' => $rawConnectorStatus,
             'connected_connector_id' => $connectedConnectorId,
@@ -372,6 +438,55 @@ class Station extends Model
     }
 
     /**
+     * Numar conectori asteptati (EU1060 dual = 2). Folosit pentru refresh OCPP si backoffice.
+     */
+    public function expectedConnectorCount(): int
+    {
+        $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
+
+        return $this->expectedConnectorCountFromConfiguration($configuration);
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function expectedConnectorIds(): array
+    {
+        return range(1, $this->expectedConnectorCount());
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $configuration
+     * @return array<int, array<string, mixed>>
+     */
+    public function normalizedConnectorsForConfiguration(?array $configuration = null): array
+    {
+        $configuration ??= is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
+
+        return $this->normalizedConnectors($configuration);
+    }
+
+    /**
+     * @param  array<string, mixed>  $configuration
+     */
+    private function expectedConnectorCountFromConfiguration(array $configuration): int
+    {
+        if (isset($configuration['NumberOfConnectors'])) {
+            return max(1, (int) $configuration['NumberOfConnectors']);
+        }
+
+        $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+        $maxId = $connectors === [] ? 0 : max(array_map('intval', array_keys($connectors)));
+        $model = strtolower((string) ($configuration['chargePointModel'] ?? ''));
+
+        if (str_contains($model, '1060') || str_contains($model, 'eu1060')) {
+            return max(2, $maxId);
+        }
+
+        return max(1, $maxId, count($connectors));
+    }
+
+    /**
      * @param  array<string, mixed>  $configuration
      * @return array<int, array<string, mixed>>
      */
@@ -385,9 +500,25 @@ class Station extends Model
             $connectors[$legacyId] = array_merge($connectors[$legacyId] ?? [], $legacy);
         }
 
+        foreach ($this->expectedConnectorIdsFromConfiguration($configuration) as $connectorId) {
+            $connectors[$connectorId] = array_merge(
+                ['connectorId' => $connectorId],
+                $connectors[$connectorId] ?? []
+            );
+        }
+
         ksort($connectors);
 
         return $connectors;
+    }
+
+    /**
+     * @param  array<string, mixed>  $configuration
+     * @return list<int>
+     */
+    private function expectedConnectorIdsFromConfiguration(array $configuration): array
+    {
+        return range(1, $this->expectedConnectorCountFromConfiguration($configuration));
     }
 
     /**
@@ -406,32 +537,54 @@ class Station extends Model
      * @param  array<int, array<string, mixed>>  $connectors
      * @return list<array<string, mixed>>
      */
-    private function connectorsLiveSummary(array $connectors, bool $isGatewayMode, bool $isConnected, bool $isStale): array
+    private function connectorsLiveSummary(array $connectors, bool $isGatewayMode, bool $isOnline, bool $isStale): array
     {
         if ($connectors === []) {
             return [];
         }
 
         return collect($connectors)
-            ->map(function (array $connector, int $id) use ($isGatewayMode, $isConnected, $isStale) {
+            ->map(function (array $connector, int $id) use ($isGatewayMode, $isOnline, $isStale) {
                 $status = (string) ($connector['status'] ?? '');
-                $vehicleConnected = $this->isVehicleConnectedStatus($status)
-                    || ($status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id));
+                $vehicleConnected = $isOnline
+                    && ($this->isVehicleConnectedStatus($status)
+                        || ($status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id)));
                 $canStart = $this->connectorCanStart($id)
-                    && (! $isGatewayMode || ($isConnected && ! $isStale));
+                    && (! $isGatewayMode || ($isOnline && ! $isStale));
+                $availability = ($isGatewayMode && (! $isOnline || $isStale))
+                    ? self::STATUS_OFFLINE
+                    : $this->connectorDisplayAvailability($status, $id);
 
                 return [
                     'id' => $id,
                     'label' => self::connectorPortLabel($id),
-                    'status' => $status,
-                    'availability' => $this->connectorDisplayAvailability($status, $id),
+                    'status' => ($isGatewayMode && ! $isOnline) ? 'Offline' : ($status !== '' ? $status : '—'),
+                    'availability' => $availability,
                     'vehicle_connected' => $vehicleConnected,
                     'can_start' => $canStart,
                     'is_stale_finishing' => $status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id),
+                    'has_active_session' => $this->hasActiveSessionOnConnector($id),
+                    ...$this->connectorTelemetryFields(is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : []),
                 ];
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $liveMeter
+     * @return array<string, mixed>
+     */
+    private function connectorTelemetryFields(array $liveMeter): array
+    {
+        return [
+            'energy_kwh' => isset($liveMeter['energy_kwh']) ? (float) $liveMeter['energy_kwh'] : null,
+            'power_kw' => isset($liveMeter['power_kw']) ? (float) $liveMeter['power_kw'] : null,
+            'current_a' => isset($liveMeter['current_a']) ? (float) $liveMeter['current_a'] : null,
+            'voltage_v' => isset($liveMeter['voltage_v']) ? (float) $liveMeter['voltage_v'] : null,
+            'soc_percent' => isset($liveMeter['soc_percent']) ? (float) $liveMeter['soc_percent'] : null,
+            'sampled_at' => $liveMeter['sampled_at'] ?? null,
+        ];
     }
 
     public static function aggregateStationStatus(array $connectors, string $fallbackStatus): string

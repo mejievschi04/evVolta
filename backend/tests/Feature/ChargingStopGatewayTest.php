@@ -39,6 +39,7 @@ class ChargingStopGatewayTest extends TestCase
             'ocpp_identity' => 'volta-1',
             'ocpp_version' => '1.6J',
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
             'meter_value_kwh' => 12.5,
         ]);
 
@@ -87,6 +88,7 @@ class ChargingStopGatewayTest extends TestCase
             'ocpp_identity' => 'volta-1',
             'ocpp_version' => '1.6J',
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
             'ocpp_configuration' => [
                 'connectors' => [
                     2 => ['connectorId' => 2, 'status' => 'Charging'],

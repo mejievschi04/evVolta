@@ -13,7 +13,7 @@ class InvoicePaymentsTest extends TestCase
 
     public function test_invoice_checkout_session_is_created_for_the_authenticated_user(): void
     {
-        $user = $this->createAppUser([
+        $user = $this->createPersonalUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
             'currency' => 'MDL',
@@ -23,12 +23,13 @@ class InvoicePaymentsTest extends TestCase
             'user_id' => $user->id,
             'month' => '2026-04',
             'currency' => 'MDL',
-            'invoice_type' => 'session',
-            'invoice_number' => 'EVS-1',
-            'source_session_id' => null,
+            'invoice_type' => 'monthly',
+            'invoice_number' => 'EVM-202604-1',
+            'period_start' => '2026-04-01',
+            'period_end' => '2026-04-30',
             'total_amount' => 12.50,
             'total_kwh' => 25.00,
-            'sessions_count' => 1,
+            'sessions_count' => 3,
             'status' => 'unpaid',
         ]);
 
@@ -60,7 +61,7 @@ class InvoicePaymentsTest extends TestCase
 
     public function test_invoice_can_be_marked_paid_after_verification(): void
     {
-        $user = $this->createAppUser([
+        $user = $this->createPersonalUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
             'currency' => 'MDL',
@@ -70,14 +71,15 @@ class InvoicePaymentsTest extends TestCase
             'user_id' => $user->id,
             'month' => '2026-04',
             'currency' => 'MDL',
-            'invoice_type' => 'session',
-            'invoice_number' => 'EVS-2',
-            'source_session_id' => null,
+            'invoice_type' => 'monthly',
+            'invoice_number' => 'EVM-202604-2',
+            'period_start' => '2026-04-01',
+            'period_end' => '2026-04-30',
             'payment_provider' => 'stripe',
             'payment_session_id' => 'cs_test_123',
             'total_amount' => 12.50,
             'total_kwh' => 25.00,
-            'sessions_count' => 1,
+            'sessions_count' => 3,
             'status' => 'unpaid',
         ]);
 

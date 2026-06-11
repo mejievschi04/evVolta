@@ -21,6 +21,9 @@ class WalletController extends Controller
             'currency' => $user->currency ?? 'MDL',
             'requires_prepaid' => $walletService->enabled() && $user->usesCardPayment(),
             'prepaid_wallet_enabled' => $walletService->enabled(),
+            'charge_options' => $walletService->enabled() && $user->usesCardPayment()
+                ? $walletService->chargeOptions()
+                : null,
         ]);
     }
 

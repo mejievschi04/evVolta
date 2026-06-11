@@ -239,23 +239,13 @@ class OcppService
             return $station;
         }
 
-        $connectors = $station->liveStatus()['connectors'] ?? [];
-        if ($connectors === []) {
-            return $station;
-        }
-
         $this->assertStationCanReceiveCommands($station);
 
         if (! $forceRefresh && ! $this->shouldRefreshConnectorStatus($station->id)) {
             return $waitMs > 0 ? $this->waitForStationRefresh($station, $waitMs) : $station;
         }
 
-        foreach ($connectors as $connector) {
-            $connectorId = (int) ($connector['id'] ?? 0);
-            if ($connectorId <= 0) {
-                continue;
-            }
-
+        foreach ($station->expectedConnectorIds() as $connectorId) {
             $this->queueTriggerMessage($station, [
                 'requestedMessage' => 'StatusNotification',
                 'connectorId' => $connectorId,

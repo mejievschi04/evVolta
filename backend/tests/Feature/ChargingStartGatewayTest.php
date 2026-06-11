@@ -141,4 +141,37 @@ class ChargingStartGatewayTest extends TestCase
             'status' => OcppCommand::STATUS_PENDING,
         ]);
     }
+
+    public function test_start_rejects_when_ocpp_is_disconnected(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+
+        $user = $this->createPersonalUser([
+            'name' => 'Driver',
+            'email' => 'driver-disconnected@example.test',
+        ]);
+
+        $station = Station::query()->create([
+            'name' => 'Offline charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'offline-station',
+            'ocpp_identity' => 'offline-station',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_DISCONNECTED,
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Statia nu este conectata la gateway-ul OCPP.');
+    }
 }

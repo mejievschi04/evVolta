@@ -52,6 +52,7 @@ class OcppStartSyncTest extends TestCase
             'status' => Station::STATUS_AVAILABLE,
             'ocpp_identity' => 'volta-start-now',
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
         ]);
 
         app(OcppService::class)->startTransaction($station);
@@ -72,6 +73,7 @@ class OcppStartSyncTest extends TestCase
             'status' => Station::STATUS_CHARGING,
             'ocpp_identity' => 'volta-meter',
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
         ]);
 
         app(OcppService::class)->queueMeterValuesTrigger($station, 2);

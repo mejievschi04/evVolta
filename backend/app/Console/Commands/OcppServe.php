@@ -44,6 +44,22 @@ class OcppServe extends Command
         stream_set_blocking($server, false);
         $this->info("Volta OCPP gateway listening on ws://{$host}:{$port}/ocpp/{ocpp_identity}");
 
+        if (function_exists('pcntl_async_signals')) {
+            pcntl_async_signals(true);
+
+            $shutdown = function () {
+                $this->shutdownGateway();
+                exit(self::SUCCESS);
+            };
+
+            pcntl_signal(SIGINT, $shutdown);
+            pcntl_signal(SIGTERM, $shutdown);
+        }
+
+        register_shutdown_function(function () {
+            $this->shutdownGateway();
+        });
+
         while (true) {
             $this->acceptClient($server);
             $this->readClients($billingService);
@@ -377,6 +393,21 @@ class OcppServe extends Command
             'chargeBoxSerialNumber' => $payload['chargeBoxSerialNumber'] ?? null,
             'firmwareVersion' => $payload['firmwareVersion'] ?? null,
         ]));
+
+        $model = strtolower((string) ($configuration['chargePointModel'] ?? ''));
+        if (str_contains($model, '1060') || str_contains($model, 'eu1060')) {
+            $configuration['NumberOfConnectors'] = 2;
+        }
+
+        $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+        $connectorCount = max(1, (int) ($configuration['NumberOfConnectors'] ?? 1));
+        for ($connectorId = 1; $connectorId <= $connectorCount; $connectorId++) {
+            $connectors[$connectorId] = array_merge(
+                ['connectorId' => $connectorId],
+                $connectors[$connectorId] ?? []
+            );
+        }
+        $configuration['connectors'] = $connectors;
 
         $updates = [
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
@@ -1053,8 +1084,26 @@ class OcppServe extends Command
         if ($stationId && ! $this->hasActiveClientForStation($stationId)) {
             Station::query()
                 ->whereKey($stationId)
-                ->update(['ocpp_connection_status' => Station::OCPP_CONNECTION_DISCONNECTED]);
+                ->update([
+                    'ocpp_connection_status' => Station::OCPP_CONNECTION_DISCONNECTED,
+                    'status' => Station::STATUS_OFFLINE,
+                ]);
             $this->info("OCPP station disconnected: {$station->ocpp_identity}");
+        }
+    }
+
+    private function shutdownGateway(): void
+    {
+        static $shutdownHandled = false;
+
+        if ($shutdownHandled) {
+            return;
+        }
+
+        $shutdownHandled = true;
+
+        foreach (array_keys($this->clients) as $clientId) {
+            $this->disconnectClient((int) $clientId);
         }
     }
 

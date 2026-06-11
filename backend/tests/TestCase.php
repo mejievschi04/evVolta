@@ -45,4 +45,19 @@ abstract class TestCase extends BaseTestCase
             'account_type' => User::ACCOUNT_TYPE_PERSONAL,
         ], $overrides));
     }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function createLiveGatewayStation(array $attributes = []): Station
+    {
+        return Station::query()->create(array_merge([
+            'name' => 'Gateway Station',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'last_ocpp_message_at' => now(),
+        ], $attributes));
+    }
 }

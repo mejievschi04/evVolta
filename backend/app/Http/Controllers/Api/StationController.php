@@ -61,10 +61,12 @@ class StationController extends Controller
             $query->whereIn('id', $favoriteStationIds);
         }
 
+        Station::markStaleOcppConnectionsOffline();
+
         $stations = $query->orderBy('name')->get()->map(function (Station $station) use ($favoriteStationIds) {
             $station->setAttribute('is_favorite', in_array($station->id, $favoriteStationIds, true));
             $station->setAttribute('live_status', $station->liveStatus());
-            $station->setAttribute('scan_tokens', $station->scanTokens());
+            $station->setAttribute('display_status', $station->displayStatus());
 
             return $station;
         });

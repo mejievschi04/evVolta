@@ -74,7 +74,7 @@ class BillingServiceTest extends TestCase
         $this->assertEquals(4.25, $invoice->total_amount);
     }
 
-    public function test_session_invoice_is_generated_when_a_charging_session_is_closed(): void
+    public function test_finalize_billing_does_not_create_invoice_when_session_closes(): void
     {
         $user = $this->createAppUser([
             'name' => 'Public Client',
@@ -100,25 +100,17 @@ class BillingServiceTest extends TestCase
             'kwh_consumed' => 6.00,
         ]);
 
-        $invoice = app(BillingService::class)->createSessionInvoice($session);
+        $invoice = app(BillingService::class)->finalizeBillingForSession($session);
 
-        $this->assertSame($user->id, $invoice->user_id);
-        $this->assertSame('session', $invoice->invoice_type);
-        $this->assertSame('EVS-' . $session->id, $invoice->invoice_number);
-        $this->assertSame($session->id, $invoice->source_session_id);
-        $this->assertSame('2026-04', $invoice->month);
-        $this->assertSame('2026-04-16', $invoice->period_start?->toDateString());
-        $this->assertSame('2026-04-16', $invoice->period_end?->toDateString());
-        $this->assertSame(1, $invoice->sessions_count);
-        $this->assertEquals(6.00, $invoice->total_kwh);
-        $this->assertEquals(3.00, $invoice->total_amount);
+        $this->assertNull($invoice);
+        $this->assertSame(0, Invoice::query()->count());
     }
 
-    public function test_multiple_session_invoices_can_exist_for_the_same_user_in_the_same_month(): void
+    public function test_monthly_job_creates_one_invoice_for_multiple_sessions_in_same_month(): void
     {
-        $user = $this->createAppUser([
-            'name' => 'Public Client',
-            'email' => 'client@example.test',
+        $user = $this->createPersonalUser([
+            'name' => 'Fleet Driver',
+            'email' => 'fleet-monthly@example.test',
         ]);
 
         $station = Station::query()->create([
@@ -132,7 +124,7 @@ class BillingServiceTest extends TestCase
             'price_per_kwh' => 0.50,
         ]);
 
-        $firstSession = ChargingSession::query()->create([
+        ChargingSession::query()->create([
             'user_id' => $user->id,
             'station_id' => $station->id,
             'start_time' => Carbon::parse('2026-04-16 09:00:00'),
@@ -140,7 +132,7 @@ class BillingServiceTest extends TestCase
             'kwh_consumed' => 6.00,
         ]);
 
-        $secondSession = ChargingSession::query()->create([
+        ChargingSession::query()->create([
             'user_id' => $user->id,
             'station_id' => $station->id,
             'start_time' => Carbon::parse('2026-04-18 10:00:00'),
@@ -148,13 +140,13 @@ class BillingServiceTest extends TestCase
             'kwh_consumed' => 8.40,
         ]);
 
-        $firstInvoice = app(BillingService::class)->createSessionInvoice($firstSession);
-        $secondInvoice = app(BillingService::class)->createSessionInvoice($secondSession);
+        app(BillingService::class)->generateMonthlyInvoices(Carbon::parse('2026-04-01'));
 
-        $this->assertSame(2, Invoice::query()->count());
-        $this->assertSame($firstSession->id, $firstInvoice->source_session_id);
-        $this->assertSame($secondSession->id, $secondInvoice->source_session_id);
-        $this->assertSame('session', $firstInvoice->invoice_type);
-        $this->assertSame('session', $secondInvoice->invoice_type);
+        $this->assertSame(1, Invoice::query()->count());
+        $invoice = Invoice::query()->firstOrFail();
+        $this->assertSame('monthly', $invoice->invoice_type);
+        $this->assertSame(2, $invoice->sessions_count);
+        $this->assertEquals(14.40, $invoice->total_kwh);
+        $this->assertEquals(7.20, $invoice->total_amount);
     }
 }

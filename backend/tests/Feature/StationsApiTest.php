@@ -71,7 +71,7 @@ class StationsApiTest extends TestCase
             ->assertJsonPath('0.latitude', 47.010452)
             ->assertJsonPath('0.longitude', 28.86381)
             ->assertJsonPath('0.live_status.availability', Station::STATUS_AVAILABLE)
-            ->assertJsonPath('0.live_status.can_start', true)
+            ->assertJsonPath('0.live_status.can_start', false)
             ->assertJsonPath('0.live_status.connection_status', Station::OCPP_CONNECTION_NOT_CONFIGURED);
 
         $this->actingAs($user, 'api')

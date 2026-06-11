@@ -22,6 +22,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PROTO
         );
 
+        $middleware->redirectGuestsTo(function (Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return null;
+            }
+
+            return route('backoffice.login');
+        });
+
         $middleware->alias([
             'backoffice.auth' => \App\Http\Middleware\EnsureBackofficeAuth::class,
             'security.headers' => \App\Http\Middleware\AddSecurityHeaders::class,
