@@ -1,142 +1,57 @@
-# Local EV Charging MVP
+# Volta EV Charging
 
-MVP for a local/private EV charging management system:
+Sistem de management incarcare EV (backend Laravel + backoffice React + gateway OCPP 1.6J).
 
-- Laravel + PostgreSQL backend API with JWT auth
-- Expo React Native mobile app
-- Simulated OCPP service for start/stop charging
-- Monthly invoice generation by cron command
+- **Backend** — API JWT, billing, Stripe, OCPP gateway
+- **Backoffice** — administrare statii, sesiuni, clienti, facturi, audit
+- **OCPP** — statii reale (EU1060 etc.) via WebSocket
 
-## 1) Backend structure
-
-```text
-backend/
-  app/
-    Console/
-      Commands/GenerateMonthlyInvoices.php
-      Kernel.php
-    Http/Controllers/
-      Api/
-        AuthController.php
-        StationController.php
-        ChargingController.php
-        SessionController.php
-        InvoiceController.php
-    Models/
-      User.php
-      Station.php
-      ChargingSession.php
-      Tariff.php
-      Invoice.php
-    Services/
-      OcppService.php
-      BillingService.php
-  config/
-    auth.php
-    jwt.php
-    billing.php
-  database/
-    migrations/
-    seeders/DatabaseSeeder.php
-  routes/api.php
-```
-
-## 2) Laravel code (step by step)
-
-1. Create a Laravel 11 project in `backend` (or use this folder and merge into a fresh Laravel app):
-
-   - `composer create-project laravel/laravel backend`
-
-2. Install JWT package:
-
-   - `composer require tymon/jwt-auth`
-   - `php artisan jwt:secret`
-
-3. Configure `.env`:
-
-   - PostgreSQL credentials
-   - `PRICE_PER_KWH=0.20`
-
-4. Copy/replace MVP files from this repository:
-
-   - Models in `app/Models`
-   - API controllers in `app/Http/Controllers/Api`
-   - Services in `app/Services`
-   - Migrations and seeder in `database/`
-   - Routes in `routes/api.php`
-   - Billing/JWT/auth config in `config/`
-   - Monthly command + scheduler in `app/Console`
-
-5. Run backend setup:
-
-   - `php artisan migrate --seed`
-   - `php artisan serve`
-
-6. Monthly billing cron:
-
-   - command: `php artisan billing:generate-monthly`
-   - scheduler: monthly at day 1, 00:10 (configured in `app/Console/Kernel.php`)
-   - cron entry (Linux server): `* * * * * php /path/to/backend/artisan schedule:run >> /dev/null 2>&1`
-
-### Demo credentials
-
-- `demo@local-ev.test`
-- `password123`
-
-## 3) React Native project structure
+## Structura
 
 ```text
-mobile/
-  App.js
-  app/src/
-    api/client.js
-    context/AuthContext.js
-    navigation/
-      RootNavigator.js
-      MainTabs.js
-    screens/
-      LoginScreen.js
-      StationsScreen.js
-      ChargingScreen.js
-      HistoryScreen.js
-      InvoicesScreen.js
+backend/          Laravel API + OCPP gateway (artisan ocpp:serve)
+backoffice/       React admin UI (Vite)
+deploy/           nginx, systemd, scripturi VPS
+docs/             Ghiduri deploy
 ```
 
-## 4) Full code for main screens
-
-Main screen files are implemented at:
-
-- `mobile/app/src/screens/LoginScreen.js`
-- `mobile/app/src/screens/StationsScreen.js`
-- `mobile/app/src/screens/ChargingScreen.js`
-- `mobile/app/src/screens/HistoryScreen.js`
-- `mobile/app/src/screens/InvoicesScreen.js`
-
-## 5) Run locally
+## Rulare locala
 
 ### Backend
 
-1. Ensure PostgreSQL is running and DB exists (example: `ev_charging`)
-2. In `backend`:
-   - `composer install`
-   - copy `.env.example` to `.env`
-   - `php artisan key:generate`
-   - `php artisan jwt:secret`
-   - `php artisan migrate --seed`
-   - `php artisan serve`
+```bash
+cd backend
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan jwt:secret
+php artisan migrate --seed
+php artisan serve --host=0.0.0.0 --port=8000
+php artisan ocpp:serve --host=0.0.0.0 --port=9000   # statii reale
+```
 
-### Mobile
+### Backoffice
 
-1. In `mobile`:
-   - `npm install`
-   - `npm run start`
-2. Start app in Expo Go or emulator.
-3. API URL is in `mobile/app/src/api/client.js`:
-   - Android emulator: `10.0.2.2`
-   - iOS simulator: `127.0.0.1` often works
-   - real device: use your PC LAN IP
+```bash
+cd backoffice
+npm install
+npm run dev
+```
 
-## API endpoints
+Deschide `http://127.0.0.1:5173` — API proxy catre `:8000` (vezi `backoffice/vite.config.js`).
+
+Seteaza in `backend/.env`:
+
+```env
+BACKOFFICE_UI_URL=http://127.0.0.1:5173
+```
+
+### Demo credentials
+
+- Backoffice admin: `admin@local-ev.test` / `password123`
+- API user: `demo@local-ev.test` / `password123`
+
+## API endpoints (principale)
 
 - `POST /api/login`
 - `GET /api/stations`
@@ -145,9 +60,31 @@ Main screen files are implemented at:
 - `GET /api/sessions`
 - `GET /api/invoices`
 
+## Deploy pe VPS
+
+Ghid complet: [`docs/VPS_DEPLOY.md`](docs/VPS_DEPLOY.md)
+
+Domeniu productie: **`ocpp.volta.md`**
+
+```bash
+# VPS cu proiecte existente (proiect #3)
+export DOMAIN=ocpp.volta.md DB_PASSWORD='...' REPO_URL=git@...
+sudo -E bash deploy/vps-add-project.sh
+sudo certbot --nginx -d ocpp.volta.md
+
+# Update-uri
+bash deploy/deploy.sh
+```
+
+## Documentatie
+
+- [`backend/docs/OCPP_SETUP.md`](backend/docs/OCPP_SETUP.md) — OCPP 1.6J, EU1060, configurare statie
+- [`backend/docs/STRIPE_SETUP.md`](backend/docs/STRIPE_SETUP.md) — plati Stripe
+- [`docs/VPS_DEPLOY.md`](docs/VPS_DEPLOY.md) — productie VPS
+
 ## Notes
 
-- OCPP is simulated in `app/Services/OcppService.php`.
-- Charging stop uses a simple consumption simulation: `minutes * 0.12 kWh`.
-- Optional PDF invoices are not included in this MVP.
-- Station QR support is kept simple with a `qr_code` field (`station:<slug>` format).
+- `OCPP_MODE=gateway` (implicit) pentru statii reale; `simulator` pentru demo fara hardware
+- Oprire fortata statie: `php artisan ocpp:force-stop {ocpp_identity} --connector=2`
+- Facturi lunare: `php artisan billing:generate-monthly` (cron in scheduler)
+- QR statie: campul `qr_code` (serial hardware sau `station:<slug>`)

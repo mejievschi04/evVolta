@@ -2,6 +2,9 @@
 node_modules/
 vendor/
 
+# Mobile app scos din repo (pastreaza local daca e nevoie)
+mobile/
+
 # Environment
 .env
 .env.*
