@@ -14,10 +14,9 @@ class BackofficeRegistrationRequestsTest extends TestCase
 
     public function test_backoffice_lists_pending_and_approved_registration_requests(): void
     {
-        $admin = User::query()->create([
+        $admin = $this->createAdminUser([
             'name' => 'Backoffice Admin',
             'email' => 'admin@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
         $pending = RegistrationRequest::query()->create([

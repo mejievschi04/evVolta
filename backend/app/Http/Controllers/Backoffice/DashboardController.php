@@ -7,12 +7,15 @@ use App\Mail\InvoiceMail;
 use App\Models\AuditLog;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
+use App\Models\OcppCommand;
 use App\Models\RegistrationRequest;
 use App\Models\Station;
 use App\Models\Tariff;
 use App\Models\User;
+use App\Models\WalletTopup;
 use App\Services\AuditLogService;
 use App\Services\BillingService;
+use App\Services\ChargingStopService;
 use App\Services\InvoiceDocumentService;
 use App\Services\OcppService;
 use Endroid\QrCode\QrCode;
@@ -67,6 +70,7 @@ class DashboardController extends Controller
     public function __construct(
         private readonly AuditLogService $auditLogService,
         private readonly BillingService $billingService,
+        private readonly ChargingStopService $chargingStopService,
         private readonly InvoiceDocumentService $invoiceDocumentService,
         private readonly OcppService $ocppService,
     )
@@ -99,6 +103,14 @@ class DashboardController extends Controller
                 'totalRevenue' => (float) Invoice::query()->sum('total_amount'),
                 'unpaidInvoices' => Invoice::query()->where('status', 'unpaid')->count(),
                 'pendingRequests' => RegistrationRequest::query()->where('status', RegistrationRequest::STATUS_PENDING)->count(),
+                'walletTopupsPaidToday' => WalletTopup::query()
+                    ->where('status', 'paid')
+                    ->whereDate('paid_at', now()->toDateString())
+                    ->count(),
+                'walletTopupsVolumeToday' => round((float) WalletTopup::query()
+                    ->where('status', 'paid')
+                    ->whereDate('paid_at', now()->toDateString())
+                    ->sum('amount'), 2),
             ],
             'stationStatus' => [
                 'available' => Station::query()->where('status', Station::STATUS_AVAILABLE)->count(),
@@ -136,6 +148,151 @@ class DashboardController extends Controller
                     return $station;
                 }),
         ]);
+    }
+
+    public function showStation(Station $station): JsonResponse
+    {
+        $station->loadCount([
+            'sessions',
+            'sessions as active_sessions_count' => fn ($query) => $query->whereNull('end_time'),
+        ]);
+
+        $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
+        $activeSessions = ChargingSession::query()
+            ->where('station_id', $station->id)
+            ->whereNull('end_time')
+            ->with(['user:id,name,email'])
+            ->latest('id')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'station' => [
+                    ...$station->only([
+                        'id',
+                        'name',
+                        'location',
+                        'latitude',
+                        'longitude',
+                        'status',
+                        'qr_code',
+                        'power_kw',
+                        'connector_type',
+                        'ocpp_identity',
+                        'ocpp_version',
+                        'ocpp_connection_status',
+                        'last_heartbeat_at',
+                        'last_ocpp_message_at',
+                        'meter_value_kwh',
+                        'sessions_count',
+                        'active_sessions_count',
+                    ]),
+                    'ocpp_connection_url' => $this->ocppService->connectionUrl($station),
+                ],
+                'live_status' => $station->liveStatus(),
+                'hardware' => [
+                    'vendor' => $configuration['chargePointVendor'] ?? null,
+                    'model' => $configuration['chargePointModel'] ?? null,
+                    'serial' => $configuration['chargePointSerialNumber']
+                        ?? $configuration['chargeBoxSerialNumber']
+                        ?? null,
+                    'firmware' => $configuration['firmwareVersion'] ?? null,
+                ],
+                'connectors' => $this->stationConnectorDetails($station),
+                'local_id_tags' => is_array($configuration['local_id_tags'] ?? null)
+                    ? $configuration['local_id_tags']
+                    : [],
+                'active_sessions' => $activeSessions,
+                'diagnostics_commands' => $this->stationDiagnosticsCommands($station),
+                'diagnostics_ftp_url' => rtrim((string) config('services.ocpp.diagnostics_ftp_url', ''), '/'),
+            ],
+        ]);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function stationDiagnosticsCommands(Station $station, int $limit = 12): array
+    {
+        return OcppCommand::query()
+            ->where('station_id', $station->id)
+            ->where('action', 'GetDiagnostics')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get()
+            ->map(function (OcppCommand $command): array {
+                $response = is_array($command->response_payload) ? $command->response_payload : [];
+                $payload = is_array($command->payload) ? $command->payload : [];
+                $fileName = trim((string) ($response['fileName'] ?? ''));
+                $uploadLocation = rtrim((string) ($payload['location'] ?? ''), '/');
+
+                return [
+                    'id' => $command->id,
+                    'status' => $command->status,
+                    'file_name' => $fileName !== '' ? $fileName : null,
+                    'upload_status' => $response['upload_status'] ?? null,
+                    'upload_location' => $uploadLocation !== '' ? $uploadLocation : null,
+                    'download_url' => $fileName !== '' && $uploadLocation !== ''
+                        ? $uploadLocation . '/' . ltrim($fileName, '/')
+                        : null,
+                    'error_message' => $command->error_message,
+                    'created_at' => $command->created_at?->toIso8601String(),
+                    'sent_at' => $command->sent_at?->toIso8601String(),
+                    'acknowledged_at' => $command->acknowledged_at?->toIso8601String(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function stationConnectorDetails(Station $station): array
+    {
+        $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
+        $rawConnectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+        $legacy = is_array($configuration['connector'] ?? null) ? $configuration['connector'] : [];
+
+        if ($legacy !== []) {
+            $legacyId = (int) ($legacy['connectorId'] ?? $legacy['connector_id'] ?? 1);
+            $rawConnectors[$legacyId] = array_merge($rawConnectors[$legacyId] ?? [], $legacy);
+        }
+
+        ksort($rawConnectors);
+
+        $liveSummaries = collect($station->liveStatus()['connectors'] ?? [])
+            ->keyBy('id');
+
+        return collect($rawConnectors)
+            ->map(function (array $connector, int $connectorId) use ($liveSummaries, $station) {
+                $summary = $liveSummaries->get($connectorId, []);
+                $liveMeter = is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : [];
+
+                return [
+                    'id' => $connectorId,
+                    'label' => Station::connectorPortLabel($connectorId),
+                    'status' => (string) ($connector['status'] ?? $summary['status'] ?? ''),
+                    'availability' => $summary['availability'] ?? null,
+                    'vehicle_connected' => (bool) ($summary['vehicle_connected'] ?? false),
+                    'can_start' => (bool) ($summary['can_start'] ?? false),
+                    'error_code' => $connector['errorCode'] ?? null,
+                    'info' => $connector['info'] ?? null,
+                    'timestamp' => $connector['timestamp'] ?? null,
+                    'local_id_tag' => $station->localIdTagForConnector($connectorId),
+                    'has_active_session' => $station->hasActiveSessionOnConnector($connectorId),
+                    'telemetry' => [
+                        'energy_kwh' => isset($liveMeter['energy_kwh']) ? (float) $liveMeter['energy_kwh'] : null,
+                        'power_kw' => isset($liveMeter['power_kw']) ? (float) $liveMeter['power_kw'] : null,
+                        'current_a' => isset($liveMeter['current_a']) ? (float) $liveMeter['current_a'] : null,
+                        'voltage_v' => isset($liveMeter['voltage_v']) ? (float) $liveMeter['voltage_v'] : null,
+                        'soc_percent' => isset($liveMeter['soc_percent']) ? (float) $liveMeter['soc_percent'] : null,
+                        'sampled_at' => $liveMeter['sampled_at'] ?? null,
+                    ],
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function auditLogs(Request $request): JsonResponse
@@ -296,6 +453,191 @@ class DashboardController extends Controller
         return $this->respondMutation($request, 'Statia a fost stearsa.');
     }
 
+    public function requestStationDiagnostics(Request $request, Station $station): JsonResponse|RedirectResponse
+    {
+        try {
+            $result = app(OcppService::class)->requestDiagnostics($station);
+        } catch (RuntimeException $exception) {
+            $status = $exception->getCode() >= 400 && $exception->getCode() < 600
+                ? (int) $exception->getCode()
+                : 422;
+
+            return response()->json(['message' => $exception->getMessage()], $status);
+        }
+
+        $this->auditLogService->record(
+            action: 'backoffice.station.diagnostics_requested',
+            actor: $this->backofficeActor(),
+            subjectType: Station::class,
+            subjectId: $station->id,
+            station: $station,
+            metadata: [
+                'command_id' => $result['command_id'] ?? null,
+                'location' => $result['location'] ?? null,
+            ]
+        );
+
+        return $this->respondMutation($request, 'GetDiagnostics trimis catre statie.', [
+            'data' => $result,
+        ]);
+    }
+
+    public function refreshStationStatus(Request $request, Station $station): JsonResponse|RedirectResponse
+    {
+        try {
+            $activeSession = ChargingSession::query()
+                ->where('station_id', $station->id)
+                ->whereNull('end_time')
+                ->latest('id')
+                ->first();
+
+            if ($activeSession) {
+                $station = $this->ocppService->refreshSessionTelemetry(
+                    $station,
+                    (int) ($activeSession->ocpp_connector_id ?: 1)
+                );
+            } else {
+                $station = $this->ocppService->refreshConnectorStatus($station, 0, true);
+            }
+
+            $station = $station->fresh();
+
+            $this->auditLogService->record(
+                action: 'backoffice.station.refresh_status',
+                actor: $this->backofficeActor(),
+                subjectType: Station::class,
+                subjectId: $station->id,
+                station: $station,
+                session: $activeSession,
+                metadata: [
+                    'active_session_id' => $activeSession?->id,
+                    'connector_id' => $activeSession?->ocpp_connector_id,
+                ]
+            );
+
+            return $this->respondMutation($request, 'Status OCPP actualizat.', [
+                'data' => [
+                    'live_status' => $station->liveStatus(),
+                    'active_session_id' => $activeSession?->id,
+                ],
+            ]);
+        } catch (RuntimeException $exception) {
+            return $this->respondMutationError(
+                $request,
+                $exception->getMessage(),
+                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+            );
+        }
+    }
+
+    public function unlockStationConnector(Request $request, Station $station): JsonResponse|RedirectResponse
+    {
+        $payload = $request->validate([
+            'connector_id' => 'sometimes|integer|min:1|max:9',
+        ]);
+
+        $activeSession = ChargingSession::query()
+            ->where('station_id', $station->id)
+            ->whereNull('end_time')
+            ->latest('id')
+            ->first();
+
+        $liveStatus = $station->liveStatus();
+        $connectorId = (int) (
+            $payload['connector_id']
+            ?? $activeSession?->ocpp_connector_id
+            ?? $liveStatus['connected_connector_id']
+            ?? 1
+        );
+
+        try {
+            $result = $this->ocppService->unlockConnector($station, $connectorId);
+        } catch (RuntimeException $exception) {
+            return $this->respondMutationError(
+                $request,
+                $exception->getMessage(),
+                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+            );
+        }
+
+        $this->auditLogService->record(
+            action: 'backoffice.station.unlock_connector',
+            actor: $this->backofficeActor(),
+            subjectType: Station::class,
+            subjectId: $station->id,
+            station: $station,
+            session: $activeSession,
+            metadata: [
+                'connector_id' => $connectorId,
+                'command_id' => $result['command_id'] ?? null,
+            ]
+        );
+
+        return $this->respondMutation($request, 'UnlockConnector trimis catre statie.', [
+            'data' => $result,
+        ]);
+    }
+
+    public function stopActiveStationSession(Request $request, Station $station): JsonResponse|RedirectResponse
+    {
+        try {
+            $result = DB::transaction(function () use ($station) {
+                $session = ChargingSession::query()
+                    ->where('station_id', $station->id)
+                    ->whereNull('end_time')
+                    ->lockForUpdate()
+                    ->latest('id')
+                    ->first();
+
+                if (! $session) {
+                    throw new RuntimeException('Statia nu are o sesiune activa.', 404);
+                }
+
+                $lockedStation = Station::query()
+                    ->whereKey($station->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $lockedStation) {
+                    throw new RuntimeException('Statia nu a fost gasita.', 404);
+                }
+
+                $stopResult = $this->chargingStopService->requestStop($session, $lockedStation, 'backoffice');
+
+                $this->auditLogService->record(
+                    action: $stopResult['status'] === 'completed'
+                        ? 'backoffice.session.stopped'
+                        : 'backoffice.session.stop_requested',
+                    actor: $this->backofficeActor(),
+                    subjectType: ChargingSession::class,
+                    subjectId: $session->id,
+                    station: $stopResult['station'],
+                    session: $stopResult['session'],
+                    metadata: [
+                        'stopped_from' => 'station_row',
+                        'kwh_consumed' => $stopResult['session']->kwh_consumed,
+                        'ocpp_mode' => config('services.ocpp.mode'),
+                    ]
+                );
+
+                return $stopResult;
+            });
+        } catch (RuntimeException $exception) {
+            return $this->respondMutationError(
+                $request,
+                $exception->getMessage(),
+                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+            );
+        }
+
+        return $this->respondMutation($request, $result['message'], [
+            'data' => [
+                'status' => $result['status'],
+                'session_id' => $result['session']->id,
+            ],
+        ]);
+    }
+
     public function downloadStationQr(Station $station): Response
     {
         $result = $this->buildStationQr($station, 320);
@@ -355,7 +697,7 @@ class DashboardController extends Controller
     {
         return response()->json([
             'data' => ChargingSession::query()
-                ->with(['user:id,name,email', 'station:id,name,location,status'])
+                ->with(['user:id,name,email', 'station'])
                 ->latest('start_time')
                 ->limit(100)
                 ->get(),
@@ -365,7 +707,7 @@ class DashboardController extends Controller
     public function stopSession(Request $request, ChargingSession $session): JsonResponse|RedirectResponse
     {
         try {
-            DB::transaction(function () use ($session) {
+            $result = DB::transaction(function () use ($session) {
                 $session = ChargingSession::query()
                     ->whereKey($session->id)
                     ->lockForUpdate()
@@ -389,34 +731,28 @@ class DashboardController extends Controller
                 }
 
                 $statusBefore = $station->status;
-                $endTime = now();
-                $minutes = max(1, (int) $session->start_time->diffInMinutes($endTime));
-                $kwhConsumed = round($minutes * 0.12, 2);
-
-                $session->update([
-                    'end_time' => $endTime,
-                    'kwh_consumed' => $kwhConsumed,
-                ]);
-
-                $this->billingService->createSessionInvoice($session->fresh());
-
-                $station->update(['status' => Station::STATUS_AVAILABLE]);
+                $stopResult = $this->chargingStopService->requestStop($session, $station, 'backoffice');
 
                 $this->auditLogService->record(
-                    action: 'backoffice.session.stopped',
+                    action: $stopResult['status'] === 'completed'
+                        ? 'backoffice.session.stopped'
+                        : 'backoffice.session.stop_requested',
                     actor: $this->backofficeActor(),
                     subjectType: ChargingSession::class,
                     subjectId: $session->id,
-                    station: $station,
-                    session: $session,
+                    station: $stopResult['station'],
+                    session: $stopResult['session'],
                     metadata: [
                         'status_before' => $statusBefore,
-                        'status_after' => Station::STATUS_AVAILABLE,
-                        'duration_minutes' => $minutes,
-                        'kwh_consumed' => $kwhConsumed,
+                        'status_after' => $stopResult['station']->status,
+                        'duration_minutes' => $stopResult['duration_minutes'] ?? null,
+                        'kwh_consumed' => $stopResult['session']->kwh_consumed,
                         'stopped_by' => 'backoffice',
+                        'ocpp_mode' => config('services.ocpp.mode'),
                     ]
                 );
+
+                return $stopResult;
             });
         } catch (RuntimeException $exception) {
             if ($request->expectsJson()) {
@@ -430,7 +766,7 @@ class DashboardController extends Controller
             ]);
         }
 
-        return $this->respondMutation($request, 'Sesiunea a fost oprita din admin.');
+        return $this->respondMutation($request, $result['message']);
     }
 
     public function deleteSession(Request $request, ChargingSession $session): JsonResponse|RedirectResponse
@@ -492,12 +828,187 @@ class DashboardController extends Controller
 
     public function users(Request $request): JsonResponse
     {
+        $accountType = trim((string) $request->query('account_type', ''));
+
+        $query = User::query()
+            ->where('is_admin', false)
+            ->withCount([
+                'sessions',
+                'invoices',
+                'invoices as unpaid_invoices_count' => fn ($builder) => $builder->where('status', 'unpaid'),
+            ])
+            ->withSum(
+                ['invoices as outstanding_balance' => fn ($builder) => $builder->where('status', 'unpaid')],
+                'total_amount'
+            )
+            ->latest('id')
+            ->limit(100);
+
+        if (in_array($accountType, [User::ACCOUNT_TYPE_PERSONAL, User::ACCOUNT_TYPE_CUSTOMER], true)) {
+            $query->where('account_type', $accountType);
+        }
+
+        $users = $query->get([
+            'id',
+            'name',
+            'first_name',
+            'last_name',
+            'email',
+            'currency',
+            'account_type',
+            'wallet_balance',
+            'created_at',
+        ])->map(fn (User $user) => [
+            ...$user->only([
+                'id',
+                'name',
+                'first_name',
+                'last_name',
+                'email',
+                'currency',
+                'account_type',
+                'wallet_balance',
+                'created_at',
+            ]),
+            'sessions_count' => (int) $user->sessions_count,
+            'invoices_count' => (int) $user->invoices_count,
+            'unpaid_invoices_count' => (int) $user->unpaid_invoices_count,
+            'outstanding_balance' => round((float) ($user->outstanding_balance ?? 0), 2),
+            'wallet_balance' => round((float) $user->wallet_balance, 2),
+        ]);
+
         return response()->json([
-            'data' => User::query()
-                ->withCount(['sessions', 'invoices'])
-                ->latest('id')
-                ->limit(100)
-                ->get(['id', 'name', 'first_name', 'last_name', 'email', 'currency', 'created_at']),
+            'data' => $users,
+        ]);
+    }
+
+    public function showUser(User $user): JsonResponse
+    {
+        if ($user->is_admin) {
+            abort(404);
+        }
+
+        $user->loadCount([
+            'sessions',
+            'invoices',
+            'invoices as unpaid_invoices_count' => fn ($builder) => $builder->where('status', 'unpaid'),
+            'invoices as paid_invoices_count' => fn ($builder) => $builder->where('status', 'paid'),
+        ]);
+
+        $invoices = $user->invoices()
+            ->latest('id')
+            ->limit(36)
+            ->get([
+                'id',
+                'invoice_number',
+                'invoice_type',
+                'month',
+                'currency',
+                'period_start',
+                'period_end',
+                'total_kwh',
+                'total_amount',
+                'sessions_count',
+                'status',
+                'paid_at',
+                'created_at',
+            ]);
+
+        $recentSessions = $user->sessions()
+            ->with('station')
+            ->latest('id')
+            ->limit(12)
+            ->get();
+
+        $outstandingBalance = round((float) $user->invoices()->where('status', 'unpaid')->sum('total_amount'), 2);
+
+        return response()->json([
+            'data' => [
+                'user' => [
+                    ...$user->only([
+                        'id',
+                        'name',
+                        'first_name',
+                        'last_name',
+                        'email',
+                        'currency',
+                        'account_type',
+                        'wallet_balance',
+                        'created_at',
+                    ]),
+                    'wallet_balance' => round((float) $user->wallet_balance, 2),
+                    'sessions_count' => (int) $user->sessions_count,
+                    'invoices_count' => (int) $user->invoices_count,
+                    'unpaid_invoices_count' => (int) $user->unpaid_invoices_count,
+                    'paid_invoices_count' => (int) $user->paid_invoices_count,
+                    'outstanding_balance' => $outstandingBalance,
+                ],
+                'billing' => [
+                    'outstanding_balance' => $outstandingBalance,
+                    'unpaid_invoices_count' => (int) $user->unpaid_invoices_count,
+                    'paid_invoices_count' => (int) $user->paid_invoices_count,
+                    'total_billed' => round((float) $user->invoices()->sum('total_amount'), 2),
+                    'total_kwh' => round((float) $user->sessions()->whereNotNull('end_time')->sum('kwh_consumed'), 2),
+                ],
+                'invoices' => $invoices,
+                'recent_sessions' => $recentSessions,
+                'wallet_topups' => $user->usesCardPayment()
+                    ? $user->walletTopups()
+                        ->latest('id')
+                        ->limit(12)
+                        ->get([
+                            'id',
+                            'amount',
+                            'currency',
+                            'status',
+                            'payment_provider',
+                            'payment_session_id',
+                            'paid_at',
+                            'created_at',
+                        ])
+                    : [],
+            ],
+        ]);
+    }
+
+    public function walletTopups(Request $request): JsonResponse
+    {
+        $status = trim((string) $request->query('status', ''));
+
+        $baseQuery = WalletTopup::query()
+            ->with(['user:id,name,email,account_type,wallet_balance']);
+
+        $listQuery = (clone $baseQuery)->latest('id')->limit(200);
+
+        if (in_array($status, ['pending', 'paid'], true)) {
+            $listQuery->where('status', $status);
+        }
+
+        return response()->json([
+            'data' => $listQuery->get()->map(fn (WalletTopup $topup) => [
+                'id' => $topup->id,
+                'user_id' => $topup->user_id,
+                'amount' => round((float) $topup->amount, 2),
+                'currency' => $topup->currency,
+                'status' => $topup->status,
+                'payment_provider' => $topup->payment_provider,
+                'payment_session_id' => $topup->payment_session_id,
+                'paid_at' => $topup->paid_at,
+                'created_at' => $topup->created_at,
+                'user' => $topup->user?->only([
+                    'id',
+                    'name',
+                    'email',
+                    'account_type',
+                    'wallet_balance',
+                ]),
+            ]),
+            'summary' => [
+                'count_paid' => (int) (clone $baseQuery)->where('status', 'paid')->count(),
+                'count_pending' => (int) (clone $baseQuery)->where('status', 'pending')->count(),
+                'volume_paid' => round((float) (clone $baseQuery)->where('status', 'paid')->sum('amount'), 2),
+                'volume_pending' => round((float) (clone $baseQuery)->where('status', 'pending')->sum('amount'), 2),
+            ],
         ]);
     }
 
@@ -509,6 +1020,7 @@ class DashboardController extends Controller
             'name' => 'nullable|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => ['required', 'string', 'min:6'],
+            'account_type' => 'required|in:personal,customer',
         ]);
 
         $name = trim((string) ($data['name'] ?? ''));
@@ -524,6 +1036,10 @@ class DashboardController extends Controller
             'currency' => 'MDL',
             'password' => Hash::make($data['password']),
         ]);
+        $user->forceFill([
+            'is_admin' => false,
+            'account_type' => $data['account_type'],
+        ])->save();
 
         $this->auditLogService->record(
             action: 'backoffice.user.created',
@@ -534,11 +1050,12 @@ class DashboardController extends Controller
                 'email' => $user->email,
                 'name' => $user->name,
                 'currency' => $user->currency,
+                'account_type' => $user->account_type,
             ]
         );
 
         return $this->respondMutation($request, 'Utilizatorul a fost creat.', [
-            'data' => $user->only(['id', 'name', 'first_name', 'last_name', 'email', 'currency', 'created_at']),
+            'data' => $user->only(['id', 'name', 'first_name', 'last_name', 'email', 'currency', 'account_type', 'created_at']),
         ]);
     }
 
@@ -587,6 +1104,10 @@ class DashboardController extends Controller
                 'password' => $data['password'],
                 'currency' => 'MDL',
             ]);
+            $user->forceFill([
+                'is_admin' => false,
+                'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
+            ])->save();
 
             $registrationRequest->update([
                 'status' => RegistrationRequest::STATUS_APPROVED,

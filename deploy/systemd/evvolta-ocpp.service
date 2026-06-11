@@ -1,0 +1,22 @@
+[Unit]
+Description=Volta OCPP 1.6J WebSocket Gateway
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/evvolta/backend
+ExecStart=/usr/bin/php artisan ocpp:serve --host=127.0.0.1 --port=9010
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=evvolta-ocpp
+
+# Limite fisiere deschise pentru multe conexiuni WS
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

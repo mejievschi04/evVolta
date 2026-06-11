@@ -9,20 +9,26 @@ import {
   Clock3,
   Copy,
   Download,
+  Eye,
   FileText,
-  Filter,
   LayoutDashboard,
   LogOut,
+  Map,
   MapPin,
+  Minus,
   MoreHorizontal,
   Plus,
   Receipt,
   RadioTower,
+  RefreshCw,
   Search,
   Settings,
+  Square,
+  Unlock,
   ShieldCheck,
   X,
   Users,
+  Wallet,
   Zap
 } from 'lucide-react';
 import voltaLogo from './assets/icons/Volta Logo 2@300x 1.png';
@@ -31,7 +37,9 @@ const sections = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'stations', label: 'Statii', icon: Zap },
   { id: 'sessions', label: 'Sesiuni', icon: BatteryCharging },
-  { id: 'users', label: 'Utilizatori', icon: Users },
+  { id: 'clients', label: 'Clienti', icon: Users },
+  { id: 'wallet', label: 'Alimentari', icon: Wallet },
+  { id: 'personal', label: 'Personal', icon: FileText },
   { id: 'requests', label: 'Cereri', icon: ClipboardList },
   { id: 'invoices', label: 'Facturi', icon: Receipt },
   { id: 'audit', label: 'Audit', icon: ShieldCheck },
@@ -42,7 +50,9 @@ const endpoints = {
   dashboard: '/backoffice/dashboard',
   stations: '/backoffice/stations',
   sessions: '/backoffice/sessions',
-  users: '/backoffice/users',
+  clients: '/backoffice/users?account_type=customer',
+  wallet: '/backoffice/wallet-topups',
+  personal: '/backoffice/users?account_type=personal',
   requests: '/backoffice/registration-requests',
   invoices: '/backoffice/invoices',
   audit: '/backoffice/audit-logs'
@@ -52,7 +62,10 @@ const emptyData = {
   dashboard: null,
   stations: [],
   sessions: [],
-  users: [],
+  clients: [],
+  walletTopups: [],
+  walletSummary: null,
+  personal: [],
   requests: [],
   invoices: [],
   audit: []
@@ -125,8 +138,10 @@ function useBackofficeData() {
     authRequired: false
   });
 
-  async function load() {
-    setState((current) => ({ ...current, loading: true }));
+  async function load(silent = false) {
+    if (!silent) {
+      setState((current) => ({ ...current, loading: true }));
+    }
 
     try {
       const dashboard = await fetchJson(endpoints.dashboard);
@@ -138,6 +153,12 @@ function useBackofficeData() {
       const nextData = { ...emptyData, dashboard };
 
       for (const [key, payload] of results) {
+        if (key === 'wallet') {
+          nextData.walletTopups = payload.data ?? [];
+          nextData.walletSummary = payload.summary ?? null;
+          continue;
+        }
+
         nextData[key] = key === 'dashboard' ? payload : payload.data ?? [];
       }
 
@@ -185,6 +206,124 @@ function formatMoney(value) {
   return `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 2 }).format(value)} MDL`;
 }
 
+function formatKwh(value, digits = 3) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return '-';
+  }
+
+  return new Intl.NumberFormat('ro-RO', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  }).format(Number(value));
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return '-';
+  }
+
+  return new Date(value).toLocaleString('ro-RO');
+}
+
+const DEFAULT_MAP_CENTER = { latitude: 47.010452, longitude: 28.86381 };
+const MAP_TILE_SIZE = 256;
+
+function latLonToWorld(latitude, longitude, zoom, tileSize = MAP_TILE_SIZE) {
+  const normalizedLatitude = Math.max(-85.05112878, Math.min(85.05112878, Number(latitude)));
+  const normalizedLongitude = Math.max(-180, Math.min(180, Number(longitude)));
+  const sinLatitude = Math.sin((normalizedLatitude * Math.PI) / 180);
+  const scale = tileSize * 2 ** zoom;
+
+  return {
+    x: ((normalizedLongitude + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI)) * scale
+  };
+}
+
+function stationHasCoordinates(station) {
+  const latitude = Number(station?.latitude);
+  const longitude = Number(station?.longitude);
+
+  return (
+    Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180
+  );
+}
+
+function stationMarkerColor(station) {
+  const availability = station.live_status?.availability || station.status;
+
+  if (availability === 'available') return '#7ddf8a';
+  if (availability === 'charging') return '#ffee00';
+  if (availability === 'reserved') return '#7cc7ff';
+  if (['offline', 'faulted', 'unavailable', 'stale'].includes(availability)) return '#ff7b7b';
+
+  return '#c8d46d';
+}
+
+function fitMapView(stations) {
+  const mapped = stations.filter(stationHasCoordinates);
+
+  if (mapped.length === 0) {
+    return {
+      centerLat: DEFAULT_MAP_CENTER.latitude,
+      centerLon: DEFAULT_MAP_CENTER.longitude,
+      zoom: 12
+    };
+  }
+
+  const latitudes = mapped.map((station) => Number(station.latitude));
+  const longitudes = mapped.map((station) => Number(station.longitude));
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLon = Math.min(...longitudes);
+  const maxLon = Math.max(...longitudes);
+  const latSpan = Math.max(maxLat - minLat, 0.004);
+  const lonSpan = Math.max(maxLon - minLon, 0.004);
+  const span = Math.max(latSpan, lonSpan);
+
+  let zoom = 15;
+  if (span > 2) zoom = 8;
+  else if (span > 0.8) zoom = 9;
+  else if (span > 0.35) zoom = 10;
+  else if (span > 0.15) zoom = 11;
+  else if (span > 0.07) zoom = 12;
+  else if (span > 0.03) zoom = 13;
+  else if (span > 0.012) zoom = 14;
+
+  return {
+    centerLat: (minLat + maxLat) / 2,
+    centerLon: (minLon + maxLon) / 2,
+    zoom
+  };
+}
+
+function formatSecondsAgo(seconds) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) {
+    return '-';
+  }
+
+  const value = Number(seconds);
+  if (value < 60) {
+    return `${value}s`;
+  }
+
+  return `${Math.floor(value / 60)}m ${value % 60}s`;
+}
+
+function sessionKwhDelivered(session) {
+  const delivered = session?.kwh_delivered ?? session?.telemetry?.kwh_consumed ?? session?.kwh_consumed;
+  return delivered ?? 0;
+}
+
+function sessionPowerKw(session) {
+  return session?.power_kw_live ?? session?.telemetry?.power_kw ?? null;
+}
+
 function statusLabel(status) {
   return {
     available: 'Disponibila',
@@ -193,6 +332,7 @@ function statusLabel(status) {
     paid: 'Platita',
     unpaid: 'Neplatita',
     pending: 'In asteptare',
+    failed: 'Esuata',
     approved: 'Aprobata',
     rejected: 'Respinsa'
   }[status] ?? status ?? '-';
@@ -209,6 +349,7 @@ function connectionLabel(status) {
 function availabilityLabel(status) {
   return {
     available: 'Conector liber',
+    preparing: 'Pregatire',
     charging: 'Conector ocupat',
     reserved: 'Rezervat',
     faulted: 'Eroare conector',
@@ -217,27 +358,49 @@ function availabilityLabel(status) {
   }[status] ?? status ?? 'Live necunoscut';
 }
 
-function formatLastSeen(seconds) {
-  if (seconds === null || seconds === undefined) {
-    return 'fara date live';
+function ocppCommandLabel(status) {
+  return {
+    pending: 'In coada',
+    sent: 'Trimis',
+    accepted: 'Acceptat',
+    rejected: 'Respins',
+    failed: 'Esuat'
+  }[status] ?? status ?? '-';
+}
+
+function diagnosticsUploadLabel(status) {
+  return {
+    Idle: 'Inactiv',
+    Uploading: 'Se incarca',
+    Uploaded: 'Incarcat',
+    UploadFailed: 'Upload esuat'
+  }[status] ?? status ?? '-';
+}
+
+function diagnosticsResultSummary(command) {
+  if (command.file_name) {
+    return command.file_name;
   }
 
-  if (seconds < 60) {
-    return `acum ${Math.max(0, Math.round(seconds))}s`;
+  if (command.upload_status) {
+    return diagnosticsUploadLabel(command.upload_status);
   }
 
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
-    return `acum ${minutes} min`;
+  if (['pending', 'sent'].includes(command.status)) {
+    return 'Astept raspuns statie...';
   }
 
-  return `acum ${Math.round(minutes / 60)} h`;
+  if (command.status === 'accepted') {
+    return 'Acceptat, fara fisier inca';
+  }
+
+  return command.error_message || '—';
 }
 
 function statusVariant(status) {
-  if (['available', 'paid', 'approved', 'connected'].includes(status)) return 'success';
-  if (['charging', 'pending', 'unpaid', 'disconnected', 'reserved'].includes(status)) return 'warning';
-  if (['offline', 'rejected', 'faulted', 'unavailable', 'stale'].includes(status)) return 'danger';
+  if (['available', 'paid', 'approved', 'connected', 'accepted', 'Uploaded'].includes(status)) return 'success';
+  if (['charging', 'pending', 'unpaid', 'disconnected', 'reserved', 'sent', 'Uploading'].includes(status)) return 'warning';
+  if (['offline', 'rejected', 'faulted', 'unavailable', 'stale', 'failed', 'UploadFailed'].includes(status)) return 'danger';
   return 'neutral';
 }
 
@@ -267,13 +430,14 @@ function BrandBlock({ compact = false }) {
   );
 }
 
-function SectionButton({ section, active, onClick }) {
+function SectionButton({ section, active, badge, onClick }) {
   const Icon = section.icon;
 
   return (
     <button className={`nav-item ${active ? 'active' : ''}`} onClick={() => onClick(section.id)} type="button">
       <Icon size={18} />
       <span>{section.label}</span>
+      {badge > 0 ? <span className="nav-badge">{badge}</span> : null}
     </button>
   );
 }
@@ -358,9 +522,10 @@ function LoginView({ error, loading, onSubmit }) {
   );
 }
 
-function DashboardView({ dashboard, loading }) {
+function DashboardView({ dashboard, loading, activeSessions = [] }) {
   const stats = dashboard?.stats;
   const stationStatus = dashboard?.stationStatus;
+  const ocpp = dashboard?.ocpp;
   const statusItems = [
     { key: 'available', label: 'Disponibile', value: stationStatus?.available ?? 0, variant: 'success' },
     { key: 'charging', label: 'In incarcare', value: stationStatus?.charging ?? 0, variant: 'warning' },
@@ -372,11 +537,19 @@ function DashboardView({ dashboard, loading }) {
 
   return (
     <div className="view-stack">
-      <section className="stats-grid">
+      <section className="stats-grid stats-grid-wide">
         <StatCard label="Utilizatori" value={formatNumber(stats?.users)} helper="total conturi" icon={Users} />
         <StatCard label="Statii" value={formatNumber(stats?.stations)} helper={`${formatNumber(stats?.availableStations)} disponibile`} icon={Zap} />
         <StatCard label="Sesiuni azi" value={formatNumber(stats?.sessionsToday)} helper={`${formatNumber(stats?.activeSessions)} active`} icon={Activity} />
-        <StatCard label="OCPP live" value={formatNumber(stats?.connectedStations)} helper="statii conectate" icon={RadioTower} />
+        <StatCard label="OCPP live" value={formatNumber(stats?.connectedStations)} helper={`mod ${ocpp?.mode ?? '-'}`} icon={RadioTower} />
+        <StatCard label="Venituri" value={formatMoney(stats?.totalRevenue)} helper="total facturat" icon={CircleDollarSign} />
+        <StatCard label="Cereri" value={formatNumber(stats?.pendingRequests)} helper="in asteptare" icon={ClipboardList} />
+        <StatCard
+          label="Alimentari azi"
+          value={formatMoney(stats?.walletTopupsVolumeToday)}
+          helper={`${formatNumber(stats?.walletTopupsPaidToday)} platite`}
+          icon={Wallet}
+        />
       </section>
 
       <section className="content-grid">
@@ -431,12 +604,181 @@ function DashboardView({ dashboard, loading }) {
           </div>
         </div>
       </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Sesiuni active acum</h2>
+            <p>Telemetrie live din contor (refresh automat)</p>
+          </div>
+          <BatteryCharging size={20} />
+        </div>
+        {activeSessions.length === 0 ? (
+          <EmptyState title="Nicio sesiune activa" detail="Cand un utilizator incarca, apare aici cu kWh si kW live." />
+        ) : (
+          <div className="table">
+            {activeSessions.map((session) => (
+              <div className="table-row four" key={session.id}>
+                <div>
+                  <strong>{session.user?.name ?? '-'}</strong>
+                  <p>{session.station?.name ?? '-'}</p>
+                </div>
+                <span className="live-kwh">
+                  {formatKwh(sessionKwhDelivered(session))} kWh
+                  {sessionPowerKw(session) != null ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW` : ''}
+                </span>
+                <Badge variant="warning">Activa</Badge>
+                <span>{session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function StationsView({ rows, loading, onCreate, onEdit, onDelete, onDownloadQr, onPreviewQr }) {
+function StationsMapPanel({ stations, onOpenDetail }) {
+  const mappedStations = useMemo(() => stations.filter(stationHasCoordinates), [stations]);
+  const autoView = useMemo(() => fitMapView(stations), [stations]);
+  const [zoomOffset, setZoomOffset] = useState(0);
+  const zoom = Math.max(8, Math.min(18, autoView.zoom + zoomOffset));
+  const center = useMemo(
+    () => latLonToWorld(autoView.centerLat, autoView.centerLon, zoom, MAP_TILE_SIZE),
+    [autoView.centerLat, autoView.centerLon, zoom]
+  );
+  const centerTileX = Math.floor(center.x / MAP_TILE_SIZE);
+  const centerTileY = Math.floor(center.y / MAP_TILE_SIZE);
+  const tiles = useMemo(() => {
+    const nextTiles = [];
+
+    for (let dx = -3; dx <= 3; dx += 1) {
+      for (let dy = -4; dy <= 4; dy += 1) {
+        const x = centerTileX + dx;
+        const y = centerTileY + dy;
+        nextTiles.push({
+          key: `${zoom}-${x}-${y}`,
+          left: x * MAP_TILE_SIZE - center.x,
+          top: y * MAP_TILE_SIZE - center.y,
+          url: `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`
+        });
+      }
+    }
+
+    return nextTiles;
+  }, [center.x, center.y, centerTileX, centerTileY, zoom]);
+  const markers = useMemo(
+    () => mappedStations.map((station) => {
+      const world = latLonToWorld(station.latitude, station.longitude, zoom, MAP_TILE_SIZE);
+
+      return {
+        station,
+        left: world.x - center.x,
+        top: world.y - center.y,
+        color: stationMarkerColor(station)
+      };
+    }),
+    [mappedStations, center.x, center.y, zoom]
+  );
+  const missingCoordinates = stations.length - mappedStations.length;
+
+  return (
+    <div className="stations-map-wrap">
+      {missingCoordinates > 0 && (
+        <div className="map-hint-banner">
+          {missingCoordinates} {missingCoordinates === 1 ? 'statie fara' : 'statii fara'} coordonate GPS.
+          Editeaza statia si adauga lat/long pentru a o afisa pe harta.
+        </div>
+      )}
+
+      <div className="stations-map">
+        <div className="stations-map-canvas">
+          {tiles.map((tile) => (
+            <img
+              alt=""
+              className="map-tile"
+              draggable={false}
+              key={tile.key}
+              src={tile.url}
+              style={{
+                left: `calc(50% + ${tile.left}px)`,
+                top: `calc(50% + ${tile.top}px)`
+              }}
+            />
+          ))}
+
+          {markers.map(({ station, left, top, color }) => (
+            <button
+              className="map-marker"
+              key={station.id}
+              onClick={() => onOpenDetail(station)}
+              style={{
+                left: `calc(50% + ${left}px)`,
+                top: `calc(50% + ${top}px)`,
+                background: color
+              }}
+              title={`${station.name} · ${station.location ?? ''}`}
+              type="button"
+            >
+              <span className="map-marker-core" />
+            </button>
+          ))}
+        </div>
+
+        <div className="map-controls">
+          <button
+            aria-label="Zoom in"
+            className="secondary-button mini-button"
+            onClick={() => setZoomOffset((current) => current + 1)}
+            type="button"
+          >
+            <Plus size={14} />
+          </button>
+          <button
+            aria-label="Zoom out"
+            className="secondary-button mini-button"
+            onClick={() => setZoomOffset((current) => current - 1)}
+            type="button"
+          >
+            <Minus size={14} />
+          </button>
+          <button
+            className="secondary-button mini-button"
+            onClick={() => setZoomOffset(0)}
+            type="button"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+
+        <div className="map-legend">
+          <span><i className="legend-dot available" /> Disponibila</span>
+          <span><i className="legend-dot charging" /> In incarcare</span>
+          <span><i className="legend-dot offline" /> Offline / eroare</span>
+        </div>
+
+        <div className="map-attribution">© OpenStreetMap</div>
+      </div>
+    </div>
+  );
+}
+
+function StationsView({
+  rows,
+  loading,
+  onCreate,
+  onEdit,
+  onDelete,
+  onDownloadQr,
+  onPreviewQr,
+  onDiagnostics,
+  onRefreshStatus,
+  onUnlockConnector,
+  onStopActiveSession,
+  onOpenDetail
+}) {
   const [query, setQuery] = useState('');
+  const [viewMode, setViewMode] = useState('list');
   const visibleRows = rows.filter((station) => matchesQuery(station, query, [
     (item) => item.name,
     (item) => item.location,
@@ -458,11 +800,35 @@ function StationsView({ rows, loading, onCreate, onEdit, onDelete, onDownloadQr,
           <h2>Statii</h2>
           <p>Administrare puncte de incarcare</p>
         </div>
-        <button className="primary-button" onClick={onCreate} type="button">
-          <Plus size={18} />
-          Statie noua
-        </button>
+        <div className="panel-header-actions">
+          <div className="view-toggle">
+            <button
+              className={viewMode === 'list' ? 'secondary-button active-filter' : 'secondary-button'}
+              onClick={() => setViewMode('list')}
+              type="button"
+            >
+              <RadioTower size={16} />
+              Lista
+            </button>
+            <button
+              className={viewMode === 'map' ? 'secondary-button active-filter' : 'secondary-button'}
+              onClick={() => setViewMode('map')}
+              type="button"
+            >
+              <Map size={16} />
+              Harta
+            </button>
+          </div>
+          <button className="primary-button" onClick={onCreate} type="button">
+            <Plus size={18} />
+            Statie noua
+          </button>
+        </div>
       </div>
+      {viewMode === 'map' ? (
+        <StationsMapPanel onOpenDetail={onOpenDetail} stations={rows} />
+      ) : (
+        <>
       <Toolbar value={query} onChange={setQuery} />
       {rows.length === 0 ? (
         <EmptyState title="Nu exista statii" detail="Cand backend-ul returneaza statii, apar aici automat." />
@@ -475,24 +841,71 @@ function StationsView({ rows, loading, onCreate, onEdit, onDelete, onDownloadQr,
               <div className="station-cell">
                 <span className="station-dot" />
                 <div>
-                  <strong>{station.name}</strong>
+                  <button className="station-name-link" onClick={() => onOpenDetail(station)} type="button">
+                    <strong>{station.name}</strong>
+                  </button>
                   <p><MapPin size={14} /> {station.location}</p>
                   <p><RadioTower size={14} /> {station.ocpp_identity ?? 'fara OCPP identity'}</p>
-                  <p className="station-live-line">
-                    {availabilityLabel(station.live_status?.availability)}
-                    {' - '}
-                    {formatLastSeen(station.live_status?.seconds_since_last_seen)}
-                  </p>
                 </div>
               </div>
               <div className="station-badges">
                 <Badge variant={statusVariant(station.status)}>{statusLabel(station.status)}</Badge>
                 <Badge variant={statusVariant(station.ocpp_connection_status)}>{connectionLabel(station.ocpp_connection_status)}</Badge>
                 <Badge variant={statusVariant(station.live_status?.availability)}>{availabilityLabel(station.live_status?.availability)}</Badge>
+                {station.live_status?.connected_connector_label && (
+                  <Badge>{station.live_status.connected_connector_label}</Badge>
+                )}
               </div>
-              <span>{formatNumber(station.power_kw)} kW</span>
+              <span className="live-kwh">
+                {station.live_status?.power_kw != null
+                  ? `${formatKwh(station.live_status.power_kw, 2)} kW live`
+                  : `${formatNumber(station.power_kw)} kW nominal`}
+                {station.active_sessions_count > 0 ? ` · ${station.active_sessions_count} activa` : ''}
+              </span>
               <strong>{formatNumber(station.sessions_count)} sesiuni</strong>
               <div className="row-actions compact-actions">
+                <button
+                  className="icon-button"
+                  onClick={() => onOpenDetail(station)}
+                  type="button"
+                  aria-label="Detalii statie"
+                  title="Detalii statie"
+                >
+                  <Eye size={16} />
+                </button>
+                {station.ocpp_connection_status === 'connected' && (
+                  <>
+                    <button
+                      className="icon-button"
+                      onClick={() => onRefreshStatus(station)}
+                      type="button"
+                      aria-label="Refresh status OCPP"
+                      title="Refresh status OCPP"
+                    >
+                      <RefreshCw size={16} />
+                    </button>
+                    <button
+                      className="icon-button"
+                      onClick={() => onUnlockConnector(station)}
+                      type="button"
+                      aria-label="UnlockConnector"
+                      title="UnlockConnector"
+                    >
+                      <Unlock size={16} />
+                    </button>
+                    {station.active_sessions_count > 0 && (
+                      <button
+                        className="icon-button danger-icon"
+                        onClick={() => onStopActiveSession(station)}
+                        type="button"
+                        aria-label="Opreste sesiunea activa"
+                        title="Remote stop sesiune activa"
+                      >
+                        <Square size={16} />
+                      </button>
+                    )}
+                  </>
+                )}
                 {station.ocpp_connection_url && (
                   <button className="icon-button" onClick={() => navigator.clipboard?.writeText(station.ocpp_connection_url)} type="button" aria-label="Copiaza URL OCPP">
                     <Copy size={16} />
@@ -500,6 +913,15 @@ function StationsView({ rows, loading, onCreate, onEdit, onDelete, onDownloadQr,
                 )}
                 <button className="icon-button" onClick={() => onPreviewQr(station)} type="button" aria-label="Preview QR">
                   <Search size={16} />
+                </button>
+                <button
+                  className="icon-button"
+                  onClick={() => onDiagnostics(station)}
+                  type="button"
+                  aria-label="GetDiagnostics"
+                  title="GetDiagnostics OCPP"
+                >
+                  <ClipboardList size={16} />
                 </button>
                 <button className="icon-button" onClick={() => onDownloadQr(station)} type="button" aria-label="Descarca QR">
                   <Download size={16} />
@@ -515,36 +937,78 @@ function StationsView({ rows, loading, onCreate, onEdit, onDelete, onDownloadQr,
           ))}
         </div>
       )}
+        </>
+      )}
     </div>
   );
 }
 
-function SessionsView({ rows, loading, onStop, onDelete }) {
+const sessionStatusFilters = [
+  { id: '', label: 'Toate' },
+  { id: 'active', label: 'Active' },
+  { id: 'closed', label: 'Inchise' }
+];
+
+function SessionsView({ rows, loading, onStop, onDelete, onRefresh }) {
   const [query, setQuery] = useState('');
-  const visibleRows = rows.filter((session) => matchesQuery(session, query, [
-    (item) => item.user?.name,
-    (item) => item.user?.email,
-    (item) => item.station?.name,
-    (item) => item.end_time ? 'inchisa' : 'activa'
-  ]));
+  const [statusFilter, setStatusFilter] = useState('');
+  const visibleRows = rows.filter((session) => {
+    if (statusFilter === 'active' && session.end_time) return false;
+    if (statusFilter === 'closed' && !session.end_time) return false;
+
+    return matchesQuery(session, query, [
+      (item) => item.user?.name,
+      (item) => item.user?.email,
+      (item) => item.station?.name,
+      (item) => item.ocpp_transaction_id,
+      (item) => item.end_time ? 'inchisa' : 'activa'
+    ]);
+  });
 
   return (
     <ListPanel
       loading={loading}
       title="Sesiuni"
-      subtitle="Monitorizare incarcari"
+      subtitle="kWh din contor OCPP (ca pe display statie)"
       emptyTitle="Nu exista sesiuni"
       rows={visibleRows}
       searchValue={query}
       onSearchChange={setQuery}
       noResults={rows.length > 0 && visibleRows.length === 0}
+      onRefresh={onRefresh}
+      filters={(
+        <div className="status-filters">
+          {sessionStatusFilters.map((filter) => (
+            <button
+              className={statusFilter === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
+              key={filter.id || 'all'}
+              onClick={() => setStatusFilter(filter.id)}
+              type="button"
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      )}
       render={(session) => (
         <>
           <div>
             <strong>{session.user?.name ?? '-'}</strong>
-            <p>{session.station?.name ?? '-'}</p>
+            <p>
+              {session.station?.name ?? '-'}
+              {session.ocpp_connector_id ? ` · C${session.ocpp_connector_id}` : ''}
+              {session.ocpp_transaction_id ? ` · tx ${session.ocpp_transaction_id}` : ''}
+            </p>
+            {session.charge_budget > 0 && (
+              <p className="request-meta">Buget {formatMoney(session.charge_budget)}</p>
+            )}
           </div>
-          <span>{formatNumber(session.kwh_consumed)} kWh</span>
+          <span className="live-kwh">
+            {formatKwh(sessionKwhDelivered(session))} kWh
+            {!session.end_time && sessionPowerKw(session) != null
+              ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW`
+              : ''}
+          </span>
           <Badge variant={session.end_time ? 'success' : 'warning'}>{session.end_time ? 'Inchisa' : 'Activa'}</Badge>
           <div className="row-actions end-actions">
             <strong>{session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}</strong>
@@ -609,21 +1073,31 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
   );
 }
 
-function AuditView({ rows, loading }) {
+function auditSubjectLabel(entry) {
+  if (!entry?.subject_type) {
+    return '-';
+  }
+
+  const short = String(entry.subject_type).split('\\').pop();
+  return entry.subject_id ? `${short} #${entry.subject_id}` : short;
+}
+
+function AuditView({ rows, loading, onOpenDetail }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((entry) => matchesQuery(entry, query, [
     (item) => item.action,
     (item) => item.actor?.name,
     (item) => item.actor?.email,
     (item) => item.station?.name,
-    (item) => item.subject_type
+    (item) => item.subject_type,
+    (item) => auditSubjectLabel(item)
   ]));
 
   return (
     <ListPanel
       loading={loading}
       title="Audit"
-      subtitle="Actiuni backoffice"
+      subtitle="Actiuni backoffice si gateway"
       emptyTitle="Nu exista intrari audit"
       rows={visibleRows}
       searchValue={query}
@@ -632,19 +1106,218 @@ function AuditView({ rows, loading }) {
       render={(entry) => (
         <>
           <div>
-            <strong>{entry.action}</strong>
-            <p>{entry.actor?.name ?? 'Sistem'}</p>
+            <button className="station-name-link" onClick={() => onOpenDetail(entry)} type="button">
+              <strong>{entry.action}</strong>
+            </button>
+            <p>{entry.actor?.name ?? 'Sistem'}{entry.actor?.email ? ` · ${entry.actor.email}` : ''}</p>
           </div>
-          <span>{entry.station?.name ?? entry.subject_type ?? '-'}</span>
-          <Badge>{entry.created_at ? new Date(entry.created_at).toLocaleString('ro-RO') : '-'}</Badge>
-          <ShieldCheck size={18} />
+          <span>{entry.station?.name ?? auditSubjectLabel(entry)}</span>
+          <Badge>{formatDateTime(entry.created_at)}</Badge>
+          <button
+            className="icon-button"
+            onClick={() => onOpenDetail(entry)}
+            type="button"
+            aria-label="Detalii audit"
+            title="Detalii audit"
+          >
+            <Eye size={16} />
+          </button>
         </>
       )}
     />
   );
 }
 
-function UsersView({ rows, loading, onCreate }) {
+function AuditDetailModal({ detail, loading, error, onClose }) {
+  if (!detail) {
+    return null;
+  }
+
+  const entry = detail.entry ?? detail;
+  const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {};
+  const metadataEntries = Object.entries(metadata);
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal-panel modal-panel-wide">
+        <div className="panel-header">
+          <div>
+            <h2>{entry.action ?? 'Audit'}</h2>
+            <p>{formatDateTime(entry.created_at)} · #{entry.id}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+        {loading && <LoadingState />}
+
+        {!loading && (
+          <>
+            <div className="billing-summary-grid">
+              <div className="billing-stat">
+                <span>Actor</span>
+                <strong>{entry.actor?.name ?? 'Sistem'}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Email actor</span>
+                <strong>{entry.actor?.email ?? '-'}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Subiect</span>
+                <strong>{auditSubjectLabel(entry)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Statie</span>
+                <strong>{entry.station?.name ?? '-'}</strong>
+              </div>
+            </div>
+
+            {entry.station && (
+              <div className="detail-section">
+                <h3>Statie</h3>
+                <div className="meta-grid">
+                  <span>Nume: <strong>{entry.station.name}</strong></span>
+                  <span>Locatie: <strong>{entry.station.location ?? '-'}</strong></span>
+                  <span>Status: <strong>{statusLabel(entry.station.status)}</strong></span>
+                  <span>QR: <strong>{entry.station.qr_code ?? '-'}</strong></span>
+                </div>
+              </div>
+            )}
+
+            {entry.session && (
+              <div className="detail-section">
+                <h3>Sesiune legata</h3>
+                <div className="meta-grid">
+                  <span>ID: <strong>#{entry.session.id}</strong></span>
+                  <span>Utilizator: <strong>{entry.session.user?.name ?? '-'}</strong></span>
+                  <span>Email: <strong>{entry.session.user?.email ?? '-'}</strong></span>
+                  <span>Statie: <strong>{entry.session.station?.name ?? '-'}</strong></span>
+                  <span>Start: <strong>{formatDateTime(entry.session.start_time)}</strong></span>
+                  <span>kWh: <strong>{formatKwh(entry.session.kwh_consumed)}</strong></span>
+                </div>
+              </div>
+            )}
+
+            <div className="detail-section">
+              <h3>Metadata</h3>
+              {metadataEntries.length === 0 ? (
+                <p className="detail-empty">Fara metadata suplimentar.</p>
+              ) : (
+                <div className="audit-metadata-grid">
+                  {metadataEntries.map(([key, value]) => (
+                    <div className="audit-metadata-row" key={key}>
+                      <span>{key}</span>
+                      <strong>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose} type="button">Inchide</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const walletStatusFilters = [
+  { id: '', label: 'Toate' },
+  { id: 'paid', label: 'Platite' },
+  { id: 'pending', label: 'In asteptare' }
+];
+
+function WalletTopupsView({ rows, summary, loading }) {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const visibleRows = rows.filter((topup) => {
+    if (statusFilter && topup.status !== statusFilter) {
+      return false;
+    }
+
+    return matchesQuery(topup, query, [
+      (item) => item.user?.name,
+      (item) => item.user?.email,
+      (item) => item.status,
+      (item) => item.payment_provider,
+      (item) => item.payment_session_id,
+      (item) => String(item.id)
+    ]);
+  });
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>Alimentari wallet</h2>
+          <p>Stripe si credite prepay pentru clienti</p>
+        </div>
+        <Wallet size={20} />
+      </div>
+
+      <div className="billing-summary-grid">
+        <div className="billing-stat">
+          <span>Platite</span>
+          <strong>{formatNumber(summary?.count_paid)} · {formatMoney(summary?.volume_paid)}</strong>
+        </div>
+        <div className="billing-stat">
+          <span>In asteptare</span>
+          <strong>{formatNumber(summary?.count_pending)} · {formatMoney(summary?.volume_pending)}</strong>
+        </div>
+      </div>
+
+      <div className="status-filters">
+        {walletStatusFilters.map((filter) => (
+          <button
+            className={statusFilter === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
+            key={filter.id || 'all'}
+            onClick={() => setStatusFilter(filter.id)}
+            type="button"
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      <Toolbar value={query} onChange={setQuery} />
+
+      {loading ? (
+        <LoadingState />
+      ) : rows.length === 0 ? (
+        <EmptyState title="Nicio alimentare" detail="Cand clientii platesc prin Stripe, tranzactiile apar aici." />
+      ) : visibleRows.length === 0 ? (
+        <EmptyState title="Niciun rezultat" detail="Schimba filtrul sau cautarea." />
+      ) : (
+        <div className="table">
+          {visibleRows.map((topup) => (
+            <div className="table-row four" key={topup.id}>
+              <div>
+                <strong>{topup.user?.name ?? `User #${topup.user_id}`}</strong>
+                <p>{topup.user?.email ?? '-'}</p>
+              </div>
+              <span className="live-kwh">{formatMoney(topup.amount)}</span>
+              <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+              <div>
+                <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
+                <p className="request-meta">
+                  {topup.payment_provider ?? '—'}
+                  {topup.payment_session_id ? ` · ${topup.payment_session_id.slice(0, 18)}…` : ''}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientsView({ rows, loading, onCreate, onOpenDetail }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((user) => matchesQuery(user, query, [
     (item) => item.name,
@@ -658,31 +1331,482 @@ function UsersView({ rows, loading, onCreate }) {
     <div className="panel">
       <div className="panel-header">
         <div>
-          <h2>Utilizatori</h2>
-          <p>Conturi clienti</p>
+          <h2>Clienti</h2>
+          <p>Conturi cu plata la card, per sesiune</p>
         </div>
         <button className="primary-button" onClick={onCreate} type="button">
           <Plus size={18} />
-          User nou
+          Client nou
         </button>
       </div>
       <Toolbar value={query} onChange={setQuery} />
       {rows.length === 0 ? (
-        <EmptyState title="Nu exista utilizatori" />
+        <EmptyState title="Nu exista clienti" />
       ) : visibleRows.length === 0 ? (
-        <EmptyState title="Niciun user gasit" detail="Schimba termenul de cautare." />
+        <EmptyState title="Niciun client gasit" detail="Schimba termenul de cautare." />
       ) : (
         visibleRows.map((user) => (
-          <div className="compact-row" key={user.id}>
+          <div className="compact-row user-row client-row" key={user.id}>
+            <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
+            <div>
+              <strong>{user.name ?? '-'}</strong>
+              <p>{user.email ?? '-'}</p>
+            </div>
+            <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
+            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
+            <Badge variant={user.unpaid_invoices_count > 0 ? 'warning' : 'success'}>
+              {formatNumber(user.unpaid_invoices_count)} neplatite
+            </Badge>
+            <strong className={user.outstanding_balance > 0 ? 'debt-value' : ''}>
+              {formatMoney(user.outstanding_balance)}
+            </strong>
+            <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
+              Detalii
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function PersonalView({ rows, loading, onCreate, onOpenDetail }) {
+  const [query, setQuery] = useState('');
+  const visibleRows = rows.filter((user) => matchesQuery(user, query, [
+    (item) => item.name,
+    (item) => item.email,
+    (item) => item.currency
+  ]));
+  const totalDebt = rows.reduce((sum, user) => sum + Number(user.outstanding_balance || 0), 0);
+
+  if (loading) return <LoadingState />;
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>Personal</h2>
+          <p>
+            {rows.length} angajati
+            {totalDebt > 0 ? ` · datorii totale ${formatMoney(totalDebt)}` : ' · fara datorii'}
+          </p>
+        </div>
+        <button className="primary-button" onClick={onCreate} type="button">
+          <Plus size={18} />
+          Angajat nou
+        </button>
+      </div>
+      <Toolbar value={query} onChange={setQuery} />
+      {rows.length === 0 ? (
+        <EmptyState title="Nu exista personal" detail="Adauga angajati cu facturare lunara." />
+      ) : visibleRows.length === 0 ? (
+        <EmptyState title="Niciun angajat gasit" detail="Schimba termenul de cautare." />
+      ) : (
+        visibleRows.map((user) => (
+          <div className="compact-row user-row personal-row" key={user.id}>
             <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
             <div>
               <strong>{user.name ?? '-'}</strong>
               <p>{user.email ?? '-'}</p>
             </div>
             <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
+            <Badge>{formatNumber(user.invoices_count)} facturi</Badge>
+            <Badge variant={user.unpaid_invoices_count > 0 ? 'warning' : 'success'}>
+              {formatNumber(user.unpaid_invoices_count)} neplatite
+            </Badge>
+            <strong className={user.outstanding_balance > 0 ? 'debt-value' : ''}>
+              {formatMoney(user.outstanding_balance)}
+            </strong>
+            <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
+              Detalii
+            </button>
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+function invoiceTypeLabel(type) {
+  if (type === 'monthly') return 'Lunara';
+  if (type === 'session') return 'Sesiune';
+  return type || '-';
+}
+
+function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice }) {
+  if (!detail) {
+    return null;
+  }
+
+  const user = detail.user ?? detail;
+  const billing = detail.billing ?? {};
+  const invoices = detail.invoices ?? [];
+  const sessions = detail.recent_sessions ?? [];
+  const walletTopups = detail.wallet_topups ?? [];
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal-panel modal-panel-wide">
+        <div className="panel-header">
+          <div>
+            <h2>{user.name ?? 'Utilizator'}</h2>
+            <p>
+              {user.email ?? '-'}
+              {user.account_type === 'customer' ? ' · client card' : user.account_type === 'personal' ? ' · personal' : ''}
+            </p>
+          </div>
+          <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+        {loading && <LoadingState />}
+
+        {!loading && (
+          <>
+            <div className="billing-summary-grid">
+              <div className="billing-stat">
+                <span>Datorie curenta</span>
+                <strong className={billing.outstanding_balance > 0 ? 'debt-value' : ''}>
+                  {formatMoney(billing.outstanding_balance)}
+                </strong>
+              </div>
+              <div className="billing-stat">
+                <span>Facturi neplatite</span>
+                <strong>{formatNumber(billing.unpaid_invoices_count)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Facturi platite</span>
+                <strong>{formatNumber(billing.paid_invoices_count)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Total facturat</span>
+                <strong>{formatMoney(billing.total_billed)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Energie totala</span>
+                <strong>{formatNumber(billing.total_kwh)} kWh</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Sesiuni</span>
+                <strong>{formatNumber(user.sessions_count)}</strong>
+              </div>
+              {user.account_type === 'customer' && (
+                <div className="billing-stat">
+                  <span>Sold wallet</span>
+                  <strong>{formatMoney(user.wallet_balance)}</strong>
+                </div>
+              )}
+            </div>
+
+            {user.account_type === 'customer' && (
+              <div className="detail-section">
+                <h3>Alimentari wallet</h3>
+                {walletTopups.length === 0 ? (
+                  <p className="detail-empty">Nicio alimentare Stripe inca.</p>
+                ) : (
+                  <div className="detail-table">
+                    {walletTopups.map((topup) => (
+                      <div className="detail-row" key={topup.id}>
+                        <div>
+                          <strong>{formatMoney(topup.amount)}</strong>
+                          <p>{formatDateTime(topup.paid_at ?? topup.created_at)}</p>
+                        </div>
+                        <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+                        <span>{topup.payment_provider ?? '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="detail-section">
+              <h3>Facturi</h3>
+              {invoices.length === 0 ? (
+                <p className="detail-empty">Nicio factura inca.</p>
+              ) : (
+                <div className="detail-table">
+                  {invoices.map((invoice) => (
+                    <div className="detail-row" key={invoice.id}>
+                      <div>
+                        <strong>{invoice.invoice_number ?? `#${invoice.id}`}</strong>
+                        <p>
+                          {invoice.month ?? '-'} · {invoiceTypeLabel(invoice.invoice_type)}
+                        </p>
+                      </div>
+                      <span>{formatNumber(invoice.total_kwh)} kWh</span>
+                      <Badge variant={statusVariant(invoice.status)}>{statusLabel(invoice.status)}</Badge>
+                      <div className="row-actions invoice-actions">
+                        <strong>{formatMoney(invoice.total_amount)}</strong>
+                        <button
+                          className="secondary-button mini-button"
+                          onClick={() => onDownloadInvoice(invoice)}
+                          type="button"
+                        >
+                          Descarca
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="detail-section">
+              <h3>Sesiuni recente</h3>
+              {sessions.length === 0 ? (
+                <p className="detail-empty">Nicio sesiune inca.</p>
+              ) : (
+                <div className="detail-table">
+                  {sessions.map((session) => (
+                    <div className="detail-row" key={session.id}>
+                      <div>
+                        <strong>{session.station?.name ?? `Statia #${session.station_id}`}</strong>
+                        <p>
+                          {session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}
+                        </p>
+                      </div>
+                      <span className="live-kwh">
+            {formatKwh(sessionKwhDelivered(session))} kWh
+            {!session.end_time && sessionPowerKw(session) != null
+              ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW`
+              : ''}
+          </span>
+                      <Badge variant={session.end_time ? 'success' : 'warning'}>
+                        {session.end_time ? 'Inchisa' : 'Activa'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose} type="button">Inchide</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StationDetailModal({
+  detail,
+  loading,
+  error,
+  onClose,
+  onReload,
+  onRefreshStatus,
+  onUnlockConnector,
+  onStopActiveSession,
+  onDiagnostics
+}) {
+  if (!detail) {
+    return null;
+  }
+
+  const station = detail.station ?? {};
+  const live = detail.live_status ?? {};
+  const hardware = detail.hardware ?? {};
+  const connectors = detail.connectors ?? [];
+  const activeSessions = detail.active_sessions ?? [];
+  const diagnosticsCommands = detail.diagnostics_commands ?? [];
+  const diagnosticsFtpUrl = detail.diagnostics_ftp_url ?? '';
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal-panel modal-panel-wide station-detail-modal">
+        <div className="panel-header">
+          <div>
+            <h2>{station.name ?? 'Statie'}</h2>
+            <p>
+              {station.location ?? '-'}
+              {station.ocpp_identity ? ` · ${station.ocpp_identity}` : ''}
+            </p>
+          </div>
+          <div className="row-actions">
+            <button className="secondary-button mini-button" onClick={onReload} type="button">
+              <RefreshCw size={15} />
+              Actualizeaza
+            </button>
+            <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+        {loading && <LoadingState />}
+
+        {!loading && (
+          <>
+            <div className="billing-summary-grid">
+              <div className="billing-stat">
+                <span>OCPP</span>
+                <strong>{connectionLabel(station.ocpp_connection_status)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Ultim heartbeat</span>
+                <strong>{formatDateTime(live.last_heartbeat_at ?? station.last_heartbeat_at)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Ultim mesaj</span>
+                <strong>{formatDateTime(live.last_message_at ?? station.last_ocpp_message_at)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Vazut acum</span>
+                <strong>{formatSecondsAgo(live.seconds_since_last_seen)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Firmware</span>
+                <strong>{hardware.firmware ?? '-'}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Model</span>
+                <strong>{hardware.model ?? station.connector_type ?? '-'}</strong>
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <h3>Hardware & conectare</h3>
+              <div className="meta-grid">
+                <span>Vendor: <strong>{hardware.vendor ?? '-'}</strong></span>
+                <span>Serial: <strong>{hardware.serial ?? '-'}</strong></span>
+                <span>QR: <strong>{station.qr_code ?? '-'}</strong></span>
+                <span>OCPP v: <strong>{station.ocpp_version ?? '-'}</strong></span>
+                <span className="meta-wide">WS URL: <strong>{station.ocpp_connection_url ?? '-'}</strong></span>
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <h3>Conectori live</h3>
+              {connectors.length === 0 ? (
+                <p className="detail-empty">Nicio telemetrie OCPP inca. Apasa Refresh status.</p>
+              ) : (
+                <div className="connector-grid">
+                  {connectors.map((connector) => (
+                    <article className="connector-card" key={connector.id}>
+                      <div className="connector-card-head">
+                        <strong>Conector {connector.label} (#{connector.id})</strong>
+                        <Badge variant={statusVariant(connector.availability)}>{connector.status || '-'}</Badge>
+                      </div>
+                      <div className="connector-metrics">
+                        <span className="live-kwh">{formatKwh(connector.telemetry?.energy_kwh)} kWh</span>
+                        <span>{formatKwh(connector.telemetry?.power_kw, 2)} kW</span>
+                        <span>{formatKwh(connector.telemetry?.current_a, 1)} A</span>
+                        <span>{formatNumber(connector.telemetry?.voltage_v)} V</span>
+                      </div>
+                      <p className="request-meta">
+                        RFID: {connector.local_id_tag ?? '—'}
+                        {connector.has_active_session ? ' · sesiune activa' : ''}
+                        {connector.telemetry?.sampled_at ? ` · ${formatDateTime(connector.telemetry.sampled_at)}` : ''}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="detail-section">
+              <h3>Sesiuni active</h3>
+              {activeSessions.length === 0 ? (
+                <p className="detail-empty">Nicio sesiune activa pe aceasta statie.</p>
+              ) : (
+                <div className="detail-table">
+                  {activeSessions.map((session) => (
+                    <div className="detail-row" key={session.id}>
+                      <div>
+                        <strong>{session.user?.name ?? '-'}</strong>
+                        <p>
+                          C{session.ocpp_connector_id ?? '?'}
+                          {session.ocpp_transaction_id ? ` · tx ${session.ocpp_transaction_id}` : ''}
+                        </p>
+                      </div>
+                      <span className="live-kwh">
+                        {formatKwh(sessionKwhDelivered(session))} kWh
+                        {sessionPowerKw(session) != null ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW` : ''}
+                      </span>
+                      <span>{formatDateTime(session.start_time)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="detail-section">
+              <h3>Diagnostics OCPP</h3>
+              {diagnosticsFtpUrl && (
+                <p className="request-meta diagnostics-ftp-hint">
+                  Destinatie upload: <strong>{diagnosticsFtpUrl}/</strong>
+                </p>
+              )}
+              {diagnosticsCommands.length === 0 ? (
+                <p className="detail-empty">
+                  Niciun GetDiagnostics inca. Apasa Diagnostics pentru a solicita jurnalul de la statie.
+                </p>
+              ) : (
+                <div className="detail-table diagnostics-table">
+                  {diagnosticsCommands.map((command) => (
+                    <div className="detail-row diagnostics-row" key={command.id}>
+                      <div>
+                        <strong>#{command.id}</strong>
+                        <p>{formatDateTime(command.acknowledged_at ?? command.sent_at ?? command.created_at)}</p>
+                      </div>
+                      <Badge variant={statusVariant(command.upload_status ?? command.status)}>
+                        {command.upload_status
+                          ? diagnosticsUploadLabel(command.upload_status)
+                          : ocppCommandLabel(command.status)}
+                      </Badge>
+                      <div className="diagnostics-result">
+                        <span>{diagnosticsResultSummary(command)}</span>
+                        {command.download_url && (
+                          <button
+                            className="secondary-button mini-button"
+                            onClick={() => navigator.clipboard?.writeText(command.download_url)}
+                            type="button"
+                          >
+                            <Copy size={14} />
+                            Copiaza URL
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className="modal-actions station-detail-actions">
+          {station.ocpp_connection_status === 'connected' && (
+            <>
+              <button className="secondary-button" onClick={() => onRefreshStatus(station)} type="button">
+                <RefreshCw size={16} />
+                Refresh status
+              </button>
+              <button className="secondary-button" onClick={() => onUnlockConnector(station)} type="button">
+                <Unlock size={16} />
+                Unlock
+              </button>
+              {activeSessions.length > 0 && (
+                <button className="secondary-button danger-icon" onClick={() => onStopActiveSession(station)} type="button">
+                  <Square size={16} />
+                  Stop sesiune
+                </button>
+              )}
+              <button className="secondary-button" onClick={() => onDiagnostics(station)} type="button">
+                <ClipboardList size={16} />
+                Diagnostics
+              </button>
+            </>
+          )}
+          <button className="secondary-button" onClick={onClose} type="button">Inchide</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -791,16 +1915,33 @@ function RequestsView({ rows, loading, onApprove, onReject }) {
 function SettingsView({ dashboard, compact = false, onSubmit }) {
   const currentUser = dashboard?.currentUser;
   const currentTariff = dashboard?.currentTariff;
+  const ocpp = dashboard?.ocpp;
 
   return (
     <form className="panel" onSubmit={onSubmit}>
       <div className="panel-header">
         <div>
           <h2>Setari</h2>
-          <p>Tarif si profil operator</p>
+          <p>Tarif, profil operator si gateway OCPP</p>
         </div>
         <Settings size={20} />
       </div>
+      {ocpp && (
+        <div className="ocpp-info-grid">
+          <div className="billing-stat">
+            <span>Mod OCPP</span>
+            <strong>{ocpp.mode ?? '-'}</strong>
+          </div>
+          <div className="billing-stat">
+            <span>URL public WS</span>
+            <strong className="ocpp-url">{ocpp.publicUrl ?? '-'}</strong>
+          </div>
+          <div className="billing-stat">
+            <span>Heartbeat</span>
+            <strong>{ocpp.heartbeatInterval ?? '-'}s</strong>
+          </div>
+        </div>
+      )}
       <div className={compact ? 'settings-grid compact' : 'settings-grid'}>
         <label>
           Moneda
@@ -824,22 +1965,24 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
   );
 }
 
-function Toolbar({ value = '', onChange = () => {} }) {
+function Toolbar({ value = '', onChange = () => {}, onRefresh }) {
   return (
     <div className="toolbar">
       <label className="search-box">
         <Search size={17} />
         <input onChange={(event) => onChange(event.target.value)} placeholder="Cauta in date reale" value={value} />
       </label>
-      <button className="secondary-button" type="button">
-        <Filter size={17} />
-        Filtre
-      </button>
+      {onRefresh ? (
+        <button className="secondary-button" onClick={onRefresh} type="button">
+          <Activity size={17} />
+          Reincarca
+        </button>
+      ) : null}
     </div>
   );
 }
 
-function ListPanel({ title, subtitle, rows, render, loading, emptyTitle, searchValue = '', onSearchChange = () => {}, noResults = false }) {
+function ListPanel({ title, subtitle, rows, render, loading, emptyTitle, searchValue = '', onSearchChange = () => {}, onRefresh, filters, noResults = false }) {
   if (loading) return <LoadingState />;
 
   return (
@@ -851,7 +1994,8 @@ function ListPanel({ title, subtitle, rows, render, loading, emptyTitle, searchV
         </div>
         <FileText size={20} />
       </div>
-      <Toolbar value={searchValue} onChange={onSearchChange} />
+      {filters}
+      <Toolbar onRefresh={onRefresh} value={searchValue} onChange={onSearchChange} />
       {noResults ? (
         <EmptyState title="Niciun rezultat" detail="Schimba termenul de cautare." />
       ) : rows.length === 0 ? (
@@ -876,7 +2020,12 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
 
   const isStation = type === 'station-create' || type === 'station-edit';
   const isEdit = type === 'station-edit';
-  const title = isStation ? (isEdit ? 'Editeaza statia' : 'Statie noua') : 'User nou';
+  const isPersonalUser = type === 'user-personal';
+  const title = isStation
+    ? (isEdit ? 'Editeaza statia' : 'Statie noua')
+    : isPersonalUser
+      ? 'Angajat nou'
+      : 'Client nou';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -884,7 +2033,13 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
         <div className="panel-header">
           <div>
             <h2>{title}</h2>
-            <p>{isStation ? 'Adauga un punct de incarcare' : 'Creeaza cont client'}</p>
+            <p>
+              {isStation
+                ? 'Adauga un punct de incarcare'
+                : isPersonalUser
+                  ? 'Cont personal cu factura lunara'
+                  : 'Cont client cu plata la card'}
+            </p>
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
             <X size={18} />
@@ -940,8 +2095,17 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
             </label>
             <label className="full-field">
               QR code
-              <input defaultValue={entity?.qr_code ?? ''} name="qr_code" placeholder="Se genereaza automat daca ramane gol" />
+              <input
+                defaultValue={entity?.qr_code ?? ''}
+                name="qr_code"
+                placeholder="Serial hardware (ex: 419400481F59D7) sau station:volta-1"
+              />
             </label>
+            {entity?.ocpp_configuration?.chargePointSerialNumber && (
+              <p className="field-hint">
+                Serial OCPP detectat: {entity.ocpp_configuration.chargePointSerialNumber}. Seteaza acelasi serial in QR code daca statia fizica nu citeste codul generat de backoffice.
+              </p>
+            )}
             {entity?.ocpp_connection_url && (
               <label className="full-field">
                 URL conectare statie
@@ -971,6 +2135,11 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               Parola
               <input name="password" type="password" required placeholder="Minim 6 caractere" />
             </label>
+            <input
+              name="account_type"
+              type="hidden"
+              value={isPersonalUser ? 'personal' : 'customer'}
+            />
           </div>
         )}
 
@@ -985,9 +2154,10 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
   );
 }
 
-function ActiveView({ activeSection, data, loading, actions }) {
+function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
+  const activeSessions = data.sessions.filter((session) => !session.end_time).slice(0, 8);
   const views = {
-    dashboard: <DashboardView dashboard={data.dashboard} loading={loading} />,
+    dashboard: <DashboardView activeSessions={activeSessions} dashboard={data.dashboard} loading={loading} />,
     stations: (
       <StationsView
         rows={data.stations}
@@ -997,13 +2167,48 @@ function ActiveView({ activeSection, data, loading, actions }) {
         onDelete={actions.deleteStation}
         onDownloadQr={actions.downloadQr}
         onPreviewQr={actions.previewQr}
+        onDiagnostics={actions.requestDiagnostics}
+        onRefreshStatus={actions.refreshStationStatus}
+        onUnlockConnector={actions.unlockStationConnector}
+        onStopActiveSession={actions.stopActiveStationSession}
+        onOpenDetail={actions.openStationDetail}
       />
     ),
-    sessions: <SessionsView rows={data.sessions} loading={loading} onStop={actions.stopSession} onDelete={actions.deleteSession} />,
-    users: <UsersView rows={data.users} loading={loading} onCreate={actions.openUserForm} />,
+    sessions: (
+      <SessionsView
+        rows={data.sessions}
+        loading={loading}
+        onStop={actions.stopSession}
+        onDelete={actions.deleteSession}
+        onRefresh={onRefresh}
+      />
+    ),
+    clients: (
+      <ClientsView
+        rows={data.clients}
+        loading={loading}
+        onCreate={actions.openCustomerForm}
+        onOpenDetail={actions.openUserDetail}
+      />
+    ),
+    wallet: (
+      <WalletTopupsView
+        loading={loading}
+        rows={data.walletTopups}
+        summary={data.walletSummary}
+      />
+    ),
+    personal: (
+      <PersonalView
+        rows={data.personal}
+        loading={loading}
+        onCreate={actions.openPersonalForm}
+        onOpenDetail={actions.openUserDetail}
+      />
+    ),
     requests: <RequestsView rows={data.requests} loading={loading} onApprove={actions.approveRequest} onReject={actions.rejectRequest} />,
     invoices: <InvoicesView rows={data.invoices} loading={loading} onDownload={actions.downloadInvoice} onSend={actions.sendInvoice} onDelete={actions.deleteInvoice} />,
-    audit: <AuditView rows={data.audit} loading={loading} />,
+    audit: <AuditView rows={data.audit} loading={loading} onOpenDetail={actions.openAuditDetail} />,
     settings: <SettingsView dashboard={data.dashboard} onSubmit={actions.saveSettings} />
   };
 
@@ -1020,6 +2225,16 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+  const [userDetail, setUserDetail] = useState(null);
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
+  const [userDetailError, setUserDetailError] = useState('');
+  const [stationDetail, setStationDetail] = useState(null);
+  const [stationDetailLoading, setStationDetailLoading] = useState(false);
+  const [stationDetailError, setStationDetailError] = useState('');
+  const [stationDetailId, setStationDetailId] = useState(null);
+  const [auditDetail, setAuditDetail] = useState(null);
+  const [auditDetailLoading, setAuditDetailLoading] = useState(false);
+  const [auditDetailError, setAuditDetailError] = useState('');
   const activeTitle = useMemo(
     () => sections.find((section) => section.id === activeSection)?.label ?? 'Dashboard',
     [activeSection]
@@ -1027,6 +2242,47 @@ export default function App() {
   const currentUser = data.dashboard?.currentUser;
   const operatorName = currentUser?.name || currentUser?.email || 'Admin';
   const dashboardStats = data.dashboard?.stats;
+  const pendingRequests = dashboardStats?.pendingRequests ?? 0;
+
+  useEffect(() => {
+    if (authRequired) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      reload(true);
+    }, 12000);
+
+    return () => window.clearInterval(timer);
+  }, [authRequired]);
+
+  async function loadStationDetail(stationId, silent = false) {
+    if (!silent) {
+      setStationDetailLoading(true);
+    }
+    setStationDetailError('');
+
+    try {
+      const payload = await fetchJson(`/backoffice/stations/${stationId}`);
+      setStationDetail(payload.data);
+    } catch (error) {
+      setStationDetailError(error.message || 'Nu am putut incarca detaliile statiei.');
+    } finally {
+      setStationDetailLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!stationDetailId) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      loadStationDetail(stationDetailId, true);
+    }, 8000);
+
+    return () => window.clearInterval(timer);
+  }, [stationDetailId]);
 
   async function runAction(action, successMessage) {
     setSaving(true);
@@ -1072,7 +2328,9 @@ export default function App() {
       ? '/backoffice/stations'
       : modalType === 'station-edit'
         ? `/backoffice/stations/${modalEntity.id}/update`
-        : '/backoffice/users';
+        : modalType === 'user-personal' || modalType === 'user-customer'
+          ? '/backoffice/users'
+          : '/backoffice/users';
 
     await runAction(() => mutateJson(url, values), 'Salvat.');
   }
@@ -1116,6 +2374,72 @@ export default function App() {
     await runAction(
       () => mutateJson(`/backoffice/invoices/${invoice.id}/delete`),
       'Factura a fost stearsa.'
+    );
+  }
+
+  async function requestStationDiagnostics(station) {
+    if (!window.confirm(`Trimit GetDiagnostics catre ${station.name}?`)) {
+      return;
+    }
+
+    setSaving(true);
+    setActionError('');
+    setActionMessage('');
+
+    try {
+      const payload = await mutateJson(`/backoffice/stations/${station.id}/diagnostics`);
+      setActionMessage(payload?.message || 'GetDiagnostics a fost trimis catre statie.');
+      await reload(true);
+      if (stationDetailId === station.id) {
+        await loadStationDetail(station.id, true);
+      }
+    } catch (error) {
+      setActionError(error.message || 'GetDiagnostics nu a putut fi trimis.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function refreshStationStatus(station) {
+    await runAction(
+      () => mutateJson(`/backoffice/stations/${station.id}/refresh-status`),
+      'Status OCPP actualizat.'
+    );
+  }
+
+  async function unlockStationConnector(station) {
+    const connectorId = station.live_status?.connected_connector_id
+      ?? station.live_status?.connector_id
+      ?? 2;
+    const custom = window.prompt(
+      `UnlockConnector pentru ${station.name}. Conector (1-9):`,
+      String(connectorId)
+    );
+
+    if (custom === null) {
+      return;
+    }
+
+    const parsed = Number(custom);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setActionError('Conector invalid.');
+      return;
+    }
+
+    await runAction(
+      () => mutateJson(`/backoffice/stations/${station.id}/unlock-connector`, { connector_id: parsed }),
+      'UnlockConnector trimis catre statie.'
+    );
+  }
+
+  async function stopActiveStationSession(station) {
+    if (!window.confirm(`Opresti sesiunea activa pe ${station.name}?`)) {
+      return;
+    }
+
+    await runAction(
+      () => mutateJson(`/backoffice/stations/${station.id}/stop-active-session`),
+      'Comanda de oprire trimisa.'
     );
   }
 
@@ -1199,17 +2523,60 @@ export default function App() {
       setModalEntity(station);
       setModalType('station-edit');
     },
-    openUserForm: () => {
+    openCustomerForm: () => {
       setActionError('');
       setActionMessage('');
       setModalEntity(null);
-      setModalType('user');
+      setModalType('user-customer');
+    },
+    openPersonalForm: () => {
+      setActionError('');
+      setActionMessage('');
+      setModalEntity(null);
+      setModalType('user-personal');
+    },
+    openStationDetail: async (station) => {
+      setStationDetailId(station.id);
+      setStationDetail({ station });
+      await loadStationDetail(station.id);
+    },
+    openAuditDetail: async (entry) => {
+      setAuditDetail({ entry });
+      setAuditDetailLoading(true);
+      setAuditDetailError('');
+
+      try {
+        const payload = await fetchJson(`/backoffice/audit-logs/${entry.id}`);
+        setAuditDetail({ entry: payload.data });
+      } catch (error) {
+        setAuditDetailError(error.message || 'Nu am putut incarca detaliile audit.');
+      } finally {
+        setAuditDetailLoading(false);
+      }
+    },
+    openUserDetail: async (user) => {
+      setUserDetail({ user });
+      setUserDetailLoading(true);
+      setUserDetailError('');
+
+      try {
+        const payload = await fetchJson(`/backoffice/users/${user.id}`);
+        setUserDetail(payload.data);
+      } catch (error) {
+        setUserDetailError(error.message || 'Nu am putut incarca detaliile utilizatorului.');
+      } finally {
+        setUserDetailLoading(false);
+      }
     },
     deleteStation,
     stopSession,
     deleteSession,
     downloadQr: (station) => openStationQr(station),
     previewQr: (station) => openStationQr(station, true),
+    requestDiagnostics: requestStationDiagnostics,
+    refreshStationStatus,
+    unlockStationConnector,
+    stopActiveStationSession,
     downloadInvoice,
     sendInvoice,
     deleteInvoice,
@@ -1230,6 +2597,7 @@ export default function App() {
           {sections.map((section) => (
             <SectionButton
               active={activeSection === section.id}
+              badge={section.id === 'requests' ? pendingRequests : 0}
               key={section.id}
               onClick={setActiveSection}
               section={section}
@@ -1254,16 +2622,30 @@ export default function App() {
               <TopMetric label="Neplatite" value={formatNumber(dashboardStats?.unpaidInvoices)} icon={CircleDollarSign} />
               <TopMetric label="Online" value={formatNumber(dashboardStats?.availableStations)} icon={RadioTower} />
             </div>
-            <button className="icon-button" type="button" aria-label="Notificari">
-              <Bell size={18} />
-            </button>
+            {pendingRequests > 0 ? (
+              <button
+                className="icon-button alert-button"
+                onClick={() => setActiveSection('requests')}
+                type="button"
+                aria-label="Cereri in asteptare"
+              >
+                <Bell size={18} />
+                <span className="nav-badge">{pendingRequests}</span>
+              </button>
+            ) : null}
             <span className="operator" title={operatorName}>{initialsFrom(operatorName)}</span>
           </div>
         </header>
         {error && <div className="error-banner">{error}</div>}
         {actionMessage && <div className="success-banner">{actionMessage}</div>}
         {actionError && !modalType && <div className="error-banner">{actionError}</div>}
-        <ActiveView activeSection={activeSection} data={data} loading={loading} actions={actions} />
+        <ActiveView
+          activeSection={activeSection}
+          actions={actions}
+          data={data}
+          loading={loading}
+          onRefresh={() => reload(true)}
+        />
       </section>
       <ActionModal
         error={actionError}
@@ -1276,6 +2658,55 @@ export default function App() {
         onSubmit={handleModalSubmit}
         saving={saving}
         type={modalType}
+      />
+      <UserDetailModal
+        detail={userDetail}
+        error={userDetailError}
+        loading={userDetailLoading}
+        onClose={() => {
+          setUserDetail(null);
+          setUserDetailError('');
+        }}
+        onDownloadInvoice={downloadInvoice}
+      />
+      <AuditDetailModal
+        detail={auditDetail}
+        error={auditDetailError}
+        loading={auditDetailLoading}
+        onClose={() => {
+          setAuditDetail(null);
+          setAuditDetailError('');
+        }}
+      />
+      <StationDetailModal
+        detail={stationDetail}
+        error={stationDetailError}
+        loading={stationDetailLoading}
+        onClose={() => {
+          setStationDetail(null);
+          setStationDetailId(null);
+          setStationDetailError('');
+        }}
+        onDiagnostics={requestStationDiagnostics}
+        onRefreshStatus={async (station) => {
+          await refreshStationStatus(station);
+          if (stationDetailId) {
+            await loadStationDetail(stationDetailId, true);
+          }
+        }}
+        onReload={() => stationDetailId && loadStationDetail(stationDetailId, true)}
+        onStopActiveSession={async (station) => {
+          await stopActiveStationSession(station);
+          if (stationDetailId) {
+            await loadStationDetail(stationDetailId, true);
+          }
+        }}
+        onUnlockConnector={async (station) => {
+          await unlockStationConnector(station);
+          if (stationDetailId) {
+            await loadStationDetail(stationDetailId, true);
+          }
+        }}
       />
     </main>
   );

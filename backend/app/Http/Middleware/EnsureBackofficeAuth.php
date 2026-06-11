@@ -12,8 +12,9 @@ class EnsureBackofficeAuth
     public function handle(Request $request, Closure $next): Response
     {
         $userId = session('backoffice_user_id');
+        $user = $userId ? User::query()->find($userId) : null;
 
-        if (! $userId || ! User::query()->whereKey($userId)->exists()) {
+        if (! $user || ! $user->isAdmin()) {
             $request->session()->forget(['backoffice_user_id', 'backoffice_user_name']);
             $request->session()->invalidate();
             $request->session()->regenerateToken();

@@ -33,7 +33,8 @@ class OcppGatewayTest extends TestCase
             'user_id' => $user->id,
             'station_id' => $station->id,
             'start_time' => now(),
-            'ocpp_id_tag' => 'user:' . $user->id,
+            'ocpp_id_tag' => OcppService::idTagForUser($user),
+            'ocpp_connector_id' => 2,
         ]);
 
         $response = app(OcppService::class)->startTransaction($station, $session, $user);
@@ -46,5 +47,9 @@ class OcppGatewayTest extends TestCase
             'action' => 'RemoteStartTransaction',
             'status' => OcppCommand::STATUS_PENDING,
         ]);
+
+        $command = OcppCommand::query()->first();
+        $this->assertSame(2, $command->payload['connectorId']);
+        $this->assertSame(OcppService::idTagForUser($user), $command->payload['idTag']);
     }
 }

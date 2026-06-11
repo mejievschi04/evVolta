@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -10,6 +11,43 @@ use Illuminate\Validation\Rule;
 
 class AuthController extends Controller
 {
+    public function register(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => 'required|string|min:2|max:255',
+            'email' => [
+                'required',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email'),
+            ],
+            'password' => ['required', 'string', 'min:6', 'confirmed'],
+        ], [
+            'email.unique' => 'Acest e-mail este deja folosit.',
+        ]);
+
+        $user = User::query()->create([
+            'name' => trim($data['name']),
+            'email' => strtolower(trim($data['email'])),
+            'password' => $data['password'],
+            'currency' => 'MDL',
+        ]);
+
+        $user->forceFill([
+            'is_admin' => false,
+            'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
+        ])->save();
+
+        $token = Auth::guard('api')->login($user);
+
+        return response()->json([
+            'message' => 'Contul a fost creat.',
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'user' => $user->fresh(),
+        ], 201);
+    }
+
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
@@ -23,17 +61,39 @@ class AuthController extends Controller
             ], 401);
         }
 
+        /** @var \App\Models\User $user */
+        $user = Auth::guard('api')->user();
+
+        if ($user->isAdmin()) {
+            Auth::guard('api')->logout();
+
+            return response()->json([
+                'message' => 'Contul de administrator se foloseste doar in backoffice.',
+            ], 403);
+        }
+
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
-            'user' => Auth::guard('api')->user(),
+            'user' => $user,
         ]);
     }
 
     public function me(): JsonResponse
     {
+        /** @var \App\Models\User $user */
+        $user = Auth::guard('api')->user();
+
+        if ($user->isAdmin()) {
+            Auth::guard('api')->logout();
+
+            return response()->json([
+                'message' => 'Contul de administrator se foloseste doar in backoffice.',
+            ], 403);
+        }
+
         return response()->json([
-            'user' => Auth::guard('api')->user(),
+            'user' => $user,
         ]);
     }
 

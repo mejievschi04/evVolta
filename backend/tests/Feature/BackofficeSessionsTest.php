@@ -16,16 +16,14 @@ class BackofficeSessionsTest extends TestCase
 
     public function test_backoffice_session_can_be_deleted_and_releases_active_station(): void
     {
-        $admin = User::query()->create([
+        $admin = $this->createAdminUser([
             'name' => 'Backoffice Admin',
             'email' => 'admin@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
-        $user = User::query()->create([
+        $user = $this->createAppUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
         $station = Station::query()->create([

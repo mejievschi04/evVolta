@@ -16,11 +16,23 @@ class InvoiceController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $invoices = Invoice::query()
-            ->with('user:id,name')
-            ->where('user_id', $request->user()->id)
+        $user = $request->user();
+        $query = Invoice::query()->where('user_id', $user->id);
+
+        if ($user->usesCardPayment()) {
+            $query->where('invoice_type', 'session');
+        } elseif ($user->usesMonthlyBilling()) {
+            $query->where('invoice_type', 'monthly');
+        }
+
+        $invoices = $query
             ->orderByDesc('id')
-            ->get();
+            ->get()
+            ->map(function (Invoice $invoice) use ($user) {
+                $invoice->setAttribute('can_pay_online', $user->usesCardPayment() && $invoice->invoice_type === 'session');
+
+                return $invoice;
+            });
 
         return response()->json($invoices);
     }
@@ -38,6 +50,7 @@ class InvoiceController extends Controller
     public function createCheckoutSession(Request $request, Invoice $invoice, StripePaymentService $stripePaymentService): JsonResponse
     {
         $this->authorizeInvoice($request, $invoice);
+        $this->assertOnlinePaymentAllowed($request->user(), $invoice);
 
         if ($invoice->status === 'paid') {
             return response()->json([
@@ -70,6 +83,7 @@ class InvoiceController extends Controller
     public function verifyPayment(Request $request, Invoice $invoice, StripePaymentService $stripePaymentService): JsonResponse
     {
         $this->authorizeInvoice($request, $invoice);
+        $this->assertOnlinePaymentAllowed($request->user(), $invoice);
 
         if (! $invoice->payment_session_id) {
             return response()->json([
@@ -106,6 +120,13 @@ class InvoiceController extends Controller
     {
         if ((int) $invoice->user_id !== (int) $request->user()->id) {
             abort(Response::HTTP_FORBIDDEN, 'Nu ai acces la aceasta factura.');
+        }
+    }
+
+    private function assertOnlinePaymentAllowed(\App\Models\User $user, Invoice $invoice): void
+    {
+        if (! $user->usesCardPayment() || $invoice->invoice_type !== 'session') {
+            abort(Response::HTTP_FORBIDDEN, 'Plata online cu cardul este disponibila doar pentru facturile de sesiune ale clientilor.');
         }
     }
 }

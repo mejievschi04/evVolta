@@ -14,6 +14,10 @@ class User extends Authenticatable implements JWTSubject
 {
     use HasFactory, Notifiable;
 
+    public const ACCOUNT_TYPE_PERSONAL = 'personal';
+
+    public const ACCOUNT_TYPE_CUSTOMER = 'customer';
+
     protected $fillable = [
         'name',
         'first_name',
@@ -21,11 +25,13 @@ class User extends Authenticatable implements JWTSubject
         'currency',
         'email',
         'password',
+        'wallet_balance',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'is_admin',
     ];
 
     protected function casts(): array
@@ -33,7 +39,35 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean',
+            'account_type' => 'string',
+            'wallet_balance' => 'float',
         ];
+    }
+
+    public function isAdmin(): bool
+    {
+        return (bool) $this->is_admin;
+    }
+
+    public function isPersonalAccount(): bool
+    {
+        return $this->account_type === self::ACCOUNT_TYPE_PERSONAL;
+    }
+
+    public function isCustomerAccount(): bool
+    {
+        return $this->account_type === self::ACCOUNT_TYPE_CUSTOMER;
+    }
+
+    public function usesCardPayment(): bool
+    {
+        return $this->isCustomerAccount();
+    }
+
+    public function usesMonthlyBilling(): bool
+    {
+        return $this->isPersonalAccount();
     }
 
     public function sessions()
@@ -44,6 +78,11 @@ class User extends Authenticatable implements JWTSubject
     public function invoices()
     {
         return $this->hasMany(Invoice::class);
+    }
+
+    public function walletTopups()
+    {
+        return $this->hasMany(WalletTopup::class);
     }
 
     public function stationFavorites()

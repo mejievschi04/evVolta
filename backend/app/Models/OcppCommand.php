@@ -6,6 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class OcppCommand extends Model
 {
+    /** @var list<string> */
+    public const HIGH_PRIORITY_ACTIONS = [
+        'RemoteStartTransaction',
+        'RequestStartTransaction',
+        'RemoteStopTransaction',
+        'RequestStopTransaction',
+        'Reset',
+    ];
+
     public const STATUS_PENDING = 'pending';
     public const STATUS_SENT = 'sent';
     public const STATUS_ACCEPTED = 'accepted';
@@ -42,5 +51,23 @@ class OcppCommand extends Model
     public function chargingSession()
     {
         return $this->belongsTo(ChargingSession::class);
+    }
+
+    public function scopeReadyToSend($query)
+    {
+        return $query
+            ->where('status', self::STATUS_PENDING)
+            ->where(fn ($inner) => $inner
+                ->whereNull('available_at')
+                ->orWhere('available_at', '<=', now()));
+    }
+
+    public function scopeOrderByDispatchPriority($query)
+    {
+        $quoted = implode("','", self::HIGH_PRIORITY_ACTIONS);
+
+        return $query
+            ->orderByRaw("CASE WHEN action IN ('{$quoted}') THEN 0 ELSE 1 END")
+            ->orderBy('id');
     }
 }

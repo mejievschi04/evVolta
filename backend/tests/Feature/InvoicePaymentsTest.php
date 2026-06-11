@@ -3,10 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Invoice;
-use App\Models\User;
 use App\Services\StripePaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class InvoicePaymentsTest extends TestCase
@@ -15,22 +13,22 @@ class InvoicePaymentsTest extends TestCase
 
     public function test_invoice_checkout_session_is_created_for_the_authenticated_user(): void
     {
-        $user = User::query()->create([
+        $user = $this->createAppUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
             'currency' => 'MDL',
-            'password' => Hash::make('password123'),
         ]);
 
         $invoice = Invoice::query()->create([
             'user_id' => $user->id,
             'month' => '2026-04',
             'currency' => 'MDL',
-            'invoice_type' => 'monthly',
-            'invoice_number' => 'EVM-202604-1',
+            'invoice_type' => 'session',
+            'invoice_number' => 'EVS-1',
+            'source_session_id' => null,
             'total_amount' => 12.50,
             'total_kwh' => 25.00,
-            'sessions_count' => 2,
+            'sessions_count' => 1,
             'status' => 'unpaid',
         ]);
 
@@ -62,24 +60,24 @@ class InvoicePaymentsTest extends TestCase
 
     public function test_invoice_can_be_marked_paid_after_verification(): void
     {
-        $user = User::query()->create([
+        $user = $this->createAppUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
             'currency' => 'MDL',
-            'password' => Hash::make('password123'),
         ]);
 
         $invoice = Invoice::query()->create([
             'user_id' => $user->id,
             'month' => '2026-04',
             'currency' => 'MDL',
-            'invoice_type' => 'monthly',
-            'invoice_number' => 'EVM-202604-1',
+            'invoice_type' => 'session',
+            'invoice_number' => 'EVS-2',
+            'source_session_id' => null,
             'payment_provider' => 'stripe',
             'payment_session_id' => 'cs_test_123',
             'total_amount' => 12.50,
             'total_kwh' => 25.00,
-            'sessions_count' => 2,
+            'sessions_count' => 1,
             'status' => 'unpaid',
         ]);
 
@@ -114,18 +112,16 @@ class InvoicePaymentsTest extends TestCase
 
     public function test_authenticated_user_can_download_own_invoice_document(): void
     {
-        $user = User::query()->create([
+        $user = $this->createAppUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
             'currency' => 'MDL',
-            'password' => Hash::make('password123'),
         ]);
 
-        $otherUser = User::query()->create([
+        $otherUser = $this->createAppUser([
             'name' => 'Driver Two',
             'email' => 'other@example.test',
             'currency' => 'MDL',
-            'password' => Hash::make('password123'),
         ]);
 
         $invoice = Invoice::query()->create([

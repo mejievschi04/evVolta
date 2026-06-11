@@ -19,10 +19,9 @@ class BillingServiceTest extends TestCase
 
     public function test_monthly_billing_uses_completed_sessions_that_end_in_the_target_month(): void
     {
-        $user = User::query()->create([
+        $user = $this->createPersonalUser([
             'name' => 'Fleet Driver',
             'email' => 'fleet@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
         $station = Station::query()->create([
@@ -77,10 +76,9 @@ class BillingServiceTest extends TestCase
 
     public function test_session_invoice_is_generated_when_a_charging_session_is_closed(): void
     {
-        $user = User::query()->create([
-            'name' => 'Fleet Driver',
-            'email' => 'fleet@example.test',
-            'password' => Hash::make('password123'),
+        $user = $this->createAppUser([
+            'name' => 'Public Client',
+            'email' => 'client@example.test',
         ]);
 
         $station = Station::query()->create([
@@ -118,10 +116,9 @@ class BillingServiceTest extends TestCase
 
     public function test_multiple_session_invoices_can_exist_for_the_same_user_in_the_same_month(): void
     {
-        $user = User::query()->create([
-            'name' => 'Fleet Driver',
-            'email' => 'fleet@example.test',
-            'password' => Hash::make('password123'),
+        $user = $this->createAppUser([
+            'name' => 'Public Client',
+            'email' => 'client@example.test',
         ]);
 
         $station = Station::query()->create([

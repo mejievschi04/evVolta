@@ -23,4 +23,11 @@ class SecurityTest extends TestCase
             'password' => 'wrong-password',
         ])->assertStatus(429);
     }
+
+    public function test_protected_api_routes_return_json_unauthorized(): void
+    {
+        $this->getJson('/api/stations')
+            ->assertStatus(401)
+            ->assertJsonPath('message', 'Unauthenticated.');
+    }
 }

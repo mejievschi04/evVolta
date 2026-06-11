@@ -4,18 +4,24 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Models\WalletTopup;
 use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Stripe;
 
 class StripePaymentService
 {
+    public function isConfigured(): bool
+    {
+        return filled(config('services.stripe.secret'));
+    }
+
     public function createCheckoutSession(Invoice $invoice, User $user): array
     {
         $secret = config('services.stripe.secret');
 
         if (! $secret) {
-            throw new RuntimeException('Configuratia Stripe lipseste.');
+            throw new RuntimeException('Plata cu cardul nu este configurata. Contacteaza administratorul.');
         }
 
         $currency = strtolower($invoice->currency ?: ($user->currency ?: 'MDL'));
@@ -23,7 +29,7 @@ class StripePaymentService
 
         Stripe::setApiKey($secret);
 
-        $session = CheckoutSession::create([
+        $payload = [
             'mode' => 'payment',
             'client_reference_id' => (string) $invoice->id,
             'success_url' => route('payments.stripe.success', ['invoice_id' => $invoice->id]) . '&session_id={CHECKOUT_SESSION_ID}',
@@ -45,7 +51,57 @@ class StripePaymentService
                     ],
                 ],
             ]],
-        ]);
+        ];
+
+        if ($user->email) {
+            $payload['customer_email'] = $user->email;
+        }
+
+        $session = CheckoutSession::create($payload);
+
+        return $this->normalizeSession($session);
+    }
+
+    public function createWalletTopupSession(WalletTopup $topup, User $user): array
+    {
+        $secret = config('services.stripe.secret');
+
+        if (! $secret) {
+            throw new RuntimeException('Plata cu cardul nu este configurata. Contacteaza administratorul.');
+        }
+
+        $currency = strtolower($topup->currency ?: ($user->currency ?: 'MDL'));
+        $amountMinor = $this->toMinorUnits((float) $topup->amount, $currency);
+
+        Stripe::setApiKey($secret);
+
+        $payload = [
+            'mode' => 'payment',
+            'client_reference_id' => 'wallet-topup-' . $topup->id,
+            'success_url' => route('payments.stripe.success', ['wallet_topup_id' => $topup->id]) . '&session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => route('payments.stripe.cancel', ['wallet_topup_id' => $topup->id]),
+            'metadata' => [
+                'wallet_topup_id' => (string) $topup->id,
+                'user_id' => (string) $user->id,
+                'kind' => 'wallet_topup',
+            ],
+            'line_items' => [[
+                'quantity' => 1,
+                'price_data' => [
+                    'currency' => $currency,
+                    'unit_amount' => $amountMinor,
+                    'product_data' => [
+                        'name' => 'Alimentare cont Volta EV',
+                    ],
+                ],
+            ]],
+        ];
+
+        if ($user->email) {
+            $payload['customer_email'] = $user->email;
+        }
+
+        $session = CheckoutSession::create($payload);
 
         return $this->normalizeSession($session);
     }

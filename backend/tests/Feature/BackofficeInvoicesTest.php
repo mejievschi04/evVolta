@@ -18,16 +18,14 @@ class BackofficeInvoicesTest extends TestCase
     {
         Mail::fake();
 
-        $admin = User::query()->create([
+        $admin = $this->createAdminUser([
             'name' => 'Backoffice Admin',
             'email' => 'admin@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
-        $user = User::query()->create([
+        $user = $this->createAppUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
             'currency' => 'MDL',
         ]);
 
@@ -73,16 +71,14 @@ class BackofficeInvoicesTest extends TestCase
 
     public function test_backoffice_invoice_can_be_deleted(): void
     {
-        $admin = User::query()->create([
+        $admin = $this->createAdminUser([
             'name' => 'Backoffice Admin',
             'email' => 'admin@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
-        $user = User::query()->create([
+        $user = $this->createAppUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
         $invoice = Invoice::query()->create([

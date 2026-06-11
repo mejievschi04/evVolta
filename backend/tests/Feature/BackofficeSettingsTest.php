@@ -15,10 +15,9 @@ class BackofficeSettingsTest extends TestCase
 
     public function test_backoffice_settings_update_profile_and_tariff_keeps_mdl(): void
     {
-        $admin = User::query()->create([
+        $admin = $this->createAdminUser([
             'name' => 'Backoffice Admin',
             'email' => 'admin@example.test',
-            'password' => Hash::make('password123'),
             'currency' => 'MDL',
         ]);
 

@@ -16,7 +16,7 @@ class AuthController extends Controller
         $backofficeUiUrl = rtrim((string) config('app.backoffice_ui_url', ''), '/');
 
         if ($backofficeUiUrl !== '') {
-            return redirect()->away($backofficeUiUrl.'/login');
+            return redirect()->away($backofficeUiUrl);
         }
 
         if (session()->has('backoffice_user_id')) {
@@ -45,6 +45,18 @@ class AuthController extends Controller
             }
 
             return back()->withErrors(['email' => 'Credentiale invalide.'])->withInput();
+        }
+
+        if (! $user->isAdmin()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Acces backoffice permis doar conturilor de administrator.',
+                ], 403);
+            }
+
+            return back()
+                ->withErrors(['email' => 'Acces backoffice permis doar conturilor de administrator.'])
+                ->withInput();
         }
 
         $request->session()->regenerate();
