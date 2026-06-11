@@ -14,20 +14,20 @@ fi
 ln -sf .env.docker .env
 
 echo "==> Build imagini"
-docker compose build
+docker compose --env-file .env.docker build
 
 echo "==> Pornire stack"
-docker compose up -d
+docker compose --env-file .env.docker up -d
 
 echo "==> Astept health DB..."
-docker compose exec -T db pg_isready -U evvolta
+docker compose --env-file .env.docker exec -T db pg_isready -U evvolta
 
 echo "==> Verificare /up"
 sleep 3
 PORT="$(grep -E '^HTTP_PORT=' .env.docker 2>/dev/null | cut -d= -f2 || echo 8080)"
 curl -fsS "http://127.0.0.1:${PORT}/up" || {
   echo "Health check esuat. Loguri app:"
-  docker compose logs --tail=50 app
+  docker compose --env-file .env.docker logs --tail=50 app
   exit 1
 }
 

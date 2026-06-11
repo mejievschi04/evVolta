@@ -9,11 +9,15 @@ elif [ ! -f .env ] && [ -f .env.docker ]; then
   cp .env.docker .env
 fi
 
+if [ -f .env ]; then
+  php artisan config:clear --no-interaction || true
+fi
+
 if [ -f .env ] && ! grep -q '^APP_KEY=base64:' .env 2>/dev/null; then
   php artisan key:generate --force --no-interaction || true
 fi
 
-if [ -f .env ] && ! grep -q '^JWT_SECRET=' .env 2>/dev/null; then
+if [ -f .env ] && ! grep -q '^JWT_SECRET=.\+' .env 2>/dev/null; then
   php artisan jwt:secret --force --no-interaction || true
 fi
 
