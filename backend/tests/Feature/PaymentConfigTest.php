@@ -25,7 +25,7 @@ class PaymentConfigTest extends TestCase
             ->assertJsonPath('account_type', 'customer');
     }
 
-    public function test_personal_user_has_card_payments_disabled(): void
+    public function test_personal_user_has_prepaid_wallet_enabled_like_customers(): void
     {
         config(['services.stripe.secret' => 'sk_test_example']);
 
@@ -36,7 +36,7 @@ class PaymentConfigTest extends TestCase
         $this->actingAs($user, 'api')
             ->getJson('/api/payments/config')
             ->assertOk()
-            ->assertJsonPath('card_payments_enabled', false)
+            ->assertJsonPath('card_payments_enabled', true)
             ->assertJsonPath('account_type', 'personal');
     }
 }

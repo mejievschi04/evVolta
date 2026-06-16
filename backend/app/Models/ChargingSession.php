@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\SessionEnergyService;
+use App\Services\TariffService;
 use Illuminate\Database\Eloquent\Model;
 
 class ChargingSession extends Model
@@ -93,6 +94,8 @@ class ChargingSession extends Model
         $live = is_array($this->live_metrics) ? $this->live_metrics : [];
         $stationLive = $this->station?->liveStatus($this->ocpp_connector_id) ?? [];
         $kwhDelivered = app(SessionEnergyService::class)->telemetryKwhDelivered($this);
+        $this->loadMissing('user');
+        $pricePerKwh = app(TariffService::class)->pricePerKwhForUser($this->user);
 
         return [
             'kwh_consumed' => $kwhDelivered,
@@ -118,10 +121,11 @@ class ChargingSession extends Model
                 : null,
             'budget_spent' => $this->charge_budget !== null
                 ? round(min(
-                    $kwhDelivered * (float) (Tariff::query()->latest('id')->value('price_per_kwh') ?? config('billing.price_per_kwh', 0.20)),
+                    $kwhDelivered * $pricePerKwh,
                     (float) $this->charge_budget
                 ), 2)
                 : null,
+            'price_per_kwh' => $pricePerKwh,
         ];
     }
 

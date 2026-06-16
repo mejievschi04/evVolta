@@ -8,5 +8,6 @@ class Tariff extends Model
 {
     protected $fillable = [
         'price_per_kwh',
+        'personal_price_per_kwh',
     ];
 }

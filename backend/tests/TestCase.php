@@ -29,11 +29,13 @@ abstract class TestCase extends BaseTestCase
             'password' => Hash::make('password123'),
         ], $overrides));
 
+        $accountType = $overrides['account_type'] ?? User::ACCOUNT_TYPE_CUSTOMER;
+        $prepaidAccount = in_array($accountType, [User::ACCOUNT_TYPE_CUSTOMER, User::ACCOUNT_TYPE_PERSONAL], true);
+
         $user->forceFill([
             'is_admin' => false,
-            'account_type' => $overrides['account_type'] ?? User::ACCOUNT_TYPE_CUSTOMER,
-            'wallet_balance' => $overrides['wallet_balance']
-                ?? (($overrides['account_type'] ?? User::ACCOUNT_TYPE_CUSTOMER) === User::ACCOUNT_TYPE_CUSTOMER ? 500 : 0),
+            'account_type' => $accountType,
+            'wallet_balance' => $overrides['wallet_balance'] ?? ($prepaidAccount ? 500 : 0),
         ])->save();
 
         return $user->fresh();

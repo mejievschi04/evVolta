@@ -41,6 +41,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::post('/registration-requests/{registrationRequest}/approve', [DashboardController::class, 'approveRegistrationRequest'])->name('backoffice.registration_requests.approve');
         Route::post('/registration-requests/{registrationRequest}/reject', [DashboardController::class, 'rejectRegistrationRequest'])->name('backoffice.registration_requests.reject');
         Route::get('/wallet-topups', [DashboardController::class, 'walletTopups'])->name('backoffice.wallet_topups');
+        Route::post('/wallet-topups/{topup}/refund', [DashboardController::class, 'refundWalletTopup'])->name('backoffice.wallet_topups.refund');
         Route::get('/invoices', [DashboardController::class, 'invoices'])->name('backoffice.invoices');
         Route::get('/invoices/{invoice}/download', [DashboardController::class, 'downloadInvoice'])->name('backoffice.invoices.download');
         Route::post('/invoices/{invoice}/send', [DashboardController::class, 'sendInvoice'])->name('backoffice.invoices.send');

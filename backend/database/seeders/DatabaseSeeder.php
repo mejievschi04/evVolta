@@ -53,11 +53,15 @@ class DatabaseSeeder extends Seeder
         $personal->forceFill([
             'is_admin' => false,
             'account_type' => User::ACCOUNT_TYPE_PERSONAL,
+            'wallet_balance' => 500,
         ])->save();
 
         Tariff::query()->updateOrCreate(
             ['id' => 1],
-            ['price_per_kwh' => 0.20]
+            [
+                'price_per_kwh' => 0.20,
+                'personal_price_per_kwh' => 0.10,
+            ]
         );
 
         Station::query()->updateOrCreate(
@@ -70,7 +74,7 @@ class DatabaseSeeder extends Seeder
                 'power_kw' => 22,
                 'connector_type' => 'Type 2',
                 'currency' => 'MDL',
-                'qr_code' => 'station:volta-1',
+                'qr_code' => '5D419400481F59D750010067',
                 'ocpp_identity' => 'volta-1',
                 'ocpp_version' => '1.6J',
                 'ocpp_connection_status' => Station::OCPP_CONNECTION_NOT_CONFIGURED,

@@ -49,6 +49,7 @@ class ChargingController extends Controller
                     $prepaidLimits = $this->walletService->resolvePrepaidStart(
                         isset($payload['budget_amount']) ? (float) $payload['budget_amount'] : null,
                         isset($payload['target_kwh']) ? (float) $payload['target_kwh'] : null,
+                        $user,
                     );
                     $this->walletService->assertCanHoldBudget($user, $prepaidLimits['budget_amount']);
                 }

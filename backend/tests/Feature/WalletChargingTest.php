@@ -100,13 +100,17 @@ class WalletChargingTest extends TestCase
         ]);
     }
 
-    public function test_wallet_topup_checkout_requires_customer_account(): void
+    public function test_personal_wallet_requires_prepaid_like_customer(): void
     {
-        $user = $this->createPersonalUser();
+        config(['billing.prepaid_wallet_enabled' => true]);
+
+        $user = $this->createPersonalUser(['wallet_balance' => 250]);
 
         $this->actingAs($user, 'api')
-            ->postJson('/api/wallet/topup-checkout', ['amount' => 100])
-            ->assertStatus(422);
+            ->getJson('/api/wallet')
+            ->assertOk()
+            ->assertJsonPath('requires_prepaid', true)
+            ->assertJsonPath('wallet_balance', 250);
     }
 
     public function test_wallet_service_credits_topup_once(): void
@@ -127,21 +131,24 @@ class WalletChargingTest extends TestCase
         $this->assertSame('paid', $topup->fresh()->status);
     }
 
-    public function test_personal_account_can_start_without_budget(): void
+    public function test_personal_account_requires_budget_when_prepaid_enabled(): void
     {
-        $user = $this->createPersonalUser();
+        $user = $this->createPersonalUser(['wallet_balance' => 200]);
         $station = $this->walletStation(['qr_code' => 'personal-station']);
 
         $this->actingAs($user, 'api')
             ->postJson('/api/charging/start', [
                 'station_id' => $station->id,
             ])
-            ->assertCreated();
+            ->assertStatus(422);
 
-        $this->assertDatabaseHas('charging_sessions', [
-            'user_id' => $user->id,
-            'charge_budget' => null,
-        ]);
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'budget_amount' => 100,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('session.charge_budget', 100);
     }
 
     public function test_settle_session_refunds_unused_budget(): void

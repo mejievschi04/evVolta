@@ -58,11 +58,14 @@ BACKOFFICE_UI_URL=http://127.0.0.1:5173
 - `POST /api/charging/start`
 - `POST /api/charging/stop`
 - `GET /api/sessions`
-- `GET /api/invoices`
+- `GET /api/wallet`
+- `GET /api/wallet/topups`
+- `POST /api/wallet/topup-checkout`
+- `GET /api/invoices` — facturi la fiecare plata (alimentare wallet sau sesiune)
 
 ## Deploy pe VPS
 
-- **Docker (recomandat):** [`docs/DOCKER_DEPLOY.md`](docs/DOCKER_DEPLOY.md)
+- **Docker (recomandat):** [`docs/DOCKER_DEPLOY.md`](docs/DOCKER_DEPLOY.md) — ghid complet pas-cu-pas
 - **Manual / nginx nativ:** [`docs/VPS_DEPLOY.md`](docs/VPS_DEPLOY.md)
 
 Domeniu productie: **`ocpp.volta.md`**
@@ -87,5 +90,5 @@ bash deploy/deploy.sh
 
 - `OCPP_MODE=gateway` (implicit) pentru statii reale; `simulator` pentru demo fara hardware
 - Oprire fortata statie: `php artisan ocpp:force-stop {ocpp_identity} --connector=2`
-- Facturi lunare: `php artisan billing:generate-monthly` (cron in scheduler)
+- Billing prepay: alimentare wallet (Stripe) + debit la fiecare sesiune; factura se emite automat dupa plata
 - QR statie: campul `qr_code` (serial hardware sau `station:<slug>`)

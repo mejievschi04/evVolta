@@ -18,7 +18,7 @@ class UsageStatisticsService
      */
     public function forUser(User $user): array
     {
-        $pricePerKwh = $this->walletService->currentPricePerKwh();
+        $pricePerKwh = $this->walletService->currentPricePerKwh($user);
         $currency = $user->currency ?? 'MDL';
 
         $completed = ChargingSession::query()

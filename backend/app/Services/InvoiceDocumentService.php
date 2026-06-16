@@ -22,7 +22,11 @@ class InvoiceDocumentService
         $userEmail = e($invoice->user?->email ?: '-');
         $currency = e($invoice->currency ?: $invoice->user?->currency ?: 'MDL');
         $status = e($this->statusLabel((string) $invoice->status));
-        $type = e($invoice->invoice_type === 'session' ? 'Factura sesiune' : 'Factura lunara');
+        $type = e(match ((string) $invoice->invoice_type) {
+            'session' => 'Factura sesiune',
+            'wallet_topup' => 'Factura alimentare wallet',
+            default => 'Factura lunara',
+        });
         $period = e(trim(($invoice->period_start?->toDateString() ?? '-') . ' - ' . ($invoice->period_end?->toDateString() ?? '-')));
         $month = e($invoice->month ?: '-');
         $kwh = number_format((float) $invoice->total_kwh, 2, '.', ' ');

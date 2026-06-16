@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\WalletTopup;
 use RuntimeException;
 use Stripe\Checkout\Session as CheckoutSession;
+use Stripe\Refund;
 use Stripe\Stripe;
 
 class StripePaymentService
@@ -106,6 +107,30 @@ class StripePaymentService
         return $this->normalizeSession($session);
     }
 
+    /**
+     * @return array{id: string, status: string}
+     */
+    public function refundPaymentIntent(string $paymentIntentId, float $amount, string $currency): array
+    {
+        $secret = config('services.stripe.secret');
+
+        if (! $secret) {
+            throw new RuntimeException('Plata cu cardul nu este configurata. Contacteaza administratorul.');
+        }
+
+        Stripe::setApiKey($secret);
+
+        $refund = Refund::create([
+            'payment_intent' => $paymentIntentId,
+            'amount' => $this->toMinorUnits($amount, $currency),
+        ]);
+
+        return [
+            'id' => $refund->id,
+            'status' => $refund->status,
+        ];
+    }
+
     public function retrieveCheckoutSession(string $sessionId): array
     {
         $secret = config('services.stripe.secret');
@@ -132,6 +157,9 @@ class StripePaymentService
             'url' => $session->url,
             'status' => $session->status,
             'payment_status' => $session->payment_status,
+            'payment_intent' => is_string($session->payment_intent)
+                ? $session->payment_intent
+                : ($session->payment_intent->id ?? null),
             'client_reference_id' => $session->client_reference_id,
             'metadata' => is_array($metadata) ? $metadata : (array) $metadata,
         ];

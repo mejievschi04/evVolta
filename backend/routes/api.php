@@ -37,7 +37,9 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/sessions/{session}/stream', [SessionController::class, 'stream']);
     Route::get('/payments/config', [PaymentController::class, 'config']);
     Route::get('/wallet', [WalletController::class, 'show']);
+    Route::get('/wallet/topups', [WalletController::class, 'indexTopups']);
     Route::post('/wallet/topup-checkout', [WalletController::class, 'createTopupCheckout']);
+    Route::post('/wallet/topups/{topup}/verify-payment', [WalletController::class, 'verifyTopupPayment']);
     if (app()->environment('local')) {
         Route::post('/wallet/local-topup', [WalletController::class, 'localTopup']);
     }

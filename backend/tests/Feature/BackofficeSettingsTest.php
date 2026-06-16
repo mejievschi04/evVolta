@@ -30,6 +30,7 @@ class BackofficeSettingsTest extends TestCase
                 'last_name' => 'Popescu',
                 'currency' => 'EUR',
                 'price_per_kwh' => 0.4300,
+                'personal_price_per_kwh' => 0.1500,
             ])
             ->assertStatus(302)
             ->assertSessionHas('backoffice_user_name', 'Ana Popescu');
@@ -44,6 +45,7 @@ class BackofficeSettingsTest extends TestCase
 
         $this->assertDatabaseHas('tariffs', [
             'price_per_kwh' => 0.43,
+            'personal_price_per_kwh' => 0.15,
         ]);
 
         $this->assertSame(1, Tariff::query()->count());

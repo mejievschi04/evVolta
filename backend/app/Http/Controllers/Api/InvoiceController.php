@@ -18,49 +18,43 @@ class InvoiceController extends Controller
     public function index(Request $request, UsageStatisticsService $usageStatisticsService): JsonResponse
     {
         $user = $request->user();
-
-        if ($user->usesCardPayment()) {
-            $statistics = $usageStatisticsService->forUser($user);
-
-            return response()->json([
-                'invoices' => [],
-                'summary' => [
-                    'billing_model' => 'prepay',
-                    'currency' => $statistics['currency'],
-                    'issue_schedule' => 'Platile se fac din wallet la fiecare sesiune. Nu se emit facturi.',
-                ],
-                'statistics' => $statistics,
-            ]);
-        }
+        $statistics = $usageStatisticsService->forUser($user);
 
         $invoices = Invoice::query()
             ->where('user_id', $user->id)
-            ->where('invoice_type', 'monthly')
-            ->orderByDesc('month')
-            ->orderByDesc('id')
-            ->get()
-            ->map(function (Invoice $invoice) use ($user) {
-                $invoice->setAttribute('can_pay_online', $this->canPayOnline($user, $invoice));
+            ->latest('id')
+            ->limit(100)
+            ->get([
+                'id',
+                'invoice_type',
+                'invoice_number',
+                'month',
+                'currency',
+                'period_start',
+                'period_end',
+                'total_kwh',
+                'total_amount',
+                'sessions_count',
+                'status',
+                'payment_provider',
+                'payment_session_id',
+                'paid_at',
+                'created_at',
+            ]);
 
-                return $invoice;
-            });
-
-        $currency = (string) ($invoices->first()?->currency ?? $user->currency ?? 'MDL');
         $unpaid = $invoices->where('status', '!=', 'paid');
-        $outstandingAmount = round((float) $unpaid->sum('total_amount'), 2);
 
         return response()->json([
-            'invoices' => $invoices->values(),
+            'invoices' => $invoices,
             'summary' => [
-                'billing_model' => 'monthly',
-                'outstanding_amount' => $outstandingAmount,
+                'billing_model' => 'prepay',
+                'currency' => $statistics['currency'],
+                'issue_schedule' => 'Primesti factura dupa fiecare plata: alimentare wallet sau sesiune incheiata.',
+                'paid_count' => $invoices->where('status', 'paid')->count(),
                 'unpaid_count' => $unpaid->count(),
-                'currency' => $currency,
-                'issue_day' => 1,
-                'issue_schedule' => $user->usesMonthlyBilling()
-                    ? 'Factura pentru luna trecuta se emite automat in data de 1 a fiecarei luni.'
-                    : 'Contul prepay foloseste wallet. Facturile lunare apar doar pentru conturile personal.',
+                'outstanding_amount' => round((float) $unpaid->sum('total_amount'), 2),
             ],
+            'statistics' => $statistics,
         ]);
     }
 
@@ -145,11 +139,7 @@ class InvoiceController extends Controller
 
     private function canPayOnline(\App\Models\User $user, Invoice $invoice): bool
     {
-        if ($invoice->status === 'paid') {
-            return false;
-        }
-
-        return $user->usesMonthlyBilling() && $invoice->invoice_type === 'monthly';
+        return false;
     }
 
     private function authorizeInvoice(Request $request, Invoice $invoice): void
@@ -161,8 +151,6 @@ class InvoiceController extends Controller
 
     private function assertOnlinePaymentAllowed(\App\Models\User $user, Invoice $invoice): void
     {
-        if (! $user->usesMonthlyBilling() || $invoice->invoice_type !== 'monthly') {
-            abort(Response::HTTP_FORBIDDEN, 'Plata online este disponibila doar pentru facturile lunare.');
-        }
+        abort(Response::HTTP_FORBIDDEN, 'Plata online pentru facturi nu este disponibila in aplicatie.');
     }
 }

@@ -13,6 +13,7 @@ class Invoice extends Model
         'invoice_type',
         'invoice_number',
         'source_session_id',
+        'wallet_topup_id',
         'period_start',
         'period_end',
         'total_kwh',
@@ -28,6 +29,7 @@ class Invoice extends Model
         'period_start' => 'date',
         'period_end' => 'date',
         'source_session_id' => 'integer',
+        'wallet_topup_id' => 'integer',
         'total_kwh' => 'float',
         'total_amount' => 'float',
         'sessions_count' => 'integer',
@@ -42,5 +44,10 @@ class Invoice extends Model
     public function sourceSession()
     {
         return $this->belongsTo(ChargingSession::class, 'source_session_id');
+    }
+
+    public function walletTopup()
+    {
+        return $this->belongsTo(WalletTopup::class);
     }
 }

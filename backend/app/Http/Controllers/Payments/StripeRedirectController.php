@@ -24,8 +24,16 @@ class StripeRedirectController extends Controller
         $walletTopupId = (int) $request->query('wallet_topup_id', 0);
         $scheme = config('services.mobile.scheme', 'voltaev');
 
+        $sessionId = trim((string) $request->query('session_id', ''));
+
         if ($walletTopupId > 0) {
-            $deepLink = sprintf('%s://pay/%s?wallet_topup_id=%d', $scheme, $status, $walletTopupId);
+            $deepLink = sprintf(
+                '%s://pay/%s?wallet_topup_id=%d%s',
+                $scheme,
+                $status,
+                $walletTopupId,
+                $sessionId !== '' ? '&session_id=' . rawurlencode($sessionId) : ''
+            );
         } elseif ($invoiceId > 0) {
             $deepLink = sprintf('%s://pay/%s?invoice_id=%d', $scheme, $status, $invoiceId);
         } else {

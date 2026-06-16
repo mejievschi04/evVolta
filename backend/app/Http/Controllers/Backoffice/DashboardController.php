@@ -12,12 +12,16 @@ use App\Models\RegistrationRequest;
 use App\Models\Station;
 use App\Models\Tariff;
 use App\Models\User;
+use App\Models\WalletRefund;
 use App\Models\WalletTopup;
 use App\Services\AuditLogService;
 use App\Services\BillingService;
 use App\Services\ChargingStopService;
 use App\Services\InvoiceDocumentService;
 use App\Services\OcppService;
+use App\Services\StripePaymentService;
+use App\Services\TariffService;
+use App\Services\WalletService;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\PngWriter;
 use Carbon\Carbon;
@@ -74,6 +78,7 @@ class DashboardController extends Controller
         private readonly ChargingStopService $chargingStopService,
         private readonly InvoiceDocumentService $invoiceDocumentService,
         private readonly OcppService $ocppService,
+        private readonly TariffService $tariffService,
     )
     {
     }
@@ -109,7 +114,12 @@ class DashboardController extends Controller
                 'publicUrl' => config('services.ocpp.public_url'),
                 'heartbeatInterval' => config('services.ocpp.heartbeat_interval'),
             ],
-            'currentTariff' => Tariff::query()->latest('id')->first(['id', 'price_per_kwh', 'created_at']),
+            'currentTariff' => Tariff::query()->latest('id')->first([
+                'id',
+                'price_per_kwh',
+                'personal_price_per_kwh',
+                'created_at',
+            ]),
             'currentUser' => $this->backofficeActor()?->only(['id', 'name', 'first_name', 'last_name', 'currency', 'email']),
         ]);
     }
@@ -1132,6 +1142,7 @@ class DashboardController extends Controller
                 'wallet_balance',
                 'created_at',
             ]),
+            'effective_price_per_kwh' => $this->tariffService->pricePerKwhForUser($user),
             'sessions_count' => (int) $user->sessions_count,
             'invoices_count' => (int) $user->invoices_count,
             'unpaid_invoices_count' => (int) $user->unpaid_invoices_count,
@@ -1198,6 +1209,7 @@ class DashboardController extends Controller
                         'wallet_balance',
                         'created_at',
                     ]),
+                    'effective_price_per_kwh' => $this->tariffService->pricePerKwhForUser($user),
                     'wallet_balance' => round((float) $user->wallet_balance, 2),
                     'sessions_count' => (int) $user->sessions_count,
                     'invoices_count' => (int) $user->invoices_count,
@@ -1221,6 +1233,7 @@ class DashboardController extends Controller
                         ->get([
                             'id',
                             'amount',
+                            'amount_refunded',
                             'currency',
                             'status',
                             'payment_provider',
@@ -1228,7 +1241,52 @@ class DashboardController extends Controller
                             'paid_at',
                             'created_at',
                         ])
+                        ->map(fn (WalletTopup $topup) => [
+                            ...$topup->only([
+                                'id',
+                                'amount',
+                                'amount_refunded',
+                                'currency',
+                                'status',
+                                'payment_provider',
+                                'payment_session_id',
+                                'paid_at',
+                                'created_at',
+                            ]),
+                            'amount' => round((float) $topup->amount, 2),
+                            'amount_refunded' => round((float) $topup->amount_refunded, 2),
+                            'refundable_amount' => $topup->refundableAmount(),
+                        ])
+                        ->values()
+                        ->all()
                     : [],
+                'wallet_refunds' => $user->usesCardPayment()
+                    ? $user->walletRefunds()
+                        ->with('walletTopup:id,amount,payment_session_id')
+                        ->latest('id')
+                        ->limit(12)
+                        ->get()
+                        ->map(fn (WalletRefund $refund) => [
+                            'id' => $refund->id,
+                            'wallet_topup_id' => $refund->wallet_topup_id,
+                            'amount' => round((float) $refund->amount, 2),
+                            'currency' => $refund->currency,
+                            'status' => $refund->status,
+                            'payment_provider' => $refund->payment_provider,
+                            'stripe_refund_id' => $refund->stripe_refund_id,
+                            'created_at' => $refund->created_at,
+                            'topup' => $refund->walletTopup ? [
+                                'id' => $refund->walletTopup->id,
+                                'amount' => round((float) $refund->walletTopup->amount, 2),
+                            ] : null,
+                        ])
+                        ->values()
+                        ->all()
+                    : [],
+                'wallet_summary' => $user->usesCardPayment() ? [
+                    'topups_paid_total' => round((float) $user->walletTopups()->where('status', 'paid')->sum('amount'), 2),
+                    'refunds_total' => round((float) $user->walletRefunds()->sum('amount'), 2),
+                ] : null,
             ],
         ]);
     }
@@ -1251,6 +1309,8 @@ class DashboardController extends Controller
                 'id' => $topup->id,
                 'user_id' => $topup->user_id,
                 'amount' => round((float) $topup->amount, 2),
+                'amount_refunded' => round((float) $topup->amount_refunded, 2),
+                'refundable_amount' => $topup->refundableAmount(),
                 'currency' => $topup->currency,
                 'status' => $topup->status,
                 'payment_provider' => $topup->payment_provider,
@@ -1265,13 +1325,99 @@ class DashboardController extends Controller
                     'wallet_balance',
                 ]),
             ]),
+            'refunds' => WalletRefund::query()
+                ->with([
+                    'user:id,name,email,account_type,wallet_balance',
+                    'walletTopup:id,amount,payment_session_id',
+                ])
+                ->latest('id')
+                ->limit(200)
+                ->get()
+                ->map(fn (WalletRefund $refund) => [
+                    'id' => $refund->id,
+                    'user_id' => $refund->user_id,
+                    'wallet_topup_id' => $refund->wallet_topup_id,
+                    'amount' => round((float) $refund->amount, 2),
+                    'currency' => $refund->currency,
+                    'status' => $refund->status,
+                    'payment_provider' => $refund->payment_provider,
+                    'stripe_refund_id' => $refund->stripe_refund_id,
+                    'created_at' => $refund->created_at,
+                    'user' => $refund->user?->only([
+                        'id',
+                        'name',
+                        'email',
+                        'account_type',
+                        'wallet_balance',
+                    ]),
+                    'topup' => $refund->walletTopup ? [
+                        'id' => $refund->walletTopup->id,
+                        'amount' => round((float) $refund->walletTopup->amount, 2),
+                        'payment_session_id' => $refund->walletTopup->payment_session_id,
+                    ] : null,
+                ]),
             'summary' => [
                 'count_paid' => (int) (clone $baseQuery)->where('status', 'paid')->count(),
                 'count_pending' => (int) (clone $baseQuery)->where('status', 'pending')->count(),
                 'volume_paid' => round((float) (clone $baseQuery)->where('status', 'paid')->sum('amount'), 2),
                 'volume_pending' => round((float) (clone $baseQuery)->where('status', 'pending')->sum('amount'), 2),
+                'refunds_count' => (int) WalletRefund::query()->count(),
+                'volume_refunded' => round((float) WalletRefund::query()->sum('amount'), 2),
             ],
         ]);
+    }
+
+    public function refundWalletTopup(
+        Request $request,
+        WalletTopup $topup,
+        WalletService $walletService,
+        StripePaymentService $stripePaymentService,
+    ): JsonResponse|RedirectResponse {
+        $data = $request->validate([
+            'amount' => 'nullable|numeric|min:0.01|max:50000',
+        ]);
+
+        $amount = array_key_exists('amount', $data) && $data['amount'] !== null
+            ? round((float) $data['amount'], 2)
+            : null;
+
+        try {
+            $result = $walletService->refundTopup($topup, $stripePaymentService, $amount);
+        } catch (RuntimeException $exception) {
+            return $this->respondMutationError($request, $exception->getMessage(), (int) ($exception->getCode() ?: 422));
+        }
+
+        $topup = $topup->fresh(['user']);
+
+        $this->auditLogService->record(
+            action: 'backoffice.wallet_topup.refunded',
+            actor: $this->backofficeActor(),
+            subjectType: WalletTopup::class,
+            subjectId: $topup->id,
+            metadata: [
+                'user_id' => $topup->user_id,
+                'refunded' => $result['refunded'],
+                'wallet_balance' => $result['wallet_balance'],
+            ],
+        );
+
+        return $this->respondMutation(
+            $request,
+            sprintf(
+                'Am returnat %.2f %s pe card pentru %s.',
+                $result['refunded'],
+                $result['currency'],
+                $topup->user?->email ?? ('user #' . $topup->user_id)
+            ),
+            [
+                'topup' => [
+                    'id' => $topup->id,
+                    'amount_refunded' => $result['topup_amount_refunded'],
+                    'refundable_amount' => $result['topup_refundable_amount'],
+                ],
+                'user_wallet_balance' => $result['wallet_balance'],
+            ],
+        );
     }
 
     public function storeUser(Request $request): JsonResponse|RedirectResponse
@@ -1490,10 +1636,12 @@ class DashboardController extends Controller
     {
         $data = $request->validate([
             'price_per_kwh' => 'required|numeric|min:0',
+            'personal_price_per_kwh' => 'required|numeric|min:0',
         ]);
 
         $tariff = Tariff::query()->create([
             'price_per_kwh' => $data['price_per_kwh'],
+            'personal_price_per_kwh' => $data['personal_price_per_kwh'],
         ]);
 
         $this->auditLogService->record(
@@ -1503,6 +1651,7 @@ class DashboardController extends Controller
             subjectId: $tariff->id,
             metadata: [
                 'price_per_kwh' => $tariff->price_per_kwh,
+                'personal_price_per_kwh' => $tariff->personal_price_per_kwh,
             ]
         );
 
@@ -1517,6 +1666,7 @@ class DashboardController extends Controller
             'first_name' => 'nullable|string|max:100',
             'last_name' => 'nullable|string|max:100',
             'price_per_kwh' => 'required|numeric|min:0',
+            'personal_price_per_kwh' => 'required|numeric|min:0',
         ]);
 
         $userId = session('backoffice_user_id');
@@ -1545,6 +1695,7 @@ class DashboardController extends Controller
 
             Tariff::query()->create([
                 'price_per_kwh' => $data['price_per_kwh'],
+                'personal_price_per_kwh' => $data['personal_price_per_kwh'],
             ]);
         });
 
@@ -1563,6 +1714,7 @@ class DashboardController extends Controller
                 'last_name' => $user->last_name,
                 'currency' => $user->currency,
                 'price_per_kwh' => $latestTariff?->price_per_kwh,
+                'personal_price_per_kwh' => $latestTariff?->personal_price_per_kwh,
             ]
         );
 

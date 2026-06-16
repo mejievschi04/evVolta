@@ -34,7 +34,7 @@ class OcppBootNotificationTest extends TestCase
         $command = app(OcppServe::class);
         $method = (new ReflectionClass($command))->getMethod('onBootNotification');
         $method->setAccessible(true);
-        $method->invoke($command, $station, [
+        $method->invoke($command, 0, $station, [
             'chargePointVendor' => 'VENDOR',
             'chargePointModel' => 'EU1060_TYPE_II',
             'chargePointSerialNumber' => '5D419400481F59D750010067',

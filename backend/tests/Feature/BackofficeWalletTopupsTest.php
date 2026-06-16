@@ -49,7 +49,10 @@ class BackofficeWalletTopupsTest extends TestCase
             ->assertJsonPath('summary.count_pending', 1)
             ->assertJsonPath('summary.volume_paid', 150)
             ->assertJsonPath('summary.volume_pending', 100)
-            ->assertJsonPath('data.0.user.email', 'wallet.client@example.test');
+            ->assertJsonPath('summary.refunds_count', 0)
+            ->assertJsonPath('summary.volume_refunded', 0)
+            ->assertJsonPath('data.0.user.email', 'wallet.client@example.test')
+            ->assertJsonPath('refunds', []);
     }
 
     public function test_customer_detail_includes_wallet_topups(): void
@@ -78,11 +81,20 @@ class BackofficeWalletTopupsTest extends TestCase
             ->assertJsonPath('data.wallet_topups.0.status', 'paid');
     }
 
-    public function test_personal_user_detail_has_no_wallet_topups(): void
+    public function test_personal_user_detail_includes_wallet_sections(): void
     {
         $admin = $this->createAdminUser();
         $personal = $this->createPersonalUser([
-            'email' => 'personal.no.wallet@example.test',
+            'email' => 'personal.wallet@example.test',
+        ]);
+
+        WalletTopup::query()->create([
+            'user_id' => $personal->id,
+            'amount' => 300,
+            'currency' => 'MDL',
+            'status' => 'paid',
+            'payment_provider' => 'local',
+            'paid_at' => now(),
         ]);
 
         $this->withSession([
@@ -91,6 +103,43 @@ class BackofficeWalletTopupsTest extends TestCase
         ])
             ->getJson('/backoffice/users/' . $personal->id)
             ->assertOk()
-            ->assertJsonPath('data.wallet_topups', []);
+            ->assertJsonPath('data.wallet_topups.0.amount', 300)
+            ->assertJsonPath('data.wallet_summary.topups_paid_total', 300)
+            ->assertJsonPath('data.wallet_refunds', []);
+    }
+
+    public function test_wallet_topups_lists_refunds_after_backoffice_refund(): void
+    {
+        config(['billing.prepaid_wallet_enabled' => true]);
+
+        $admin = $this->createAdminUser();
+        $customer = $this->createAppUser(['wallet_balance' => 200]);
+
+        $topup = WalletTopup::query()->create([
+            'user_id' => $customer->id,
+            'amount' => 500,
+            'currency' => 'MDL',
+            'status' => 'paid',
+            'payment_provider' => 'local',
+            'paid_at' => now(),
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/wallet-topups/' . $topup->id . '/refund', ['amount' => 50])
+            ->assertOk();
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->getJson('/backoffice/wallet-topups')
+            ->assertOk()
+            ->assertJsonPath('summary.refunds_count', 1)
+            ->assertJsonPath('summary.volume_refunded', 50)
+            ->assertJsonPath('refunds.0.amount', 50)
+            ->assertJsonPath('refunds.0.user.email', $customer->email);
     }
 }

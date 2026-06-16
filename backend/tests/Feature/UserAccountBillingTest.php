@@ -16,7 +16,7 @@ class UserAccountBillingTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_personal_users_receive_monthly_invoices_only(): void
+    public function test_monthly_invoice_job_does_not_create_invoices_for_any_app_user(): void
     {
         Tariff::query()->create(['price_per_kwh' => 0.50]);
 
@@ -42,18 +42,13 @@ class UserAccountBillingTest extends TestCase
 
         $created = app(BillingService::class)->generateMonthlyInvoices(Carbon::parse('2026-04-01'));
 
-        $this->assertSame(1, $created);
-        $this->assertDatabaseHas('invoices', [
-            'user_id' => $personalUser->id,
-            'invoice_type' => 'monthly',
-        ]);
+        $this->assertSame(0, $created);
         $this->assertDatabaseMissing('invoices', [
-            'user_id' => $customerUser->id,
             'invoice_type' => 'monthly',
         ]);
     }
 
-    public function test_session_stop_never_creates_per_session_invoice(): void
+    public function test_session_stop_creates_per_session_invoice(): void
     {
         Tariff::query()->create(['price_per_kwh' => 0.50]);
 
@@ -77,15 +72,15 @@ class UserAccountBillingTest extends TestCase
 
             $invoice = app(BillingService::class)->finalizeBillingForSession($session);
 
-            $this->assertNull($invoice);
+            $this->assertNotNull($invoice);
+            $this->assertSame('session', $invoice->invoice_type);
+            $this->assertSame('paid', $invoice->status);
         }
 
-        $this->assertDatabaseMissing('invoices', [
-            'invoice_type' => 'session',
-        ]);
+        $this->assertSame(2, Invoice::query()->where('invoice_type', 'session')->count());
     }
 
-    public function test_personal_session_stop_does_not_create_invoice_until_monthly_job(): void
+    public function test_personal_session_stop_with_zero_kwh_does_not_create_invoice(): void
     {
         Tariff::query()->create(['price_per_kwh' => 0.50]);
 
@@ -102,19 +97,27 @@ class UserAccountBillingTest extends TestCase
             'station_id' => $station->id,
             'start_time' => now()->subHour(),
             'kwh_consumed' => 0,
+            'meter_start_kwh' => 50,
         ]);
 
-        $result = app(\App\Services\ChargingStopService::class)->finalizeStop($session, $station, 'app');
+        $station->update(['meter_value_kwh' => 50]);
+
+        $result = app(\App\Services\ChargingStopService::class)->finalizeStop(
+            $session->fresh(),
+            $station->fresh(),
+            'app',
+            null,
+            50,
+        );
 
         $this->assertSame('completed', $result['status']);
         $this->assertNull($result['invoice']);
         $this->assertDatabaseMissing('invoices', [
             'user_id' => $personal->id,
-            'invoice_type' => 'monthly',
         ]);
     }
 
-    public function test_personal_user_can_start_stripe_checkout_for_monthly_invoice(): void
+    public function test_personal_user_cannot_pay_monthly_invoice_from_app(): void
     {
         $personal = $this->createPersonalUser(['email' => 'personal@example.test']);
 
@@ -132,53 +135,56 @@ class UserAccountBillingTest extends TestCase
             'status' => 'unpaid',
         ]);
 
-        $this->mock(\App\Services\StripePaymentService::class, function ($mock) use ($invoice) {
-            $mock->shouldReceive('createCheckoutSession')
-                ->once()
-                ->andReturn([
-                    'id' => 'cs_test_monthly',
-                    'url' => 'https://stripe.test/checkout/cs_test_monthly',
-                    'status' => 'open',
-                    'payment_status' => 'unpaid',
-                    'client_reference_id' => (string) $invoice->id,
-                    'metadata' => [],
-                ]);
-        });
-
         $this->actingAs($personal, 'api')
             ->postJson('/api/invoices/' . $invoice->id . '/checkout-session')
-            ->assertOk()
-            ->assertJsonPath('checkout_url', 'https://stripe.test/checkout/cs_test_monthly');
+            ->assertForbidden();
     }
 
-    public function test_personal_invoice_index_returns_monthly_summary(): void
+    public function test_personal_invoice_index_returns_prepay_statistics(): void
     {
-        $personal = $this->createPersonalUser(['email' => 'personal@example.test']);
+        Tariff::query()->create(['price_per_kwh' => 0.50]);
 
-        Invoice::query()->create([
-            'user_id' => $personal->id,
-            'month' => '2026-04',
-            'currency' => 'MDL',
-            'invoice_type' => 'monthly',
-            'invoice_number' => 'EVM-202604-1',
-            'period_start' => '2026-04-01',
-            'period_end' => '2026-04-30',
-            'total_kwh' => 10,
-            'total_amount' => 5,
-            'sessions_count' => 2,
-            'status' => 'unpaid',
+        $personal = $this->createPersonalUser([
+            'email' => 'personal@example.test',
+            'wallet_balance' => 200,
         ]);
 
-        $this->actingAs($personal, 'api')
-            ->getJson('/api/invoices')
-            ->assertOk()
-            ->assertJsonPath('summary.billing_model', 'monthly')
-            ->assertJsonPath('summary.outstanding_amount', 5)
-            ->assertJsonPath('summary.unpaid_count', 1)
-            ->assertJsonCount(1, 'invoices');
+        $station = Station::query()->create([
+            'name' => 'VOLTA 1',
+            'location' => 'Chisinau',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'station:volta-1',
+        ]);
+
+        ChargingSession::query()->create([
+            'user_id' => $personal->id,
+            'station_id' => $station->id,
+            'start_time' => Carbon::parse('2026-06-05 08:00:00'),
+            'end_time' => Carbon::parse('2026-06-05 09:00:00'),
+            'kwh_consumed' => 8,
+            'charge_budget' => 5,
+        ]);
+
+        $session = ChargingSession::query()->where('user_id', $personal->id)->first();
+        app(BillingService::class)->finalizeBillingForSession($session);
+
+        Carbon::setTestNow(Carbon::parse('2026-06-10 12:00:00'));
+
+        try {
+            $this->actingAs($personal, 'api')
+                ->getJson('/api/invoices')
+                ->assertOk()
+                ->assertJsonPath('summary.billing_model', 'prepay')
+                ->assertJsonCount(1, 'invoices')
+                ->assertJsonPath('invoices.0.invoice_type', 'session')
+                ->assertJsonPath('statistics.wallet_balance', 200)
+                ->assertJsonPath('statistics.lifetime.sessions_count', 1);
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
-    public function test_customer_invoice_index_returns_usage_statistics_without_invoices(): void
+    public function test_customer_invoice_index_returns_invoices_and_usage_statistics(): void
     {
         Tariff::query()->create(['price_per_kwh' => 0.50]);
 
@@ -194,7 +200,7 @@ class UserAccountBillingTest extends TestCase
             'qr_code' => 'station:volta-1',
         ]);
 
-        ChargingSession::query()->create([
+        $sessionOne = ChargingSession::query()->create([
             'user_id' => $customer->id,
             'station_id' => $station->id,
             'start_time' => Carbon::parse('2026-06-05 08:00:00'),
@@ -203,7 +209,7 @@ class UserAccountBillingTest extends TestCase
             'charge_budget' => 8,
         ]);
 
-        ChargingSession::query()->create([
+        $sessionTwo = ChargingSession::query()->create([
             'user_id' => $customer->id,
             'station_id' => $station->id,
             'start_time' => Carbon::parse('2026-05-12 08:00:00'),
@@ -212,6 +218,9 @@ class UserAccountBillingTest extends TestCase
             'charge_budget' => 5,
         ]);
 
+        app(BillingService::class)->finalizeBillingForSession($sessionOne);
+        app(BillingService::class)->finalizeBillingForSession($sessionTwo);
+
         Carbon::setTestNow(Carbon::parse('2026-06-10 12:00:00'));
 
         try {
@@ -219,7 +228,7 @@ class UserAccountBillingTest extends TestCase
                 ->getJson('/api/invoices')
                 ->assertOk()
                 ->assertJsonPath('summary.billing_model', 'prepay')
-                ->assertJsonCount(0, 'invoices')
+                ->assertJsonCount(2, 'invoices')
                 ->assertJsonPath('statistics.wallet_balance', 120)
                 ->assertJsonPath('statistics.lifetime.sessions_count', 2)
                 ->assertJsonPath('statistics.lifetime.total_kwh', 14)

@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Invoice;
-use App\Services\StripePaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -11,7 +10,7 @@ class InvoicePaymentsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_invoice_checkout_session_is_created_for_the_authenticated_user(): void
+    public function test_invoice_checkout_session_is_not_available_in_app(): void
     {
         $user = $this->createPersonalUser([
             'name' => 'Driver One',
@@ -33,33 +32,12 @@ class InvoicePaymentsTest extends TestCase
             'status' => 'unpaid',
         ]);
 
-        $this->mock(StripePaymentService::class, function ($mock) use ($invoice) {
-            $mock->shouldReceive('createCheckoutSession')
-                ->once()
-                ->andReturn([
-                    'id' => 'cs_test_123',
-                    'url' => 'https://stripe.test/checkout/cs_test_123',
-                    'status' => 'open',
-                    'payment_status' => 'unpaid',
-                    'client_reference_id' => (string) $invoice->id,
-                    'metadata' => [],
-                ]);
-        });
-
         $this->actingAs($user, 'api')
             ->postJson('/api/invoices/' . $invoice->id . '/checkout-session')
-            ->assertOk()
-            ->assertJsonPath('checkout_url', 'https://stripe.test/checkout/cs_test_123')
-            ->assertJsonPath('session_id', 'cs_test_123');
-
-        $this->assertDatabaseHas('invoices', [
-            'id' => $invoice->id,
-            'payment_provider' => 'stripe',
-            'payment_session_id' => 'cs_test_123',
-        ]);
+            ->assertForbidden();
     }
 
-    public function test_invoice_can_be_marked_paid_after_verification(): void
+    public function test_invoice_verify_payment_is_not_available_in_app(): void
     {
         $user = $this->createPersonalUser([
             'name' => 'Driver One',
@@ -83,33 +61,9 @@ class InvoicePaymentsTest extends TestCase
             'status' => 'unpaid',
         ]);
 
-        $this->mock(StripePaymentService::class, function ($mock) {
-            $mock->shouldReceive('retrieveCheckoutSession')
-                ->once()
-                ->with('cs_test_123')
-                ->andReturn([
-                    'id' => 'cs_test_123',
-                    'url' => 'https://stripe.test/checkout/cs_test_123',
-                    'status' => 'complete',
-                    'payment_status' => 'paid',
-                    'client_reference_id' => '1',
-                    'metadata' => [],
-                ]);
-        });
-
         $this->actingAs($user, 'api')
             ->postJson('/api/invoices/' . $invoice->id . '/verify-payment')
-            ->assertOk()
-            ->assertJsonPath('payment_status', 'paid')
-            ->assertJsonPath('invoice.status', 'paid');
-
-        $this->assertDatabaseHas('invoices', [
-            'id' => $invoice->id,
-            'status' => 'paid',
-            'payment_session_id' => 'cs_test_123',
-        ]);
-
-        $this->assertNotNull(Invoice::query()->findOrFail($invoice->id)->paid_at);
+            ->assertForbidden();
     }
 
     public function test_authenticated_user_can_download_own_invoice_document(): void

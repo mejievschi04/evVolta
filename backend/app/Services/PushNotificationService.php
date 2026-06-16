@@ -78,6 +78,16 @@ class PushNotificationService
         );
     }
 
+    public function notifyWalletTopupPaid(User $user, float $amount, string $currency = 'MDL'): void
+    {
+        $this->notifyUser(
+            $user,
+            'Cont alimentat',
+            sprintf('+%.2f %s disponibili in wallet.', $amount, $currency),
+            ['type' => 'wallet.topup_paid']
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $data
      */

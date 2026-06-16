@@ -46,7 +46,11 @@ class StripeWebhookController extends Controller
                     $topup = WalletTopup::query()->find($topupId);
 
                     if ($topup) {
-                        app(WalletService::class)->creditTopup($topup);
+                        app(WalletService::class)->creditTopup(
+                            $topup,
+                            $session->id ?? null,
+                            $session->payment_intent ?? null,
+                        );
                     }
                 }
             }

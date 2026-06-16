@@ -66,6 +66,7 @@ const emptyData = {
   sessions: [],
   clients: [],
   walletTopups: [],
+  walletRefunds: [],
   walletSummary: null,
   personal: [],
   requests: [],
@@ -197,6 +198,7 @@ function useBackofficeData() {
 
         if (key === 'wallet') {
           nextData.walletTopups = payload.data ?? [];
+          nextData.walletRefunds = payload.refunds ?? [];
           nextData.walletSummary = payload.summary ?? null;
           continue;
         }
@@ -1699,9 +1701,15 @@ const walletStatusFilters = [
   { id: 'pending', label: 'In asteptare' }
 ];
 
-function WalletTopupsView({ rows, summary, loading }) {
+const walletViewFilters = [
+  { id: 'topups', label: 'Alimentari' },
+  { id: 'refunds', label: 'Retururi' }
+];
+
+function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [viewMode, setViewMode] = useState('topups');
   const visibleRows = rows.filter((topup) => {
     if (statusFilter && topup.status !== statusFilter) {
       return false;
@@ -1717,12 +1725,21 @@ function WalletTopupsView({ rows, summary, loading }) {
     ]);
   });
 
+  const visibleRefunds = (refunds ?? []).filter((refund) => matchesQuery(refund, query, [
+    (item) => item.user?.name,
+    (item) => item.user?.email,
+    (item) => item.payment_provider,
+    (item) => item.stripe_refund_id,
+    (item) => String(item.id),
+    (item) => String(item.wallet_topup_id)
+  ]));
+
   return (
     <div className="panel">
       <div className="panel-header">
         <div>
-          <h2>Alimentari wallet</h2>
-          <p>Stripe si credite prepay pentru clienti</p>
+          <h2>Wallet prepay</h2>
+          <p>Alimentari Stripe si retururi initiate din backoffice</p>
         </div>
         <Wallet size={20} />
       </div>
@@ -1736,8 +1753,32 @@ function WalletTopupsView({ rows, summary, loading }) {
           <span>In asteptare</span>
           <strong>{formatNumber(summary?.count_pending)} · {formatMoney(summary?.volume_pending)}</strong>
         </div>
+        <div className="billing-stat">
+          <span>Retururi</span>
+          <strong>{formatNumber(summary?.refunds_count)} · {formatMoney(summary?.volume_refunded)}</strong>
+        </div>
       </div>
 
+      <div className="status-filters">
+        {walletViewFilters.map((filter) => (
+          <button
+            className={viewMode === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
+            key={filter.id}
+            onClick={() => {
+              setViewMode(filter.id);
+              setStatusFilter('');
+            }}
+            type="button"
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      <Toolbar value={query} onChange={setQuery} />
+
+      {viewMode === 'topups' ? (
+        <>
       <div className="status-filters">
         {walletStatusFilters.map((filter) => (
           <button
@@ -1751,8 +1792,6 @@ function WalletTopupsView({ rows, summary, loading }) {
         ))}
       </div>
 
-      <Toolbar value={query} onChange={setQuery} />
-
       {loading ? (
         <LoadingState />
       ) : rows.length === 0 ? (
@@ -1761,19 +1800,77 @@ function WalletTopupsView({ rows, summary, loading }) {
         <EmptyState title="Niciun rezultat" detail="Schimba filtrul sau cautarea." />
       ) : (
         <div className="table">
-          {visibleRows.map((topup) => (
-            <div className="table-row four" key={topup.id}>
-              <div>
-                <strong>{topup.user?.name ?? `User #${topup.user_id}`}</strong>
-                <p>{topup.user?.email ?? '-'}</p>
+          {visibleRows.map((topup) => {
+            const refundableAmount = Number(topup.refundable_amount ?? 0);
+            const canRefund = topup.status === 'paid' && refundableAmount > 0;
+
+            return (
+              <div className="table-row four" key={topup.id}>
+                <div>
+                  <strong>{topup.user?.name ?? `User #${topup.user_id}`}</strong>
+                  <p>{topup.user?.email ?? '-'}</p>
+                  {topup.user?.wallet_balance != null ? (
+                    <p className="request-meta">Sold {formatMoney(topup.user.wallet_balance)}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <span className="live-kwh">{formatMoney(topup.amount)}</span>
+                  {topup.amount_refunded > 0 ? (
+                    <p className="request-meta">
+                      Returnat {formatMoney(topup.amount_refunded)}
+                      {refundableAmount > 0 ? ` · ramas ${formatMoney(refundableAmount)}` : ''}
+                    </p>
+                  ) : null}
+                </div>
+                <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+                <div className="row-actions end-actions">
+                  <div>
+                    <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
+                    <p className="request-meta">
+                      {topup.payment_provider ?? '—'}
+                      {topup.payment_session_id ? ` · ${topup.payment_session_id.slice(0, 18)}…` : ''}
+                    </p>
+                  </div>
+                  {canRefund ? (
+                    <button
+                      className="secondary-button mini-button danger-text"
+                      onClick={() => onRefund(topup)}
+                      type="button"
+                    >
+                      Retur bani
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              <span className="live-kwh">{formatMoney(topup.amount)}</span>
-              <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+            );
+          })}
+        </div>
+      )}
+        </>
+      ) : loading ? (
+        <LoadingState />
+      ) : (refunds ?? []).length === 0 ? (
+        <EmptyState title="Niciun retur" detail="Retururile initiate din aceasta pagina apar aici." />
+      ) : visibleRefunds.length === 0 ? (
+        <EmptyState title="Niciun rezultat" detail="Schimba cautarea." />
+      ) : (
+        <div className="table">
+          {visibleRefunds.map((refund) => (
+            <div className="table-row four" key={refund.id}>
               <div>
-                <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
+                <strong>{refund.user?.name ?? `User #${refund.user_id}`}</strong>
+                <p>{refund.user?.email ?? '-'}</p>
+                {refund.topup ? (
+                  <p className="request-meta">Din alimentare {formatMoney(refund.topup.amount)} · #{refund.topup.id}</p>
+                ) : null}
+              </div>
+              <span className="live-kwh">-{formatMoney(refund.amount)}</span>
+              <Badge variant={statusVariant(refund.status)}>{statusLabel(refund.status)}</Badge>
+              <div>
+                <strong>{formatDateTime(refund.created_at)}</strong>
                 <p className="request-meta">
-                  {topup.payment_provider ?? '—'}
-                  {topup.payment_session_id ? ` · ${topup.payment_session_id.slice(0, 18)}…` : ''}
+                  {refund.payment_provider ?? '—'}
+                  {refund.stripe_refund_id ? ` · ${refund.stripe_refund_id.slice(0, 18)}…` : ''}
                 </p>
               </div>
             </div>
@@ -1784,7 +1881,7 @@ function WalletTopupsView({ rows, summary, loading }) {
   );
 }
 
-function ClientsView({ rows, loading, onCreate, onOpenDetail }) {
+function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((user) => matchesQuery(user, query, [
     (item) => item.name,
@@ -1799,7 +1896,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail }) {
       <div className="panel-header">
         <div>
           <h2>Clienti</h2>
-          <p>Conturi cu plata la card, per sesiune</p>
+          <p>Conturi prepay cu wallet si plata Stripe</p>
         </div>
         <button className="primary-button" onClick={onCreate} type="button">
           <Plus size={18} />
@@ -1820,13 +1917,10 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail }) {
               <p>{user.email ?? '-'}</p>
             </div>
             <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
-            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
-            <Badge variant={user.unpaid_invoices_count > 0 ? 'warning' : 'success'}>
-              {formatNumber(user.unpaid_invoices_count)} neplatite
+            <Badge>
+              {customerTariff != null ? `${customerTariff} MDL/kWh` : 'Tarif clienti'}
             </Badge>
-            <strong className={user.outstanding_balance > 0 ? 'debt-value' : ''}>
-              {formatMoney(user.outstanding_balance)}
-            </strong>
+            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
             <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
               Detalii
             </button>
@@ -1837,14 +1931,14 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail }) {
   );
 }
 
-function PersonalView({ rows, loading, onCreate, onOpenDetail }) {
+function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((user) => matchesQuery(user, query, [
     (item) => item.name,
     (item) => item.email,
     (item) => item.currency
   ]));
-  const totalDebt = rows.reduce((sum, user) => sum + Number(user.outstanding_balance || 0), 0);
+  const totalWallet = rows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
 
   if (loading) return <LoadingState />;
 
@@ -1854,8 +1948,7 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail }) {
         <div>
           <h2>Personal</h2>
           <p>
-            {rows.length} angajati
-            {totalDebt > 0 ? ` · datorii totale ${formatMoney(totalDebt)}` : ' · fara datorii'}
+            {rows.length} angajati · sold total wallet {formatMoney(totalWallet)}
           </p>
         </div>
         <button className="primary-button" onClick={onCreate} type="button">
@@ -1865,7 +1958,7 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail }) {
       </div>
       <Toolbar value={query} onChange={setQuery} />
       {rows.length === 0 ? (
-        <EmptyState title="Nu exista personal" detail="Adauga angajati cu facturare lunara." />
+        <EmptyState title="Nu exista personal" detail="Adauga angajati cu cont prepay (wallet)." />
       ) : visibleRows.length === 0 ? (
         <EmptyState title="Niciun angajat gasit" detail="Schimba termenul de cautare." />
       ) : (
@@ -1876,14 +1969,11 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail }) {
               <strong>{user.name ?? '-'}</strong>
               <p>{user.email ?? '-'}</p>
             </div>
-            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
-            <Badge>{formatNumber(user.invoices_count)} facturi</Badge>
-            <Badge variant={user.unpaid_invoices_count > 0 ? 'warning' : 'success'}>
-              {formatNumber(user.unpaid_invoices_count)} neplatite
+            <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
+            <Badge>
+              {personalTariff != null ? `${personalTariff} MDL/kWh` : 'Tarif personal'}
             </Badge>
-            <strong className={user.outstanding_balance > 0 ? 'debt-value' : ''}>
-              {formatMoney(user.outstanding_balance)}
-            </strong>
+            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
             <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
               Detalii
             </button>
@@ -1897,6 +1987,7 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail }) {
 function invoiceTypeLabel(type) {
   if (type === 'monthly') return 'Lunara';
   if (type === 'session') return 'Sesiune';
+  if (type === 'wallet_topup') return 'Alimentare wallet';
   return type || '-';
 }
 
@@ -1910,6 +2001,10 @@ function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice })
   const invoices = detail.invoices ?? [];
   const sessions = detail.recent_sessions ?? [];
   const walletTopups = detail.wallet_topups ?? [];
+  const walletRefunds = detail.wallet_refunds ?? [];
+  const walletSummary = detail.wallet_summary ?? {};
+  const isPrepayAccount = user.account_type === 'customer' || user.account_type === 'personal';
+  const effectivePrice = user.effective_price_per_kwh;
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -1919,7 +2014,7 @@ function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice })
             <h2>{user.name ?? 'Utilizator'}</h2>
             <p>
               {user.email ?? '-'}
-              {user.account_type === 'customer' ? ' · client card' : user.account_type === 'personal' ? ' · personal' : ''}
+              {user.account_type === 'customer' ? ' · client prepay' : user.account_type === 'personal' ? ' · personal prepay' : ''}
             </p>
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
@@ -1933,24 +2028,39 @@ function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice })
         {!loading && (
           <>
             <div className="billing-summary-grid">
-              <div className="billing-stat">
-                <span>Datorie curenta</span>
-                <strong className={billing.outstanding_balance > 0 ? 'debt-value' : ''}>
-                  {formatMoney(billing.outstanding_balance)}
-                </strong>
-              </div>
-              <div className="billing-stat">
-                <span>Facturi neplatite</span>
-                <strong>{formatNumber(billing.unpaid_invoices_count)}</strong>
-              </div>
-              <div className="billing-stat">
-                <span>Facturi platite</span>
-                <strong>{formatNumber(billing.paid_invoices_count)}</strong>
-              </div>
-              <div className="billing-stat">
-                <span>Total facturat</span>
-                <strong>{formatMoney(billing.total_billed)}</strong>
-              </div>
+              {isPrepayAccount ? (
+                <>
+                  <div className="billing-stat">
+                    <span>Sold wallet</span>
+                    <strong>{formatMoney(user.wallet_balance)}</strong>
+                  </div>
+                  <div className="billing-stat">
+                    <span>Total alimentat</span>
+                    <strong>{formatMoney(walletSummary.topups_paid_total)}</strong>
+                  </div>
+                  <div className="billing-stat">
+                    <span>Total returnat</span>
+                    <strong>{formatMoney(walletSummary.refunds_total)}</strong>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="billing-stat">
+                    <span>Datorie curenta</span>
+                    <strong className={billing.outstanding_balance > 0 ? 'debt-value' : ''}>
+                      {formatMoney(billing.outstanding_balance)}
+                    </strong>
+                  </div>
+                  <div className="billing-stat">
+                    <span>Facturi neplatite</span>
+                    <strong>{formatNumber(billing.unpaid_invoices_count)}</strong>
+                  </div>
+                  <div className="billing-stat">
+                    <span>Total facturat</span>
+                    <strong>{formatMoney(billing.total_billed)}</strong>
+                  </div>
+                </>
+              )}
               <div className="billing-stat">
                 <span>Energie totala</span>
                 <strong>{formatNumber(billing.total_kwh)} kWh</strong>
@@ -1959,41 +2069,63 @@ function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice })
                 <span>Sesiuni</span>
                 <strong>{formatNumber(user.sessions_count)}</strong>
               </div>
-              {user.account_type === 'customer' && (
+              {isPrepayAccount && (
                 <div className="billing-stat">
-                  <span>Sold wallet</span>
-                  <strong>{formatMoney(user.wallet_balance)}</strong>
+                  <span>Tarif aplicat</span>
+                  <strong>{effectivePrice != null ? `${effectivePrice} MDL/kWh` : '-'}</strong>
                 </div>
               )}
             </div>
 
-            {user.account_type === 'customer' && (
-              <div className="detail-section">
-                <h3>Alimentari wallet</h3>
-                {walletTopups.length === 0 ? (
-                  <p className="detail-empty">Nicio alimentare Stripe inca.</p>
-                ) : (
-                  <div className="detail-table">
-                    {walletTopups.map((topup) => (
-                      <div className="detail-row" key={topup.id}>
-                        <div>
-                          <strong>{formatMoney(topup.amount)}</strong>
-                          <p>{formatDateTime(topup.paid_at ?? topup.created_at)}</p>
+            {isPrepayAccount ? (
+              <>
+                <div className="detail-section">
+                  <h3>Alimentari wallet</h3>
+                  {walletTopups.length === 0 ? (
+                    <p className="detail-empty">Nicio alimentare inca.</p>
+                  ) : (
+                    <div className="detail-table">
+                      {walletTopups.map((topup) => (
+                        <div className="detail-row" key={topup.id}>
+                          <div>
+                            <strong>{formatMoney(topup.amount)}</strong>
+                            <p>{formatDateTime(topup.paid_at ?? topup.created_at)}</p>
+                            {topup.amount_refunded > 0 ? (
+                              <p className="request-meta">Returnat {formatMoney(topup.amount_refunded)}</p>
+                            ) : null}
+                          </div>
+                          <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+                          <span>{topup.payment_provider ?? '—'}</span>
                         </div>
-                        <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
-                        <span>{topup.payment_provider ?? '—'}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="detail-section">
+                  <h3>Retururi bani</h3>
+                  {walletRefunds.length === 0 ? (
+                    <p className="detail-empty">Niciun retur initiat din backoffice.</p>
+                  ) : (
+                    <div className="detail-table">
+                      {walletRefunds.map((refund) => (
+                        <div className="detail-row" key={refund.id}>
+                          <div>
+                            <strong>-{formatMoney(refund.amount)}</strong>
+                            <p>{formatDateTime(refund.created_at)}</p>
+                          </div>
+                          <Badge variant={statusVariant(refund.status)}>{statusLabel(refund.status)}</Badge>
+                          <span>{refund.payment_provider ?? '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
 
-            <div className="detail-section">
-              <h3>Facturi</h3>
-              {invoices.length === 0 ? (
-                <p className="detail-empty">Nicio factura inca.</p>
-              ) : (
+            {invoices.length > 0 ? (
+              <div className="detail-section">
+                <h3>Facturi (arhiva)</h3>
                 <div className="detail-table">
                   {invoices.map((invoice) => (
                     <div className="detail-row" key={invoice.id}>
@@ -2018,8 +2150,8 @@ function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice })
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            ) : null}
 
             <div className="detail-section">
               <h3>Sesiuni recente</h3>
@@ -2389,8 +2521,12 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
           <input readOnly value="MDL (Leu moldovenesc)" />
         </label>
         <label>
-          Tarif kWh
-          <input defaultValue={currentTariff?.price_per_kwh ?? ''} inputMode="decimal" name="price_per_kwh" placeholder="-" />
+          Tarif kWh clienti
+          <input defaultValue={currentTariff?.price_per_kwh ?? ''} inputMode="decimal" name="price_per_kwh" placeholder="-" required />
+        </label>
+        <label>
+          Tarif kWh personal
+          <input defaultValue={currentTariff?.personal_price_per_kwh ?? ''} inputMode="decimal" name="personal_price_per_kwh" placeholder="-" required />
         </label>
         <label>
           Prenume
@@ -2454,6 +2590,77 @@ function ListPanel({ title, subtitle, rows, render, loading, emptyTitle, searchV
   );
 }
 
+function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
+  if (!topup) {
+    return null;
+  }
+
+  const refundableAmount = Number(topup.refundable_amount ?? 0);
+  const userLabel = topup.user?.email ?? topup.user?.name ?? `user #${topup.user_id}`;
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <form className="modal-panel" onSubmit={onSubmit}>
+        <div className="panel-header">
+          <div>
+            <h2>Retur bani</h2>
+            <p>{userLabel} · alimentare {formatMoney(topup.amount)}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+
+        <div className="billing-summary-grid">
+          <div className="billing-stat">
+            <span>Disponibil retur</span>
+            <strong>{formatMoney(refundableAmount)}</strong>
+          </div>
+          <div className="billing-stat">
+            <span>Sold client</span>
+            <strong>{formatMoney(topup.user?.wallet_balance)}</strong>
+          </div>
+          {topup.amount_refunded > 0 ? (
+            <div className="billing-stat">
+              <span>Deja returnat</span>
+              <strong>{formatMoney(topup.amount_refunded)}</strong>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="settings-grid">
+          <label className="full-field">
+            Suma de returnat (MDL)
+            <input
+              defaultValue={refundableAmount > 0 ? refundableAmount.toFixed(2) : ''}
+              inputMode="decimal"
+              max={refundableAmount}
+              min="0.01"
+              name="amount"
+              placeholder="0.00"
+              required
+              step="0.01"
+              type="number"
+            />
+          </label>
+          <p className="field-hint full-field">
+            Returnezi pe cardul folosit la aceasta alimentare. Maxim {formatMoney(refundableAmount)}.
+          </p>
+        </div>
+
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose} type="button">Renunta</button>
+          <button className="primary-button danger-text" disabled={saving || refundableAmount <= 0} type="submit">
+            {saving ? 'Se proceseaza' : 'Confirma returul'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
   if (!type) {
     return null;
@@ -2478,8 +2685,8 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               {isStation
                 ? 'Adauga un punct de incarcare'
                 : isPersonalUser
-                  ? 'Cont personal cu factura lunara'
-                  : 'Cont client cu plata la card'}
+                  ? 'Cont personal prepay (wallet)'
+                  : 'Cont client prepay (wallet + Stripe)'}
             </p>
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
@@ -2597,6 +2804,8 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
 
 function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
   const activeSessions = data.sessions.filter((session) => !session.end_time).slice(0, 8);
+  const customerTariff = data.dashboard?.currentTariff?.price_per_kwh ?? null;
+  const personalTariff = data.dashboard?.currentTariff?.personal_price_per_kwh ?? customerTariff;
   const views = {
     dashboard: <DashboardView activeSessions={activeSessions} dashboard={data.dashboard} loading={loading} />,
     stations: (
@@ -2630,11 +2839,14 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         loading={loading}
         onCreate={actions.openCustomerForm}
         onOpenDetail={actions.openUserDetail}
+        customerTariff={customerTariff}
       />
     ),
     wallet: (
       <WalletTopupsView
         loading={loading}
+        onRefund={actions.openWalletRefund}
+        refunds={data.walletRefunds}
         rows={data.walletTopups}
         summary={data.walletSummary}
       />
@@ -2645,6 +2857,7 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         loading={loading}
         onCreate={actions.openPersonalForm}
         onOpenDetail={actions.openUserDetail}
+        personalTariff={personalTariff}
       />
     ),
     requests: <RequestsView rows={data.requests} loading={loading} onApprove={actions.approveRequest} onReject={actions.rejectRequest} />,
@@ -2661,6 +2874,7 @@ export default function App() {
   const { data, loading, error, authRequired, reload } = useBackofficeData();
   const [modalType, setModalType] = useState('');
   const [modalEntity, setModalEntity] = useState(null);
+  const [walletRefundTopup, setWalletRefundTopup] = useState(null);
   const [actionError, setActionError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [saving, setSaving] = useState(false);
@@ -2735,6 +2949,7 @@ export default function App() {
       setActionMessage(payload?.message || successMessage);
       setModalType('');
       setModalEntity(null);
+      setWalletRefundTopup(null);
       await reload();
     } catch (error) {
       setActionError(error.message || 'Actiunea nu a reusit.');
@@ -2803,6 +3018,41 @@ export default function App() {
     await runAction(
       () => mutateJson(`/backoffice/sessions/${session.id}/delete`),
       'Sesiunea a fost stearsa.'
+    );
+  }
+
+  function openWalletRefund(topup) {
+    setActionError('');
+    setActionMessage('');
+    setWalletRefundTopup(topup);
+  }
+
+  async function handleWalletRefundSubmit(event) {
+    event.preventDefault();
+
+    if (!walletRefundTopup) {
+      return;
+    }
+
+    const values = formDataToObject(event.currentTarget);
+    const amount = Number(String(values.amount ?? '').replace(',', '.'));
+    const refundableAmount = Number(walletRefundTopup.refundable_amount ?? 0);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setActionError('Introdu o suma valida pentru retur.');
+      return;
+    }
+
+    if (amount > refundableAmount) {
+      setActionError(`Maxim ${formatMoney(refundableAmount)} pot fi returnati din aceasta alimentare.`);
+      return;
+    }
+
+    await runAction(
+      () => mutateJson(`/backoffice/wallet-topups/${walletRefundTopup.id}/refund`, {
+        amount: Math.round(amount * 100) / 100
+      }),
+      'Returul a fost initiat.'
     );
   }
 
@@ -3021,6 +3271,7 @@ export default function App() {
     downloadInvoice,
     sendInvoice,
     deleteInvoice,
+    openWalletRefund,
     approveRequest,
     rejectRequest,
     saveSettings
@@ -3079,7 +3330,7 @@ export default function App() {
         </header>
         {error && <div className="error-banner">{error}</div>}
         {actionMessage && <div className="success-banner">{actionMessage}</div>}
-        {actionError && !modalType && <div className="error-banner">{actionError}</div>}
+        {actionError && !modalType && !walletRefundTopup && <div className="error-banner">{actionError}</div>}
         <ActiveView
           activeSection={activeSection}
           actions={actions}
@@ -3099,6 +3350,16 @@ export default function App() {
         onSubmit={handleModalSubmit}
         saving={saving}
         type={modalType}
+      />
+      <WalletRefundModal
+        error={actionError}
+        onClose={() => {
+          setWalletRefundTopup(null);
+          setActionError('');
+        }}
+        onSubmit={handleWalletRefundSubmit}
+        saving={saving}
+        topup={walletRefundTopup}
       />
       <UserDetailModal
         detail={userDetail}

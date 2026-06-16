@@ -62,12 +62,12 @@ class User extends Authenticatable implements JWTSubject
 
     public function usesCardPayment(): bool
     {
-        return $this->isCustomerAccount();
+        return $this->isCustomerAccount() || $this->isPersonalAccount();
     }
 
     public function usesMonthlyBilling(): bool
     {
-        return $this->isPersonalAccount();
+        return false;
     }
 
     public function sessions()
@@ -83,6 +83,11 @@ class User extends Authenticatable implements JWTSubject
     public function walletTopups()
     {
         return $this->hasMany(WalletTopup::class);
+    }
+
+    public function walletRefunds()
+    {
+        return $this->hasMany(WalletRefund::class);
     }
 
     public function stationFavorites()
