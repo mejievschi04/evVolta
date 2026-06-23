@@ -249,6 +249,49 @@ function formatKwh(value, digits = 3) {
   }).format(Number(value));
 }
 
+function formatTariffPrice(value) {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return '-';
+  }
+
+  return new Intl.NumberFormat('ro-RO', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2
+  }).format(number);
+}
+
+function formatTariffInput(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return '';
+  }
+
+  return Number(number.toFixed(2)).toString();
+}
+
+function parseTariffInput(value) {
+  const normalized = String(value ?? '').trim().replace(',', '.');
+  if (normalized === '') {
+    return null;
+  }
+
+  const number = Number(normalized);
+  if (!Number.isFinite(number) || number < 0) {
+    return null;
+  }
+
+  return Math.round(number * 100) / 100;
+}
+
 function formatDateTime(value) {
   if (!value) {
     return '-';
@@ -457,6 +500,20 @@ function Badge({ children, variant = 'neutral' }) {
   return <span className={`badge badge-${variant}`}>{children}</span>;
 }
 
+function TariffBadge({ value, fallback = 'Tarif' }) {
+  if (value == null || value === '') {
+    return <span className="tariff-badge tariff-badge-muted">{fallback}</span>;
+  }
+
+  return (
+    <span className="tariff-badge">
+      <Zap size={13} />
+      <strong>{formatTariffPrice(value)}</strong>
+      <span>lei/kWh</span>
+    </span>
+  );
+}
+
 function BrandBlock({ compact = false }) {
   return (
     <div className={`brand ${compact ? 'brand-compact' : ''}`}>
@@ -465,6 +522,7 @@ function BrandBlock({ compact = false }) {
       </span>
       <div>
         <strong>Volta EV</strong>
+        {!compact ? <p className="brand-tagline">Backoffice</p> : null}
       </div>
     </div>
   );
@@ -871,9 +929,15 @@ function LoginView({ error, loading, onSubmit }) {
     <main className="login-shell">
       <form className="login-panel" onSubmit={onSubmit}>
         <BrandBlock compact />
+        <p className="login-eyebrow">Administrare retea</p>
         <h1>Login admin</h1>
         <p className="login-copy">Autentifica-te cu un cont existent din backend pentru a administra reteaua Volta.</p>
-        {error && <div className="error-banner">{error}</div>}
+        {error && (
+          <div className="flash-banner flash-banner-error login-flash">
+            <Bell size={18} />
+            <span>{error}</span>
+          </div>
+        )}
         <div className="settings-grid compact">
           <label>
             Email
@@ -1904,6 +1968,17 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
         </button>
       </div>
       <Toolbar value={query} onChange={setQuery} />
+      {customerTariff != null ? (
+        <div className="tariff-summary-strip">
+          <div className="tariff-summary-item">
+            <span className="tariff-summary-icon"><Zap size={16} /></span>
+            <div>
+              <span>Tarif activ clienti</span>
+              <strong>{formatTariffPrice(customerTariff)} lei/kWh</strong>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {rows.length === 0 ? (
         <EmptyState title="Nu exista clienti" />
       ) : visibleRows.length === 0 ? (
@@ -1917,9 +1992,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
               <p>{user.email ?? '-'}</p>
             </div>
             <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
-            <Badge>
-              {customerTariff != null ? `${customerTariff} MDL/kWh` : 'Tarif clienti'}
-            </Badge>
+            <TariffBadge fallback="Tarif clienti" value={customerTariff} />
             <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
             <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
               Detalii
@@ -1957,6 +2030,17 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff })
         </button>
       </div>
       <Toolbar value={query} onChange={setQuery} />
+      {personalTariff != null ? (
+        <div className="tariff-summary-strip">
+          <div className="tariff-summary-item tariff-summary-item-personal">
+            <span className="tariff-summary-icon"><Zap size={16} /></span>
+            <div>
+              <span>Tarif activ personal</span>
+              <strong>{formatTariffPrice(personalTariff)} lei/kWh</strong>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {rows.length === 0 ? (
         <EmptyState title="Nu exista personal" detail="Adauga angajati cu cont prepay (wallet)." />
       ) : visibleRows.length === 0 ? (
@@ -1970,9 +2054,7 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff })
               <p>{user.email ?? '-'}</p>
             </div>
             <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
-            <Badge>
-              {personalTariff != null ? `${personalTariff} MDL/kWh` : 'Tarif personal'}
-            </Badge>
+            <TariffBadge fallback="Tarif personal" value={personalTariff} />
             <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
             <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
               Detalii
@@ -2193,9 +2275,9 @@ function UserDetailModal({
                 <strong>{formatNumber(user.sessions_count)}</strong>
               </div>
               {isPrepayAccount && (
-                <div className="billing-stat">
+                <div className="billing-stat billing-stat-tariff">
                   <span>Tarif aplicat</span>
-                  <strong>{effectivePrice != null ? `${effectivePrice} MDL/kWh` : '-'}</strong>
+                  <strong>{effectivePrice != null ? `${formatTariffPrice(effectivePrice)} lei/kWh` : '-'}</strong>
                 </div>
               )}
             </div>
@@ -2645,55 +2727,173 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
   const currentUser = dashboard?.currentUser;
   const currentTariff = dashboard?.currentTariff;
   const ocpp = dashboard?.ocpp;
+  const [pricePerKwh, setPricePerKwh] = useState('');
+  const [personalPricePerKwh, setPersonalPricePerKwh] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+
+  useEffect(() => {
+    setPricePerKwh(formatTariffInput(currentTariff?.price_per_kwh));
+    setPersonalPricePerKwh(formatTariffInput(currentTariff?.personal_price_per_kwh ?? currentTariff?.price_per_kwh));
+    setFirstName(currentUser?.first_name ?? '');
+    setLastName(currentUser?.last_name ?? '');
+  }, [
+    currentTariff?.id,
+    currentTariff?.price_per_kwh,
+    currentTariff?.personal_price_per_kwh,
+    currentTariff?.created_at,
+    currentUser?.first_name,
+    currentUser?.last_name
+  ]);
+
+  const previewCustomerTariff = pricePerKwh !== '' ? pricePerKwh : currentTariff?.price_per_kwh;
+  const previewPersonalTariff = personalPricePerKwh !== '' ? personalPricePerKwh : currentTariff?.personal_price_per_kwh;
 
   return (
-    <form className="panel" onSubmit={onSubmit}>
-      <div className="panel-header">
+    <form className="panel settings-panel" onSubmit={onSubmit}>
+      <div className="panel-header settings-panel-header">
         <div>
+          <p className="settings-eyebrow">Configurare retea</p>
           <h2>Setari</h2>
-          <p>Tarif, profil operator si gateway OCPP</p>
+          <p>Tarife, profil operator si gateway OCPP</p>
         </div>
-        <Settings size={20} />
+        <div className="settings-header-icon">
+          <Settings size={22} />
+        </div>
       </div>
-      {ocpp && (
-        <div className="ocpp-info-grid">
-          <div className="billing-stat">
-            <span>Mod OCPP</span>
-            <strong>{ocpp.mode ?? '-'}</strong>
-          </div>
-          <div className="billing-stat">
-            <span>URL public WS</span>
-            <strong className="ocpp-url">{ocpp.publicUrl ?? '-'}</strong>
-          </div>
-          <div className="billing-stat">
-            <span>Heartbeat</span>
-            <strong>{ocpp.heartbeatInterval ?? '-'}s</strong>
+
+      <section className="settings-section">
+        <div className="settings-section-head">
+          <Zap size={18} />
+          <div>
+            <h3>Tarife energie</h3>
+            <p>Pret per kWh pentru clienti si personal</p>
           </div>
         </div>
-      )}
-      <div className={compact ? 'settings-grid compact' : 'settings-grid'}>
-        <label>
-          Moneda
-          <input readOnly value="MDL (Leu moldovenesc)" />
-        </label>
-        <label>
-          Tarif kWh clienti
-          <input defaultValue={currentTariff?.price_per_kwh ?? ''} inputMode="decimal" name="price_per_kwh" placeholder="-" required />
-        </label>
-        <label>
-          Tarif kWh personal
-          <input defaultValue={currentTariff?.personal_price_per_kwh ?? ''} inputMode="decimal" name="personal_price_per_kwh" placeholder="-" required />
-        </label>
-        <label>
-          Prenume
-          <input defaultValue={currentUser?.first_name ?? ''} name="first_name" placeholder="-" />
-        </label>
-        <label>
-          Nume
-          <input defaultValue={currentUser?.last_name ?? ''} name="last_name" placeholder="-" />
-        </label>
+
+        <div className="tariff-showcase">
+          <article className="tariff-card tariff-card-customer">
+            <span className="tariff-card-label">Clienti</span>
+            <strong className="tariff-card-value">
+              {previewCustomerTariff != null && previewCustomerTariff !== ''
+                ? formatTariffPrice(previewCustomerTariff)
+                : '—'}
+            </strong>
+            <span className="tariff-card-unit">lei / kWh</span>
+          </article>
+          <article className="tariff-card tariff-card-personal">
+            <span className="tariff-card-label">Personal</span>
+            <strong className="tariff-card-value">
+              {previewPersonalTariff != null && previewPersonalTariff !== ''
+                ? formatTariffPrice(previewPersonalTariff)
+                : '—'}
+            </strong>
+            <span className="tariff-card-unit">lei / kWh</span>
+          </article>
+        </div>
+
+        <div className={compact ? 'settings-grid compact tariff-edit-grid' : 'settings-grid tariff-edit-grid'}>
+          <label>
+            Moneda
+            <input className="input-readonly" readOnly value="MDL (Leu moldovenesc)" />
+          </label>
+          <label>
+            Tarif kWh clienti
+            <div className="input-affix">
+              <input
+                inputMode="decimal"
+                name="price_per_kwh"
+                onChange={(event) => setPricePerKwh(event.target.value)}
+                placeholder="4.0"
+                required
+                step="0.01"
+                type="number"
+                value={pricePerKwh}
+              />
+              <span>lei/kWh</span>
+            </div>
+          </label>
+          <label>
+            Tarif kWh personal
+            <div className="input-affix">
+              <input
+                inputMode="decimal"
+                name="personal_price_per_kwh"
+                onChange={(event) => setPersonalPricePerKwh(event.target.value)}
+                placeholder="2.5"
+                required
+                step="0.01"
+                type="number"
+                value={personalPricePerKwh}
+              />
+              <span>lei/kWh</span>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-head">
+          <Users size={18} />
+          <div>
+            <h3>Profil operator</h3>
+            <p>Datele afisate in backoffice</p>
+          </div>
+        </div>
+        <div className={compact ? 'settings-grid compact' : 'settings-grid'}>
+          <label>
+            Prenume
+            <input
+              name="first_name"
+              onChange={(event) => setFirstName(event.target.value)}
+              placeholder="Prenume"
+              value={firstName}
+            />
+          </label>
+          <label>
+            Nume
+            <input
+              name="last_name"
+              onChange={(event) => setLastName(event.target.value)}
+              placeholder="Nume"
+              value={lastName}
+            />
+          </label>
+        </div>
+      </section>
+
+      {ocpp ? (
+        <section className="settings-section settings-section-muted">
+          <div className="settings-section-head">
+            <RadioTower size={18} />
+            <div>
+              <h3>Gateway OCPP</h3>
+              <p>Conexiune statii si telemetrie</p>
+            </div>
+          </div>
+          <div className="ocpp-info-grid">
+            <div className="billing-stat ocpp-stat">
+              <span>Mod OCPP</span>
+              <strong>{ocpp.mode ?? '-'}</strong>
+            </div>
+            <div className="billing-stat ocpp-stat">
+              <span>URL public WS</span>
+              <strong className="ocpp-url">{ocpp.publicUrl ?? '-'}</strong>
+            </div>
+            <div className="billing-stat ocpp-stat">
+              <span>Heartbeat</span>
+              <strong>{ocpp.heartbeatInterval ?? '-'}s</strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="settings-actions">
+        <button className="primary-button settings-save" type="submit">
+          <CheckCircle2 size={18} />
+          Salveaza setarile
+        </button>
       </div>
-      <button className="primary-button settings-save" type="submit">Salveaza</button>
     </form>
   );
 }
@@ -3019,7 +3219,11 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
     requests: <RequestsView rows={data.requests} loading={loading} onApprove={actions.approveRequest} onReject={actions.rejectRequest} />,
     invoices: <InvoicesView rows={data.invoices} loading={loading} onDownload={actions.downloadInvoice} onSend={actions.sendInvoice} onDelete={actions.deleteInvoice} />,
     audit: <AuditView rows={data.audit} loading={loading} onOpenDetail={actions.openAuditDetail} />,
-    settings: <SettingsView dashboard={data.dashboard} onSubmit={actions.saveSettings} />
+    settings: (
+      <div className="view-stack settings-view-stack">
+        <SettingsView dashboard={data.dashboard} onSubmit={actions.saveSettings} />
+      </div>
+    )
   };
 
   return views[activeSection] ?? views.dashboard;
@@ -3400,8 +3604,21 @@ export default function App() {
 
   async function saveSettings(event) {
     event.preventDefault();
+    const raw = formDataToObject(event.currentTarget);
+    const pricePerKwh = parseTariffInput(raw.price_per_kwh);
+    const personalPricePerKwh = parseTariffInput(raw.personal_price_per_kwh);
+
+    if (pricePerKwh === null || personalPricePerKwh === null) {
+      setActionError('Introdu tarife valide (ex. 4.0 sau 0.35).');
+      return;
+    }
+
     await runAction(
-      () => mutateJson('/backoffice/settings', formDataToObject(event.currentTarget)),
+      () => mutateJson('/backoffice/settings', {
+        ...raw,
+        price_per_kwh: pricePerKwh,
+        personal_price_per_kwh: personalPricePerKwh
+      }),
       'Setarile au fost salvate.'
     );
   }
@@ -3548,9 +3765,24 @@ export default function App() {
             <span className="operator" title={operatorName}>{initialsFrom(operatorName)}</span>
           </div>
         </header>
-        {error && <div className="error-banner">{error}</div>}
-        {actionMessage && <div className="success-banner">{actionMessage}</div>}
-        {actionError && !modalType && !walletRefundTopup && <div className="error-banner">{actionError}</div>}
+        {error && (
+          <div className="flash-banner flash-banner-error" role="alert">
+            <Bell size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+        {actionMessage && (
+          <div className="flash-banner flash-banner-success" role="status">
+            <CheckCircle2 size={18} />
+            <span>{actionMessage}</span>
+          </div>
+        )}
+        {actionError && !modalType && !walletRefundTopup && (
+          <div className="flash-banner flash-banner-error" role="alert">
+            <Bell size={18} />
+            <span>{actionError}</span>
+          </div>
+        )}
         <ActiveView
           activeSection={activeSection}
           actions={actions}

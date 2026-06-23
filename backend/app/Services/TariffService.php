@@ -9,8 +9,10 @@ class TariffService
 {
     public function globalPricePerKwh(): float
     {
-        return (float) (Tariff::query()->latest('id')->value('price_per_kwh')
-            ?? config('billing.price_per_kwh', 0.20));
+        return Tariff::normalizePrice(
+            Tariff::query()->latest('id')->value('price_per_kwh')
+                ?? config('billing.price_per_kwh', 0.20)
+        );
     }
 
     public function personalPricePerKwh(): float
@@ -18,7 +20,7 @@ class TariffService
         $latest = Tariff::query()->latest('id')->first(['personal_price_per_kwh', 'price_per_kwh']);
 
         if ($latest?->personal_price_per_kwh !== null) {
-            return (float) $latest->personal_price_per_kwh;
+            return Tariff::normalizePrice($latest->personal_price_per_kwh);
         }
 
         return $this->globalPricePerKwh();

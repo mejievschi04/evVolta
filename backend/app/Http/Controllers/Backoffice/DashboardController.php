@@ -1767,10 +1767,7 @@ class DashboardController extends Controller
             'personal_price_per_kwh' => 'required|numeric|min:0',
         ]);
 
-        $tariff = Tariff::query()->create([
-            'price_per_kwh' => $data['price_per_kwh'],
-            'personal_price_per_kwh' => $data['personal_price_per_kwh'],
-        ]);
+        $tariff = $this->persistCurrentTariff($data);
 
         $this->auditLogService->record(
             action: 'backoffice.tariff.updated',
@@ -1821,10 +1818,7 @@ class DashboardController extends Controller
                 'name' => $updatedName !== '' ? $updatedName : $user->name,
             ]);
 
-            Tariff::query()->create([
-                'price_per_kwh' => $data['price_per_kwh'],
-                'personal_price_per_kwh' => $data['personal_price_per_kwh'],
-            ]);
+            $this->persistCurrentTariff($data);
         });
 
         $user->refresh();
@@ -1852,5 +1846,26 @@ class DashboardController extends Controller
                 'tariff' => $latestTariff,
             ],
         ]);
+    }
+
+    /**
+     * @param  array{price_per_kwh: float|int|string, personal_price_per_kwh: float|int|string}  $data
+     */
+    private function persistCurrentTariff(array $data): Tariff
+    {
+        $attributes = [
+            'price_per_kwh' => Tariff::normalizePrice($data['price_per_kwh']),
+            'personal_price_per_kwh' => Tariff::normalizePrice($data['personal_price_per_kwh']),
+        ];
+
+        $latest = Tariff::query()->latest('id')->first();
+
+        if ($latest) {
+            $latest->update($attributes);
+
+            return $latest->fresh();
+        }
+
+        return Tariff::query()->create($attributes);
     }
 }
