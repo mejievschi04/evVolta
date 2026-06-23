@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChargingSession;
+use App\Models\Invoice;
 use App\Services\ChargingStopService;
+use App\Services\SessionPresentationService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,6 +17,7 @@ class SessionController extends Controller
     public function __construct(
         private readonly ChargingStopService $chargingStopService,
         private readonly WalletService $walletService,
+        private readonly SessionPresentationService $sessionPresentationService,
     ) {
     }
 
@@ -40,17 +43,11 @@ class SessionController extends Controller
         }
 
         $sessions = ChargingSession::query()
-            ->with('station')
+            ->with(['station', 'invoice'])
             ->where('user_id', $request->user()->id)
             ->latest('start_time')
             ->get()
-            ->map(function (ChargingSession $session) {
-                if ($session->station) {
-                    $session->station->setAttribute('live_status', $session->station->liveStatus());
-                }
-
-                return $session;
-            });
+            ->map(fn (ChargingSession $session) => $this->sessionPresentationService->presentForUser($session, ensureInvoice: true));
 
         return response()->json($sessions);
     }

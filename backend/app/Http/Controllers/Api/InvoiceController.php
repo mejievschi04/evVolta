@@ -28,6 +28,7 @@ class InvoiceController extends Controller
                 'id',
                 'invoice_type',
                 'invoice_number',
+                'source_session_id',
                 'month',
                 'currency',
                 'period_start',

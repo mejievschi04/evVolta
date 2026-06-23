@@ -64,10 +64,12 @@ button {
 }
 
 .login-shell {
+  position: relative;
   display: grid;
   place-items: center;
   min-height: 100vh;
   padding: 20px;
+  padding-bottom: 52px;
   background:
     linear-gradient(rgba(228, 255, 33, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(97, 255, 208, 0.03) 1px, transparent 1px),
@@ -117,6 +119,19 @@ button {
 .login-flash {
   margin-top: 0;
   margin-bottom: 14px;
+}
+
+.login-powered {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  margin: 0;
+  color: #7a846c;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
 }
 
 .login-button {

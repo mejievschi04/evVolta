@@ -8,6 +8,7 @@ use App\Models\Station;
 use App\Services\AuditLogService;
 use App\Services\ChargingStopService;
 use App\Services\OcppService;
+use App\Services\SessionPresentationService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class ChargingController extends Controller
         private readonly AuditLogService $auditLogService,
         private readonly ChargingStopService $chargingStopService,
         private readonly WalletService $walletService,
+        private readonly SessionPresentationService $sessionPresentationService,
     ) {
     }
 
@@ -241,6 +243,20 @@ class ChargingController extends Controller
             ], $exception->getCode() ?: 500);
         }
 
-        return response()->json($result);
+        $presentedSession = $result['status'] === 'completed'
+            ? $this->sessionPresentationService->presentForUser(
+                $result['session']->fresh(['station', 'invoice']),
+                ensureInvoice: true,
+            )
+            : null;
+
+        return response()->json([
+            ...$result,
+            'session' => $presentedSession ?? $result['session'],
+            'invoice' => $presentedSession['invoice']
+                ?? ($result['invoice'] ?? null
+                    ? $this->sessionPresentationService->invoiceSummary($result['invoice'])
+                    : null),
+        ]);
     }
 }

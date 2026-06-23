@@ -952,6 +952,7 @@ function LoginView({ error, loading, onSubmit }) {
           {loading ? 'Se autentifica' : 'Intra in backoffice'}
         </button>
       </form>
+      <p className="login-powered">powered by Mejievski</p>
     </main>
   );
 }
@@ -1479,7 +1480,7 @@ const sessionStatusFilters = [
   { id: 'closed', label: 'Inchise' }
 ];
 
-function SessionsView({ rows, loading, onStop, onDelete, onRefresh }) {
+function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadInvoice }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const visibleRows = rows.filter((session) => {
@@ -1543,8 +1544,17 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh }) {
               : ''}
           </span>
           <Badge variant={session.end_time ? 'success' : 'warning'}>{session.end_time ? 'Inchisa' : 'Activa'}</Badge>
+          {session.end_time && session.billing?.amount_spent != null ? (
+            <Badge variant="success">{formatMoney(session.billing.amount_spent)}</Badge>
+          ) : null}
           <div className="row-actions end-actions">
             <strong>{session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}</strong>
+            {session.invoice?.id && onDownloadInvoice ? (
+              <button className="secondary-button mini-button" onClick={() => onDownloadInvoice(session.invoice)} type="button">
+                <Download size={14} />
+                Factura
+              </button>
+            ) : null}
             {!session.end_time && (
               <button className="secondary-button mini-button" onClick={() => onStop(session)} type="button">
                 Opreste
@@ -3186,6 +3196,7 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         loading={loading}
         onStop={actions.stopSession}
         onDelete={actions.deleteSession}
+        onDownloadInvoice={actions.downloadInvoice}
         onRefresh={onRefresh}
       />
     ),

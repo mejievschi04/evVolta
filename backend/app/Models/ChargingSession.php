@@ -53,6 +53,11 @@ class ChargingSession extends Model
         return $this->belongsTo(Station::class);
     }
 
+    public function invoice()
+    {
+        return $this->hasOne(Invoice::class, 'source_session_id');
+    }
+
     public function ocppCommands()
     {
         return $this->hasMany(OcppCommand::class);

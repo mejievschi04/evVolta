@@ -18,6 +18,7 @@ use App\Services\AuditLogService;
 use App\Services\BillingService;
 use App\Services\ChargingStopService;
 use App\Services\InvoiceDocumentService;
+use App\Services\SessionPresentationService;
 use App\Services\OcppService;
 use App\Services\StripePaymentService;
 use App\Services\TariffService;
@@ -79,6 +80,7 @@ class DashboardController extends Controller
         private readonly ChargingStopService $chargingStopService,
         private readonly InvoiceDocumentService $invoiceDocumentService,
         private readonly OcppService $ocppService,
+        private readonly SessionPresentationService $sessionPresentationService,
         private readonly TariffService $tariffService,
     )
     {
@@ -968,12 +970,15 @@ class DashboardController extends Controller
 
     public function sessions(Request $request): JsonResponse
     {
+        $sessions = ChargingSession::query()
+            ->with(['user:id,name,email', 'station', 'invoice'])
+            ->latest('start_time')
+            ->limit(100)
+            ->get()
+            ->map(fn (ChargingSession $session) => $this->sessionPresentationService->presentForUser($session, ensureInvoice: true));
+
         return response()->json([
-            'data' => ChargingSession::query()
-                ->with(['user:id,name,email', 'station'])
-                ->latest('start_time')
-                ->limit(100)
-                ->get(),
+            'data' => $sessions,
         ]);
     }
 
