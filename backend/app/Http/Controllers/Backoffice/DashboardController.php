@@ -32,6 +32,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 use RuntimeException;
 use Illuminate\Support\Str;
 
@@ -1420,6 +1421,52 @@ class DashboardController extends Controller
         );
     }
 
+    public function creditUserWallet(
+        Request $request,
+        User $user,
+        WalletService $walletService,
+    ): JsonResponse|RedirectResponse {
+        $data = $request->validate([
+            'amount' => 'required|numeric|min:10|max:50000',
+        ]);
+
+        try {
+            $result = $walletService->creditManualTopup($user, (float) $data['amount']);
+        } catch (RuntimeException $exception) {
+            return $this->respondMutationError($request, $exception->getMessage(), (int) ($exception->getCode() ?: 422));
+        }
+
+        $this->auditLogService->record(
+            action: 'backoffice.user.wallet_credited',
+            actor: $this->backofficeActor(),
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'credited' => $result['credited'],
+                'wallet_balance' => $result['wallet_balance'],
+                'topup_id' => $result['topup_id'],
+            ],
+        );
+
+        return $this->respondMutation(
+            $request,
+            sprintf(
+                'Am alimentat contul lui %s cu %.2f %s.',
+                $user->email,
+                $result['credited'],
+                $result['currency'],
+            ),
+            [
+                'user' => [
+                    'id' => $user->id,
+                    'wallet_balance' => $result['wallet_balance'],
+                ],
+                'topup_id' => $result['topup_id'],
+                'credited' => $result['credited'],
+            ],
+        );
+    }
+
     public function storeUser(Request $request): JsonResponse|RedirectResponse
     {
         $data = $request->validate([
@@ -1464,6 +1511,87 @@ class DashboardController extends Controller
 
         return $this->respondMutation($request, 'Utilizatorul a fost creat.', [
             'data' => $user->only(['id', 'name', 'first_name', 'last_name', 'email', 'currency', 'account_type', 'created_at']),
+        ]);
+    }
+
+    public function updateUser(Request $request, User $user): JsonResponse|RedirectResponse
+    {
+        if ($user->isAdmin()) {
+            abort(404);
+        }
+
+        $data = $request->validate([
+            'first_name' => 'nullable|string|max:100',
+            'last_name' => 'nullable|string|max:100',
+            'name' => 'nullable|string|max:255',
+            'email' => [
+                'required',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')->ignore($user->id),
+            ],
+            'account_type' => 'required|in:personal,customer',
+            'password' => 'nullable|string|min:6',
+        ]);
+
+        $previous = $user->only([
+            'name',
+            'first_name',
+            'last_name',
+            'email',
+            'account_type',
+        ]);
+
+        $name = trim((string) ($data['name'] ?? ''));
+        $firstName = trim((string) ($data['first_name'] ?? ''));
+        $lastName = trim((string) ($data['last_name'] ?? ''));
+        $displayName = $name !== '' ? $name : trim(implode(' ', array_filter([$firstName, $lastName])));
+
+        $updates = [
+            'name' => $displayName !== '' ? $displayName : $user->name,
+            'first_name' => $firstName !== '' ? $firstName : null,
+            'last_name' => $lastName !== '' ? $lastName : null,
+            'email' => strtolower(trim($data['email'])),
+            'account_type' => $data['account_type'],
+            'currency' => 'MDL',
+        ];
+
+        if (! empty($data['password'])) {
+            $updates['password'] = $data['password'];
+        }
+
+        $user->forceFill($updates)->save();
+
+        $this->auditLogService->record(
+            action: 'backoffice.user.updated',
+            actor: $this->backofficeActor(),
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'previous' => $previous,
+                'current' => $user->fresh()->only([
+                    'name',
+                    'first_name',
+                    'last_name',
+                    'email',
+                    'account_type',
+                ]),
+                'password_changed' => ! empty($data['password']),
+            ],
+        );
+
+        return $this->respondMutation($request, 'Utilizatorul a fost actualizat.', [
+            'data' => $user->fresh()->only([
+                'id',
+                'name',
+                'first_name',
+                'last_name',
+                'email',
+                'currency',
+                'account_type',
+                'wallet_balance',
+                'created_at',
+            ]),
         ]);
     }
 

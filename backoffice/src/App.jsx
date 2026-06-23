@@ -1991,12 +1991,57 @@ function invoiceTypeLabel(type) {
   return type || '-';
 }
 
-function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice }) {
+function UserDetailModal({
+  detail,
+  loading,
+  error,
+  onClose,
+  onDownloadInvoice,
+  onCreditWallet,
+  creditSaving,
+  creditError,
+  onUpdateUser,
+  updateSaving,
+  updateError,
+}) {
+  const [creditAmount, setCreditAmount] = useState('500');
+  const [editForm, setEditForm] = useState({
+    first_name: '',
+    last_name: '',
+    name: '',
+    email: '',
+    account_type: 'customer',
+    password: '',
+  });
+
+  const user = detail?.user ?? detail ?? null;
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    setEditForm({
+      first_name: user.first_name ?? '',
+      last_name: user.last_name ?? '',
+      name: user.name ?? '',
+      email: user.email ?? '',
+      account_type: user.account_type ?? 'customer',
+      password: '',
+    });
+  }, [
+    user?.id,
+    user?.first_name,
+    user?.last_name,
+    user?.name,
+    user?.email,
+    user?.account_type,
+  ]);
+
   if (!detail) {
     return null;
   }
 
-  const user = detail.user ?? detail;
   const billing = detail.billing ?? {};
   const invoices = detail.invoices ?? [];
   const sessions = detail.recent_sessions ?? [];
@@ -2027,6 +2072,84 @@ function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice })
 
         {!loading && (
           <>
+            <div className="detail-section">
+              <h3>Editeaza contul</h3>
+              <p className="detail-empty">Actualizeaza datele de autentificare si tipul contului.</p>
+              {updateError ? <div className="error-banner">{updateError}</div> : null}
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onUpdateUser?.(user, editForm);
+                }}
+              >
+                <div className="settings-grid">
+                  <label>
+                    Prenume
+                    <input
+                      name="first_name"
+                      onChange={(event) => setEditForm((current) => ({ ...current, first_name: event.target.value }))}
+                      value={editForm.first_name}
+                    />
+                  </label>
+                  <label>
+                    Nume
+                    <input
+                      name="last_name"
+                      onChange={(event) => setEditForm((current) => ({ ...current, last_name: event.target.value }))}
+                      value={editForm.last_name}
+                    />
+                  </label>
+                  <label className="full-field">
+                    Nume afisat
+                    <input
+                      name="name"
+                      onChange={(event) => setEditForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="Optional daca completezi prenume + nume"
+                      value={editForm.name}
+                    />
+                  </label>
+                  <label className="full-field">
+                    Email
+                    <input
+                      name="email"
+                      onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))}
+                      required
+                      type="email"
+                      value={editForm.email}
+                    />
+                  </label>
+                  <label>
+                    Tip cont
+                    <select
+                      name="account_type"
+                      onChange={(event) => setEditForm((current) => ({ ...current, account_type: event.target.value }))}
+                      required
+                      value={editForm.account_type}
+                    >
+                      <option value="customer">Client prepay</option>
+                      <option value="personal">Personal prepay</option>
+                    </select>
+                  </label>
+                  <label>
+                    Parola noua
+                    <input
+                      autoComplete="new-password"
+                      name="password"
+                      onChange={(event) => setEditForm((current) => ({ ...current, password: event.target.value }))}
+                      placeholder="Lasa gol pentru a pastra parola"
+                      type="password"
+                      value={editForm.password}
+                    />
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button className="primary-button" disabled={updateSaving} type="submit">
+                    {updateSaving ? 'Se salveaza...' : 'Salveaza modificarile'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
             <div className="billing-summary-grid">
               {isPrepayAccount ? (
                 <>
@@ -2079,6 +2202,39 @@ function UserDetailModal({ detail, loading, error, onClose, onDownloadInvoice })
 
             {isPrepayAccount ? (
               <>
+                <div className="detail-section">
+                  <h3>Alimentare manuala</h3>
+                  <p className="detail-empty">Adauga sold in wallet fara Stripe (test / compensare).</p>
+                  {creditError ? <div className="error-banner">{creditError}</div> : null}
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onCreditWallet?.(user, creditAmount);
+                    }}
+                  >
+                    <div className="settings-grid">
+                      <label className="full-field">
+                        Suma (MDL)
+                        <input
+                          inputMode="decimal"
+                          min="10"
+                          name="amount"
+                          onChange={(event) => setCreditAmount(event.target.value)}
+                          placeholder="500"
+                          required
+                          step="0.01"
+                          type="number"
+                          value={creditAmount}
+                        />
+                      </label>
+                    </div>
+                    <div className="modal-actions">
+                      <button className="primary-button" disabled={creditSaving} type="submit">
+                        {creditSaving ? 'Se alimenteaza...' : 'Alimenteaza contul'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
                 <div className="detail-section">
                   <h3>Alimentari wallet</h3>
                   {walletTopups.length === 0 ? (
@@ -2883,6 +3039,10 @@ export default function App() {
   const [userDetail, setUserDetail] = useState(null);
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const [userDetailError, setUserDetailError] = useState('');
+  const [userCreditSaving, setUserCreditSaving] = useState(false);
+  const [userCreditError, setUserCreditError] = useState('');
+  const [userUpdateSaving, setUserUpdateSaving] = useState(false);
+  const [userUpdateError, setUserUpdateError] = useState('');
   const [stationDetail, setStationDetail] = useState(null);
   const [stationDetailLoading, setStationDetailLoading] = useState(false);
   const [stationDetailError, setStationDetailError] = useState('');
@@ -3025,6 +3185,64 @@ export default function App() {
     setActionError('');
     setActionMessage('');
     setWalletRefundTopup(topup);
+  }
+
+  async function creditUserWallet(user, amount) {
+    const parsedAmount = Number(String(amount ?? '').replace(',', '.'));
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 10) {
+      setUserCreditError('Suma minima este 10 MDL.');
+      return;
+    }
+
+    setUserCreditSaving(true);
+    setUserCreditError('');
+    setActionError('');
+    setActionMessage('');
+
+    try {
+      const payload = await mutateJson(`/backoffice/users/${user.id}/wallet-credit`, {
+        amount: parsedAmount,
+      });
+      setActionMessage(payload?.message || 'Cont alimentat.');
+      const detailPayload = await fetchJson(`/backoffice/users/${user.id}`);
+      setUserDetail(detailPayload.data);
+      await reload(true);
+    } catch (error) {
+      setUserCreditError(error.message || 'Alimentarea nu a reusit.');
+    } finally {
+      setUserCreditSaving(false);
+    }
+  }
+
+  async function updateUserAccount(user, values) {
+    setUserUpdateSaving(true);
+    setUserUpdateError('');
+    setActionError('');
+    setActionMessage('');
+
+    const payload = {
+      first_name: values.first_name?.trim() ?? '',
+      last_name: values.last_name?.trim() ?? '',
+      name: values.name?.trim() ?? '',
+      email: values.email?.trim() ?? '',
+      account_type: values.account_type,
+    };
+
+    if (values.password?.trim()) {
+      payload.password = values.password;
+    }
+
+    try {
+      const response = await mutateJson(`/backoffice/users/${user.id}/update`, payload);
+      setActionMessage(response?.message || 'Utilizator actualizat.');
+      const detailPayload = await fetchJson(`/backoffice/users/${user.id}`);
+      setUserDetail(detailPayload.data);
+      await reload(true);
+    } catch (error) {
+      setUserUpdateError(error.message || 'Actualizarea nu a reusit.');
+    } finally {
+      setUserUpdateSaving(false);
+    }
   }
 
   async function handleWalletRefundSubmit(event) {
@@ -3272,6 +3490,8 @@ export default function App() {
     sendInvoice,
     deleteInvoice,
     openWalletRefund,
+    creditUserWallet,
+    updateUserAccount,
     approveRequest,
     rejectRequest,
     saveSettings
@@ -3362,14 +3582,21 @@ export default function App() {
         topup={walletRefundTopup}
       />
       <UserDetailModal
+        creditError={userCreditError}
+        creditSaving={userCreditSaving}
         detail={userDetail}
         error={userDetailError}
         loading={userDetailLoading}
         onClose={() => {
           setUserDetail(null);
           setUserDetailError('');
+          setUserCreditError('');
         }}
+        onCreditWallet={creditUserWallet}
         onDownloadInvoice={downloadInvoice}
+        onUpdateUser={updateUserAccount}
+        updateError={userUpdateError}
+        updateSaving={userUpdateSaving}
       />
       <AuditDetailModal
         detail={auditDetail}

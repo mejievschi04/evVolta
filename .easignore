@@ -1,0 +1,21 @@
+# Mobile app is gitignored but required for EAS Build.
+!mobile/
+!mobile/**
+
+# Dependencies and caches are installed on EAS workers.
+mobile/node_modules/
+mobile/.expo/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/ios/build/
+mobile/ios/Pods/
+
+# Skip unrelated monorepo folders from the upload.
+backend/
+backend_mvp_src/
+backoffice/
+deploy/
+docker/
+docs/
+graphify-out/
+graphify-out.backup-*/

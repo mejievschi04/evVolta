@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Invoice;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class BackofficeUsersTest extends TestCase
@@ -98,6 +99,58 @@ class BackofficeUsersTest extends TestCase
 
         $this->withSession($session)
             ->getJson('/backoffice/users/' . $admin->id)
+            ->assertNotFound();
+    }
+
+    public function test_backoffice_can_update_user(): void
+    {
+        $admin = $this->createAdminUser(['email' => 'admin@example.test']);
+        $customer = $this->createAppUser([
+            'email' => 'customer@example.test',
+            'name' => 'Client Card',
+        ]);
+
+        $session = [
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ];
+
+        $this->withSession($session)
+            ->postJson('/backoffice/users/' . $customer->id . '/update', [
+                'first_name' => 'Ana',
+                'last_name' => 'Popescu',
+                'email' => 'ana.popescu@example.test',
+                'account_type' => User::ACCOUNT_TYPE_PERSONAL,
+                'password' => 'newpass123',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.email', 'ana.popescu@example.test')
+            ->assertJsonPath('data.account_type', User::ACCOUNT_TYPE_PERSONAL);
+
+        $customer->refresh();
+
+        $this->assertSame('Ana Popescu', $customer->name);
+        $this->assertTrue(Hash::check('newpass123', $customer->password));
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'backoffice.user.updated',
+            'actor_user_id' => $admin->id,
+            'subject_id' => $customer->id,
+        ]);
+    }
+
+    public function test_backoffice_cannot_update_admin_user(): void
+    {
+        $admin = $this->createAdminUser(['email' => 'admin@example.test']);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/users/' . $admin->id . '/update', [
+                'email' => 'changed@example.test',
+                'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
+            ])
             ->assertNotFound();
     }
 }

@@ -36,6 +36,12 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::post('/sessions/{session}/delete', [DashboardController::class, 'deleteSession'])->name('backoffice.sessions.delete');
         Route::get('/users', [DashboardController::class, 'users'])->name('backoffice.users');
         Route::get('/users/{user}', [DashboardController::class, 'showUser'])->name('backoffice.users.show');
+        Route::post('/users/{user}/update', [DashboardController::class, 'updateUser'])
+            ->middleware('throttle:10,1')
+            ->name('backoffice.users.update');
+        Route::post('/users/{user}/wallet-credit', [DashboardController::class, 'creditUserWallet'])
+            ->middleware('throttle:10,1')
+            ->name('backoffice.users.wallet_credit');
         Route::post('/users', [DashboardController::class, 'storeUser'])->name('backoffice.users.store');
         Route::get('/registration-requests', [DashboardController::class, 'registrationRequests'])->name('backoffice.registration_requests');
         Route::post('/registration-requests/{registrationRequest}/approve', [DashboardController::class, 'approveRegistrationRequest'])->name('backoffice.registration_requests.approve');

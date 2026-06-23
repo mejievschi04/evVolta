@@ -678,14 +678,6 @@ class OcppServe extends Command
         unset($this->lastTelemetryPollAt[$station->id . ':' . $connectorId]);
         app(OcppService::class)->queueMeterValuesTrigger($station->fresh(), $connectorId, true);
 
-        $session = $session->fresh(['user']);
-        if ($session->user) {
-            app(\App\Services\PushNotificationService::class)->notifyChargingStarted(
-                $session->user,
-                $station->name
-            );
-        }
-
         return [
             'transactionId' => $session->id,
             'idTagInfo' => ['status' => 'Accepted'],

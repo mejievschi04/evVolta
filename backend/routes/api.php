@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChargingController;
-use App\Http\Controllers\Api\DevicePushController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RegistrationRequestController;
@@ -18,7 +17,12 @@ Route::post('/register', [AuthController::class, 'register'])->middleware('throt
 Route::post('/register-request', [RegistrationRequestController::class, 'store'])->middleware('throttle:10,1');
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle']);
 
+Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1');
+
 Route::middleware('auth:api')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::patch('/me', [AuthController::class, 'updateProfile']);
     Route::get('/stations', [StationController::class, 'index']);
@@ -30,8 +34,6 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/tariff/current', [TariffController::class, 'current']);
     Route::post('/charging/start', [ChargingController::class, 'start']);
     Route::post('/charging/stop', [ChargingController::class, 'stop']);
-    Route::post('/device-push/register', [DevicePushController::class, 'register']);
-    Route::post('/device-push/unregister', [DevicePushController::class, 'unregister']);
     Route::get('/sessions', [SessionController::class, 'index']);
     Route::get('/sessions/{session}/live', [SessionController::class, 'live']);
     Route::get('/sessions/{session}/stream', [SessionController::class, 'stream']);
@@ -39,10 +41,9 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::get('/wallet/topups', [WalletController::class, 'indexTopups']);
     Route::post('/wallet/topup-checkout', [WalletController::class, 'createTopupCheckout']);
+    Route::post('/wallet/local-topup', [WalletController::class, 'localTopup'])
+        ->middleware('throttle:wallet-dev-topup');
     Route::post('/wallet/topups/{topup}/verify-payment', [WalletController::class, 'verifyTopupPayment']);
-    if (app()->environment('local')) {
-        Route::post('/wallet/local-topup', [WalletController::class, 'localTopup']);
-    }
     Route::get('/invoices', [InvoiceController::class, 'index']);
     Route::get('/invoices/{invoice}/download', [InvoiceController::class, 'download']);
     Route::post('/invoices/{invoice}/checkout-session', [InvoiceController::class, 'createCheckoutSession']);

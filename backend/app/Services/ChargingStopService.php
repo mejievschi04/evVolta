@@ -137,13 +137,6 @@ class ChargingStopService
         $station->markConnectorAvailable((int) ($session->ocpp_connector_id ?: 1));
 
         $session = $session->fresh(['user', 'station']);
-        if ($session->user && $session->station) {
-            app(\App\Services\PushNotificationService::class)->notifyChargingStopped(
-                $session->user,
-                $session->station->name,
-                (float) ($session->kwh_consumed ?? 0)
-            );
-        }
 
         return [
             'status' => 'completed',

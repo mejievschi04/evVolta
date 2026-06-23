@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Backoffice;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AuditLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -11,6 +12,11 @@ use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
+    public function __construct(
+        private readonly AuditLogService $auditLogService,
+    ) {
+    }
+
     public function showLogin(): JsonResponse|RedirectResponse
     {
         $backofficeUiUrl = rtrim((string) config('app.backoffice_ui_url', ''), '/');
@@ -38,6 +44,17 @@ class AuthController extends Controller
         $user = User::query()->where('email', $credentials['email'])->first();
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+            $this->auditLogService->record(
+                action: 'backoffice.auth.login_failed',
+                subjectType: User::class,
+                subjectId: $user?->id,
+                metadata: [
+                    'email' => strtolower(trim($credentials['email'])),
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ],
+            );
+
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => 'Credentiale invalide.',
@@ -48,6 +65,16 @@ class AuthController extends Controller
         }
 
         if (! $user->isAdmin()) {
+            $this->auditLogService->record(
+                action: 'backoffice.auth.login_denied_non_admin',
+                actor: $user,
+                subjectType: User::class,
+                subjectId: $user->id,
+                metadata: [
+                    'ip' => $request->ip(),
+                ],
+            );
+
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => 'Acces backoffice permis doar conturilor de administrator.',
@@ -65,6 +92,16 @@ class AuthController extends Controller
             'backoffice_user_name' => $user->display_name,
         ]);
 
+        $this->auditLogService->record(
+            action: 'backoffice.auth.login',
+            actor: $user,
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'ip' => $request->ip(),
+            ],
+        );
+
         if ($request->expectsJson()) {
             return response()->json([
                 'message' => 'Autentificat.',
@@ -77,9 +114,20 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse|RedirectResponse
     {
+        $userId = session('backoffice_user_id');
+
         $request->session()->forget(['backoffice_user_id', 'backoffice_user_name']);
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
+        if ($userId) {
+            $this->auditLogService->record(
+                action: 'backoffice.auth.logout',
+                actor: User::query()->find($userId),
+                subjectType: User::class,
+                subjectId: (int) $userId,
+            );
+        }
 
         if ($request->expectsJson()) {
             return response()->json([

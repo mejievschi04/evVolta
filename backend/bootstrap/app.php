@@ -30,6 +30,10 @@ return Application::configure(basePath: dirname(__DIR__))
             return route('backoffice.login');
         });
 
+        $middleware->api(append: [
+            \App\Http\Middleware\AddSecurityHeaders::class,
+        ]);
+
         $middleware->alias([
             'backoffice.auth' => \App\Http\Middleware\EnsureBackofficeAuth::class,
             'security.headers' => \App\Http\Middleware\AddSecurityHeaders::class,

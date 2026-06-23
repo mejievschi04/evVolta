@@ -68,8 +68,4 @@ return [
         'diagnostics_ftp_url' => env('OCPP_DIAGNOSTICS_FTP_URL', 'ftp://diagnostics.local/evolta/'),
     ],
 
-    'expo_push' => [
-        'enabled' => filter_var(env('EXPO_PUSH_ENABLED', true), FILTER_VALIDATE_BOOL),
-    ],
-
 ];

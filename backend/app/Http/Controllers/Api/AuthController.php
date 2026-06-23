@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AuditLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -11,6 +12,11 @@ use Illuminate\Validation\Rule;
 
 class AuthController extends Controller
 {
+    public function __construct(
+        private readonly AuditLogService $auditLogService,
+    ) {
+    }
+
     public function register(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -40,6 +46,17 @@ class AuthController extends Controller
 
         $token = Auth::guard('api')->login($user);
 
+        $this->auditLogService->record(
+            action: 'auth.register',
+            actor: $user,
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'email' => $user->email,
+                'ip' => $request->ip(),
+            ],
+        );
+
         return response()->json([
             'message' => 'Contul a fost creat.',
             'access_token' => $token,
@@ -56,6 +73,16 @@ class AuthController extends Controller
         ]);
 
         if (! $token = Auth::guard('api')->attempt($credentials)) {
+            $this->auditLogService->record(
+                action: 'auth.login_failed',
+                subjectType: User::class,
+                metadata: [
+                    'email' => strtolower(trim($credentials['email'])),
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ],
+            );
+
             return response()->json([
                 'message' => 'Credențiale invalide.',
             ], 401);
@@ -67,15 +94,66 @@ class AuthController extends Controller
         if ($user->isAdmin()) {
             Auth::guard('api')->logout();
 
+            $this->auditLogService->record(
+                action: 'auth.login_blocked_admin',
+                actor: $user,
+                subjectType: User::class,
+                subjectId: $user->id,
+                metadata: [
+                    'ip' => $request->ip(),
+                ],
+            );
+
             return response()->json([
                 'message' => 'Contul de administrator se foloseste doar in backoffice.',
             ], 403);
         }
 
+        $this->auditLogService->record(
+            action: 'auth.login',
+            actor: $user,
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'ip' => $request->ip(),
+            ],
+        );
+
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
             'user' => $user,
+        ]);
+    }
+
+    public function refresh(): JsonResponse
+    {
+        $token = Auth::guard('api')->refresh();
+
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'bearer',
+        ]);
+    }
+
+    public function logout(): JsonResponse
+    {
+        /** @var \App\Models\User|null $user */
+        $user = Auth::guard('api')->user();
+
+        Auth::guard('api')->logout();
+
+        if ($user) {
+            $this->auditLogService->record(
+                action: 'auth.logout',
+                actor: $user,
+                subjectType: User::class,
+                subjectId: $user->id,
+            );
+        }
+
+        return response()->json([
+            'message' => 'Delogat.',
         ]);
     }
 
@@ -100,6 +178,7 @@ class AuthController extends Controller
     public function updateProfile(Request $request): JsonResponse
     {
         $user = Auth::guard('api')->user();
+        $previousEmail = $user->email;
 
         $data = $request->validate([
             'first_name' => 'nullable|string|max:120',
@@ -125,6 +204,23 @@ class AuthController extends Controller
             'email' => strtolower($data['email']),
             'currency' => 'MDL',
         ])->save();
+
+        $metadata = [
+            'email_changed' => $previousEmail !== $user->email,
+        ];
+
+        if ($metadata['email_changed']) {
+            $metadata['previous_email'] = $previousEmail;
+            $metadata['new_email'] = $user->email;
+        }
+
+        $this->auditLogService->record(
+            action: 'auth.profile_updated',
+            actor: $user,
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: $metadata,
+        );
 
         return response()->json([
             'user' => $user->fresh(),

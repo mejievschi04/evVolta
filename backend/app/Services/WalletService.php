@@ -22,6 +22,76 @@ class WalletService
         return (bool) config('billing.prepaid_wallet_enabled', false);
     }
 
+    public function devTopupEnabled(): bool
+    {
+        return app()->environment('local') || (bool) config('billing.wallet_dev_topup_enabled', false);
+    }
+
+    public function devTopupMaxAmount(): float
+    {
+        return max(self::MIN_BUDGET_AMOUNT, (float) config('billing.wallet_dev_topup_max_amount', 1000));
+    }
+
+    public function devTopupDailyLimit(): float
+    {
+        return max(self::MIN_BUDGET_AMOUNT, (float) config('billing.wallet_dev_topup_daily_limit', 5000));
+    }
+
+    public function devTopupDailyCredited(User $user): float
+    {
+        return round((float) WalletTopup::query()
+            ->where('user_id', $user->id)
+            ->where('payment_provider', 'local')
+            ->where('status', 'paid')
+            ->where('paid_at', '>=', now()->startOfDay())
+            ->sum('amount'), 2);
+    }
+
+    /**
+     * @throws RuntimeException
+     */
+    public function assertDevTopupAllowed(User $user, float $amount): void
+    {
+        if (! $this->devTopupEnabled() || ! $this->enabled()) {
+            throw new RuntimeException('Not found.', 404);
+        }
+
+        if (! $user->usesCardPayment()) {
+            throw new RuntimeException('Alimentarea wallet nu este disponibila pentru acest cont.', 422);
+        }
+
+        $amount = round($amount, 2);
+        $maxAmount = $this->devTopupMaxAmount();
+
+        if ($amount < self::MIN_BUDGET_AMOUNT) {
+            throw new RuntimeException(
+                sprintf('Minim %.2f MDL.', self::MIN_BUDGET_AMOUNT),
+                422
+            );
+        }
+
+        if ($amount > $maxAmount) {
+            throw new RuntimeException(
+                sprintf('Maxim %.2f MDL per alimentare test.', $maxAmount),
+                422
+            );
+        }
+
+        $dailyLimit = $this->devTopupDailyLimit();
+        $dailyTotal = $this->devTopupDailyCredited($user);
+
+        if ($dailyTotal + $amount > $dailyLimit) {
+            throw new RuntimeException(
+                sprintf(
+                    'Limita zilnica de alimentare test este %.2f MDL (ramas %.2f MDL).',
+                    $dailyLimit,
+                    max(0, $dailyLimit - $dailyTotal)
+                ),
+                422
+            );
+        }
+    }
+
     public function balance(User $user): float
     {
         return round((float) $user->wallet_balance, 2);
@@ -190,15 +260,53 @@ class WalletService
         $topup->user()->increment('wallet_balance', (float) $topup->amount);
 
         app(InvoiceIssuanceService::class)->createWalletTopupInvoice($topup->fresh());
+    }
 
-        $topup->loadMissing('user');
-        if ($topup->user) {
-            app(PushNotificationService::class)->notifyWalletTopupPaid(
-                $topup->user,
-                (float) $topup->amount,
-                $topup->currency ?: ($topup->user->currency ?? 'MDL')
+    /**
+     * @return array{topup_id: int, credited: float, wallet_balance: float, currency: string}
+     */
+    public function creditManualTopup(User $user, float $amount): array
+    {
+        if (! $this->enabled()) {
+            throw new RuntimeException('Wallet prepay nu este activ.', 422);
+        }
+
+        if (! $user->usesCardPayment()) {
+            throw new RuntimeException('Contul nu foloseste wallet prepay.', 422);
+        }
+
+        $amount = round($amount, 2);
+
+        if ($amount < self::MIN_BUDGET_AMOUNT) {
+            throw new RuntimeException(
+                sprintf('Minim %.2f MDL.', self::MIN_BUDGET_AMOUNT),
+                422
             );
         }
+
+        if ($amount > self::MAX_BUDGET_AMOUNT) {
+            throw new RuntimeException(
+                sprintf('Maxim %.2f MDL.', self::MAX_BUDGET_AMOUNT),
+                422
+            );
+        }
+
+        $topup = WalletTopup::query()->create([
+            'user_id' => $user->id,
+            'amount' => $amount,
+            'currency' => $user->currency ?? 'MDL',
+            'status' => 'pending',
+            'payment_provider' => 'manual',
+        ]);
+
+        $this->creditTopup($topup);
+
+        return [
+            'topup_id' => $topup->id,
+            'credited' => $amount,
+            'wallet_balance' => $this->balance($user->fresh()),
+            'currency' => $user->currency ?? 'MDL',
+        ];
     }
 
     public function refundableBalance(User $user): float
@@ -383,14 +491,6 @@ class WalletService
 
         if (! $this->shouldStopForBudget($session)) {
             return;
-        }
-
-        $session = $session->fresh(['user', 'station']);
-        if ($session->user && $session->station) {
-            app(\App\Services\PushNotificationService::class)->notifyBudgetAutoStop(
-                $session->user,
-                $session->station->name
-            );
         }
 
         app(ChargingStopService::class)->requestStop($session, $station->fresh(), 'budget');
