@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChargingSession;
+use App\Models\Reservation;
 use App\Models\Station;
 use App\Services\AuditLogService;
 use App\Services\ChargingStopService;
 use App\Services\OcppService;
+use App\Services\ReservationService;
 use App\Services\SessionPresentationService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +25,7 @@ class ChargingController extends Controller
         private readonly ChargingStopService $chargingStopService,
         private readonly WalletService $walletService,
         private readonly SessionPresentationService $sessionPresentationService,
+        private readonly ReservationService $reservationService,
     ) {
     }
 
@@ -69,7 +72,9 @@ class ChargingController extends Controller
                     isset($payload['connector_id']) ? (int) $payload['connector_id'] : null
                 );
 
-                if (! $station->canAcceptRemoteStart($connectorId)) {
+                $this->reservationService->assertUserMayStart($user, $station, $connectorId);
+
+                if (! $station->canAcceptRemoteStart($connectorId, $user)) {
                     throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
                 }
 
@@ -127,6 +132,20 @@ class ChargingController extends Controller
                         $prepaidLimits['budget_amount'],
                         $prepaidLimits['target_kwh'],
                     );
+                }
+
+                $activeReservation = Reservation::query()
+                    ->with('station')
+                    ->where('user_id', $request->user()->id)
+                    ->where('station_id', $station->id)
+                    ->where('connector_id', $connectorId)
+                    ->whereIn('status', [Reservation::STATUS_CONFIRMED, Reservation::STATUS_ACTIVE])
+                    ->where('starts_at', '<=', now())
+                    ->get()
+                    ->first(fn (Reservation $reservation) => $reservation->isWithinStartWindow());
+
+                if ($activeReservation) {
+                    $this->reservationService->attachSession($activeReservation, $session->id);
                 }
 
                 $station->update(['status' => Station::STATUS_CHARGING]);

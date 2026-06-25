@@ -887,6 +887,40 @@ class OcppServe extends Command
                 );
             }
 
+            if ($command->action === 'ReserveNow') {
+                $reservationId = (int) ($command->payload['reservationId'] ?? 0);
+                $connectorId = (int) ($command->payload['connectorId'] ?? 0);
+                $reservation = \App\Models\Reservation::query()
+                    ->where('station_id', $station->id)
+                    ->where('ocpp_reservation_id', $reservationId)
+                    ->first();
+
+                if ($reservation) {
+                    if ($status === OcppCommand::STATUS_ACCEPTED) {
+                        app(\App\Services\ReservationService::class)->confirmReservation($reservation, $connectorId);
+                    } elseif ($status === OcppCommand::STATUS_REJECTED) {
+                        app(\App\Services\ReservationService::class)->handleOcppReserveFailed($reservation);
+                    }
+                }
+            }
+
+            if (
+                $command->action === 'CancelReservation'
+                && $status === OcppCommand::STATUS_ACCEPTED
+            ) {
+                $reservationId = (int) ($command->payload['reservationId'] ?? 0);
+                $reservation = \App\Models\Reservation::query()
+                    ->where('station_id', $station->id)
+                    ->where('ocpp_reservation_id', $reservationId)
+                    ->first();
+
+                if ($reservation && $connectorId = (int) $reservation->connector_id) {
+                    if ($station->connectorOcppStatus($connectorId) === 'Reserved') {
+                        $station->updateConnectorOcppStatus($connectorId, 'Available');
+                    }
+                }
+            }
+
             if (
                 in_array($command->action, ['RemoteStopTransaction', 'RequestStopTransaction'], true)
                 && $status === OcppCommand::STATUS_REJECTED

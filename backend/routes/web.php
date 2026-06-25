@@ -32,6 +32,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::get('/stations/{station}/qr-preview', [DashboardController::class, 'previewStationQr'])->name('backoffice.stations.qr.preview');
         Route::get('/stations/{station}/qr', [DashboardController::class, 'downloadStationQr'])->name('backoffice.stations.qr');
         Route::get('/sessions', [DashboardController::class, 'sessions'])->name('backoffice.sessions');
+        Route::get('/reservations', [DashboardController::class, 'reservations'])->name('backoffice.reservations');
         Route::post('/sessions/{session}/stop', [DashboardController::class, 'stopSession'])->name('backoffice.sessions.stop');
         Route::post('/sessions/{session}/delete', [DashboardController::class, 'deleteSession'])->name('backoffice.sessions.delete');
         Route::get('/users', [DashboardController::class, 'users'])->name('backoffice.users');

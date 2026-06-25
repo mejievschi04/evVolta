@@ -67,6 +67,7 @@ class StationController extends Controller
             $station->setAttribute('is_favorite', in_array($station->id, $favoriteStationIds, true));
             $station->setAttribute('live_status', $station->liveStatus());
             $station->setAttribute('display_status', $station->displayStatus());
+            $station->setAttribute('reservation_policy', $station->reservationPolicy());
 
             return $station;
         });

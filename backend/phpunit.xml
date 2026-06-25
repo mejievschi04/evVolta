@@ -33,5 +33,6 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="OCPP_MODE" value="simulator"/>
+        <env name="PREPAID_WALLET_ENABLED" value="false"/>
     </php>
 </phpunit>

@@ -135,6 +135,7 @@ class ChargingStopService
 
         $invoice = $this->billingService->finalizeBillingForSession($session->fresh());
         $station->markConnectorAvailable((int) ($session->ocpp_connector_id ?: 1));
+        app(ReservationService::class)->completeForSession($session->id);
 
         $session = $session->fresh(['user', 'station']);
 

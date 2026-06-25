@@ -95,6 +95,11 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(StationFavorite::class);
     }
 
+    public function reservations()
+    {
+        return $this->hasMany(Reservation::class);
+    }
+
     public function getDisplayNameAttribute(): string
     {
         $displayName = trim(implode(' ', array_filter([

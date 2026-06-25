@@ -39,6 +39,7 @@ const sections = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'stations', label: 'Statii', icon: Zap },
   { id: 'sessions', label: 'Sesiuni', icon: BatteryCharging },
+  { id: 'reservations', label: 'Rezervari', icon: Calendar },
   { id: 'clients', label: 'Clienti', icon: Users },
   { id: 'wallet', label: 'Alimentari', icon: Wallet },
   { id: 'personal', label: 'Personal', icon: FileText },
@@ -52,6 +53,7 @@ const endpoints = {
   dashboard: '/backoffice/dashboard',
   stations: '/backoffice/stations',
   sessions: '/backoffice/sessions',
+  reservations: '/backoffice/reservations',
   clients: '/backoffice/users?account_type=customer',
   wallet: '/backoffice/wallet-topups',
   personal: '/backoffice/users?account_type=personal',
@@ -64,6 +66,7 @@ const emptyData = {
   dashboard: null,
   stations: [],
   sessions: [],
+  reservations: [],
   clients: [],
   walletTopups: [],
   walletRefunds: [],
@@ -1480,6 +1483,87 @@ const sessionStatusFilters = [
   { id: 'closed', label: 'Inchise' }
 ];
 
+const reservationStatusLabels = {
+  pending: 'In asteptare',
+  confirmed: 'Confirmata',
+  active: 'In folosinta',
+  completed: 'Finalizata',
+  cancelled: 'Anulata',
+  expired: 'Expirata',
+  no_show: 'Neprezentare'
+};
+
+function ReservationsView({ rows, loading }) {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const visibleRows = rows.filter((reservation) => {
+    if (statusFilter && reservation.status !== statusFilter) return false;
+
+    return matchesQuery(reservation, query, [
+      (item) => item.user?.name,
+      (item) => item.user?.email,
+      (item) => item.station?.name,
+      (item) => item.status,
+      (item) => reservationStatusLabels[item.status]
+    ]);
+  });
+
+  return (
+    <ListPanel
+      loading={loading}
+      title="Rezervari"
+      subtitle="Sloturi rezervate, taxe si status OCPP"
+      emptyTitle="Nu exista rezervari"
+      rows={visibleRows}
+      searchValue={query}
+      onSearchChange={setQuery}
+      noResults={rows.length > 0 && visibleRows.length === 0}
+      filters={(
+        <div className="status-filters">
+          <button
+            className={statusFilter === '' ? 'secondary-button active-filter' : 'secondary-button'}
+            onClick={() => setStatusFilter('')}
+            type="button"
+          >
+            Toate
+          </button>
+          {Object.entries(reservationStatusLabels).map(([id, label]) => (
+            <button
+              className={statusFilter === id ? 'secondary-button active-filter' : 'secondary-button'}
+              key={id}
+              onClick={() => setStatusFilter(id)}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      render={(reservation) => (
+        <>
+          <div>
+            <strong>{reservation.user?.name ?? '-'}</strong>
+            <p>
+              {reservation.station?.name ?? '-'}
+              {reservation.connector_id ? ` · Port ${reservation.connector_id}` : ''}
+            </p>
+            <p className="muted-text">
+              {formatDateTime(reservation.starts_at)} → {formatDateTime(reservation.ends_at)}
+            </p>
+          </div>
+          <div className="row-actions column-actions">
+            <Badge>{reservationStatusLabels[reservation.status] ?? reservation.status}</Badge>
+            {reservation.fee_amount > 0 && (
+              <span className="station-chip">{formatMoney(reservation.fee_amount)} taxa</span>
+            )}
+          </div>
+        </>
+      )}
+    />
+  );
+}
+
 function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadInvoice }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -2462,6 +2546,8 @@ function StationDetailModal({
   const connectors = detail.connectors ?? [];
   const activeSessions = detail.active_sessions ?? [];
   const diagnosticsCommands = detail.diagnostics_commands ?? [];
+  const reservationPolicy = detail.reservation_policy ?? {};
+  const upcomingReservations = detail.upcoming_reservations ?? [];
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -2523,6 +2609,36 @@ function StationDetailModal({
                         </p>
                       )}
                     </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="detail-section detail-section-tight">
+              <h3>Rezervari</h3>
+              <div className="detail-metrics-grid">
+                <DetailMetric
+                  label="Status"
+                  value={reservationPolicy.enabled ? 'Activate' : 'Dezactivate'}
+                />
+                <DetailMetric label="Taxa" value={`${formatMoney(reservationPolicy.fee ?? 0)} MDL`} />
+                <DetailMetric label="No-show" value={`${formatMoney(reservationPolicy.no_show_fee ?? 0)} MDL`} />
+                <DetailMetric label="Durata max" value={`${reservationPolicy.max_duration_minutes ?? 0} min`} />
+              </div>
+              {upcomingReservations.length === 0 ? (
+                <p className="detail-empty">Nicio rezervare viitoare.</p>
+              ) : (
+                <div className="detail-table session-detail-table">
+                  {upcomingReservations.map((reservation) => (
+                    <div className="detail-table-row" key={reservation.id}>
+                      <div>
+                        <strong>Port {reservation.connector_id}</strong>
+                        <p className="request-meta">
+                          {formatDateTime(reservation.starts_at)} → {formatDateTime(reservation.ends_at)}
+                        </p>
+                      </div>
+                      <Badge>{reservationStatusLabels[reservation.status] ?? reservation.status}</Badge>
+                    </div>
                   ))}
                 </div>
               )}
@@ -3126,6 +3242,40 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
                 <input readOnly value={entity.ocpp_connection_url} />
               </label>
             )}
+            <label>
+              Rezervari activate
+              <select name="reservations_enabled" defaultValue={entity?.reservations_enabled ? '1' : '0'}>
+                <option value="0">Nu</option>
+                <option value="1">Da</option>
+              </select>
+            </label>
+            <label>
+              Rezervare obligatorie la start
+              <select name="reservation_require_for_start" defaultValue={entity?.reservation_require_for_start ? '1' : '0'}>
+                <option value="0">Nu</option>
+                <option value="1">Da</option>
+              </select>
+            </label>
+            <label>
+              Taxa rezervare (MDL)
+              <input defaultValue={entity?.reservation_fee ?? 15} name="reservation_fee" inputMode="decimal" />
+            </label>
+            <label>
+              Taxa no-show (MDL)
+              <input defaultValue={entity?.reservation_no_show_fee ?? 30} name="reservation_no_show_fee" inputMode="decimal" />
+            </label>
+            <label>
+              Durata max (minute)
+              <input defaultValue={entity?.reservation_max_duration_minutes ?? 120} name="reservation_max_duration_minutes" inputMode="numeric" />
+            </label>
+            <label>
+              Avans maxim (zile)
+              <input defaultValue={entity?.reservation_advance_days ?? 14} name="reservation_advance_days" inputMode="numeric" />
+            </label>
+            <label>
+              Grace period (minute)
+              <input defaultValue={entity?.reservation_grace_minutes ?? 20} name="reservation_grace_minutes" inputMode="numeric" />
+            </label>
           </div>
         ) : (
           <div className="settings-grid">
@@ -3200,6 +3350,7 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         onRefresh={onRefresh}
       />
     ),
+    reservations: <ReservationsView rows={data.reservations} loading={loading} />,
     clients: (
       <ClientsView
         rows={data.clients}

@@ -9,6 +9,7 @@ use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\OcppCommand;
 use App\Models\RegistrationRequest;
+use App\Models\Reservation;
 use App\Models\Station;
 use App\Models\Tariff;
 use App\Models\User;
@@ -20,6 +21,7 @@ use App\Services\ChargingStopService;
 use App\Services\InvoiceDocumentService;
 use App\Services\SessionPresentationService;
 use App\Services\OcppService;
+use App\Services\ReservationService;
 use App\Services\StripePaymentService;
 use App\Services\TariffService;
 use App\Services\WalletService;
@@ -82,6 +84,7 @@ class DashboardController extends Controller
         private readonly OcppService $ocppService,
         private readonly SessionPresentationService $sessionPresentationService,
         private readonly TariffService $tariffService,
+        private readonly ReservationService $reservationService,
     )
     {
     }
@@ -469,6 +472,13 @@ class DashboardController extends Controller
                         'meter_value_kwh',
                         'sessions_count',
                         'active_sessions_count',
+                        'reservations_enabled',
+                        'reservation_require_for_start',
+                        'reservation_fee',
+                        'reservation_no_show_fee',
+                        'reservation_max_duration_minutes',
+                        'reservation_advance_days',
+                        'reservation_grace_minutes',
                     ]),
                     'ocpp_connection_url' => $this->ocppService->connectionUrl($station),
                 ],
@@ -488,7 +498,40 @@ class DashboardController extends Controller
                 'active_sessions' => $activeSessions,
                 'diagnostics_commands' => $this->stationDiagnosticsCommands($station),
                 'diagnostics_ftp_url' => rtrim((string) config('services.ocpp.diagnostics_ftp_url', ''), '/'),
+                'reservation_policy' => $station->reservationPolicy(),
+                'upcoming_reservations' => Reservation::query()
+                    ->with(['user:id,name,email'])
+                    ->where('station_id', $station->id)
+                    ->whereIn('status', Reservation::BLOCKING_STATUSES)
+                    ->where('ends_at', '>=', now())
+                    ->orderBy('starts_at')
+                    ->limit(20)
+                    ->get()
+                    ->map(fn (Reservation $reservation) => $this->reservationService->present($reservation)),
             ],
+        ]);
+    }
+
+    public function reservations(Request $request): JsonResponse
+    {
+        $status = trim((string) $request->query('status', ''));
+
+        $query = Reservation::query()
+            ->with(['user:id,name,email', 'station:id,name,location'])
+            ->latest('starts_at')
+            ->limit(200);
+
+        if ($status !== '') {
+            $query->where('status', $status);
+        }
+
+        return response()->json([
+            'data' => $query->get()->map(fn (Reservation $reservation) => array_merge(
+                $this->reservationService->present($reservation),
+                [
+                    'user' => $reservation->user?->only(['id', 'name', 'email']),
+                ],
+            )),
         ]);
     }
 
@@ -629,11 +672,25 @@ class DashboardController extends Controller
             'connector_type' => 'nullable|string|max:100',
             'ocpp_identity' => 'nullable|string|max:120|unique:stations,ocpp_identity',
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
+            'reservations_enabled' => 'nullable|boolean',
+            'reservation_require_for_start' => 'nullable|boolean',
+            'reservation_fee' => 'nullable|numeric|min:0|max:10000',
+            'reservation_no_show_fee' => 'nullable|numeric|min:0|max:10000',
+            'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:480',
+            'reservation_advance_days' => 'nullable|integer|min:1|max:30',
+            'reservation_grace_minutes' => 'nullable|integer|min:0|max:120',
         ]);
 
         $data['qr_code'] = $this->normalizeStationQrCode($data['name'], $data['qr_code'] ?? null);
         $data['ocpp_identity'] = $this->normalizeOcppIdentity($data['name'], $data['ocpp_identity'] ?? null);
         $data['ocpp_version'] = $data['ocpp_version'] ?? '1.6J';
+        $data['reservations_enabled'] = filter_var($data['reservations_enabled'] ?? false, FILTER_VALIDATE_BOOL);
+        $data['reservation_require_for_start'] = filter_var($data['reservation_require_for_start'] ?? false, FILTER_VALIDATE_BOOL);
+        $data['reservation_fee'] = round((float) ($data['reservation_fee'] ?? 15), 2);
+        $data['reservation_no_show_fee'] = round((float) ($data['reservation_no_show_fee'] ?? 30), 2);
+        $data['reservation_max_duration_minutes'] = (int) ($data['reservation_max_duration_minutes'] ?? 120);
+        $data['reservation_advance_days'] = (int) ($data['reservation_advance_days'] ?? 14);
+        $data['reservation_grace_minutes'] = (int) ($data['reservation_grace_minutes'] ?? 20);
         $data['ocpp_connection_status'] = $data['ocpp_identity']
             ? Station::OCPP_CONNECTION_DISCONNECTED
             : Station::OCPP_CONNECTION_NOT_CONFIGURED;
@@ -673,11 +730,30 @@ class DashboardController extends Controller
             'connector_type' => 'nullable|string|max:100',
             'ocpp_identity' => 'nullable|string|max:120|unique:stations,ocpp_identity,' . $station->id,
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
+            'reservations_enabled' => 'nullable|boolean',
+            'reservation_require_for_start' => 'nullable|boolean',
+            'reservation_fee' => 'nullable|numeric|min:0|max:10000',
+            'reservation_no_show_fee' => 'nullable|numeric|min:0|max:10000',
+            'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:480',
+            'reservation_advance_days' => 'nullable|integer|min:1|max:30',
+            'reservation_grace_minutes' => 'nullable|integer|min:0|max:120',
         ]);
 
         $data['qr_code'] = $this->normalizeStationQrCode($data['name'], $data['qr_code'] ?? null);
         $data['ocpp_identity'] = $this->normalizeOcppIdentity($data['name'], $data['ocpp_identity'] ?? null);
         $data['ocpp_version'] = $data['ocpp_version'] ?? $station->ocpp_version ?? '1.6J';
+        if (array_key_exists('reservations_enabled', $data)) {
+            $data['reservations_enabled'] = filter_var($data['reservations_enabled'], FILTER_VALIDATE_BOOL);
+        }
+        if (array_key_exists('reservation_require_for_start', $data)) {
+            $data['reservation_require_for_start'] = filter_var($data['reservation_require_for_start'], FILTER_VALIDATE_BOOL);
+        }
+        if (array_key_exists('reservation_fee', $data)) {
+            $data['reservation_fee'] = round((float) $data['reservation_fee'], 2);
+        }
+        if (array_key_exists('reservation_no_show_fee', $data)) {
+            $data['reservation_no_show_fee'] = round((float) $data['reservation_no_show_fee'], 2);
+        }
         if ($station->ocpp_identity !== $data['ocpp_identity']) {
             $data['ocpp_connection_status'] = $data['ocpp_identity']
                 ? Station::OCPP_CONNECTION_DISCONNECTED

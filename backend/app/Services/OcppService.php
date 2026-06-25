@@ -326,6 +326,82 @@ class OcppService
     }
 
     /**
+     * OCPP 1.6J ReserveNow — rezerva conector pentru idTag pana la expiryDate.
+     *
+     * @return array{status: string, command_id: int, reservation_id: int}
+     */
+    public function reserveNow(
+        Station|int $station,
+        int $connectorId,
+        string $idTag,
+        int $reservationId,
+        \DateTimeInterface $expiryDate,
+    ): array {
+        $station = $this->resolveStation($station);
+
+        if ($connectorId <= 0) {
+            throw new RuntimeException('Conector invalid.', 422);
+        }
+
+        if ($this->isSimulatorMode()) {
+            return [
+                'status' => 'accepted',
+                'mode' => 'simulator',
+                'reservation_id' => $reservationId,
+            ];
+        }
+
+        $this->assertStationCanReceiveCommands($station);
+
+        $command = $this->queueOutboundCommand($station, 'ReserveNow', [
+            'connectorId' => $connectorId,
+            'expiryDate' => $expiryDate->format('Y-m-d\TH:i:s\Z'),
+            'idTag' => strtoupper($idTag),
+            'reservationId' => $reservationId,
+        ]);
+
+        return [
+            'status' => 'queued',
+            'command_id' => $command->id,
+            'reservation_id' => $reservationId,
+        ];
+    }
+
+    /**
+     * OCPP 1.6J CancelReservation.
+     *
+     * @return array{status: string, command_id?: int, reservation_id: int}
+     */
+    public function cancelReservation(Station|int $station, int $reservationId): array
+    {
+        $station = $this->resolveStation($station);
+
+        if ($reservationId <= 0) {
+            throw new RuntimeException('Rezervare invalida.', 422);
+        }
+
+        if ($this->isSimulatorMode()) {
+            return [
+                'status' => 'accepted',
+                'mode' => 'simulator',
+                'reservation_id' => $reservationId,
+            ];
+        }
+
+        $this->assertStationCanReceiveCommands($station);
+
+        $command = $this->queueOutboundCommand($station, 'CancelReservation', [
+            'reservationId' => $reservationId,
+        ]);
+
+        return [
+            'status' => 'queued',
+            'command_id' => $command->id,
+            'reservation_id' => $reservationId,
+        ];
+    }
+
+    /**
      * OCPP 1.6J GetDiagnostics — solicita jurnal diagnostic de la statie.
      *
      * @return array{status: string, command_id: int, location: string}
