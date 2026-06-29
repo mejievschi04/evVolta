@@ -159,6 +159,40 @@ class DualPortChargingTest extends TestCase
             ->count());
     }
 
+    public function test_live_status_does_not_leak_other_port_meter(): void
+    {
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'meter_value_kwh' => 99,
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'live_meter' => ['power_kw' => 42.0, 'energy_kwh' => 99.0],
+                'connectors' => [
+                    1 => [
+                        'connectorId' => 1,
+                        'status' => 'Charging',
+                        'live_meter' => ['power_kw' => 42.0, 'energy_kwh' => 99.0],
+                    ],
+                    2 => [
+                        'connectorId' => 2,
+                        'status' => 'Charging',
+                        'live_meter' => ['power_kw' => 7.0, 'energy_kwh' => 3.0],
+                    ],
+                ],
+            ],
+        ]);
+
+        $port2 = $station->liveStatus(2);
+        $this->assertSame(7.0, $port2['power_kw']);
+        $this->assertSame(3.0, $port2['meter_value_kwh']);
+
+        $port1 = $station->liveStatus(1);
+        $this->assertSame(42.0, $port1['power_kw']);
+        $this->assertSame(99.0, $port1['meter_value_kwh']);
+    }
+
     public function test_resolve_start_connector_skips_port_with_active_session(): void
     {
         $user = $this->createPersonalUser();

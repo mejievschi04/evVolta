@@ -184,18 +184,29 @@ class Station extends Model
             'last_message_at' => $this->last_ocpp_message_at?->toIso8601String(),
             'seconds_since_last_seen' => $secondsSinceLastSeen,
             'stale' => $isStale,
-            'meter_value_kwh' => $this->meter_value_kwh,
+            'meter_value_kwh' => $connectorId !== null
+                ? (isset($selectedConnector['live_meter']['energy_kwh'])
+                    ? (float) $selectedConnector['live_meter']['energy_kwh']
+                    : null)
+                : $this->meter_value_kwh,
             'mode' => config('services.ocpp.mode', 'simulator'),
-            ...$this->liveMeterFields($configuration),
+            ...$this->liveMeterFields($configuration, $selectedConnector, $connectorId !== null),
         ];
     }
 
     /**
-     * @return array<string, mixed>
+     * @param  array<string, mixed>  $configuration
+     * @param  array<string, mixed>|null  $connector
      */
-    private function liveMeterFields(array $configuration): array
+    private function liveMeterFields(array $configuration, ?array $connector = null, bool $connectorScoped = false): array
     {
-        $liveMeter = is_array($configuration['live_meter'] ?? null) ? $configuration['live_meter'] : [];
+        $connectorMeter = is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : [];
+        $stationMeter = is_array($configuration['live_meter'] ?? null) ? $configuration['live_meter'] : [];
+
+        // Per-conector: foloseste DOAR contorul conectorului cerut, ca sa nu apara cifrele altui port.
+        $liveMeter = $connectorScoped
+            ? $connectorMeter
+            : ($connectorMeter !== [] ? $connectorMeter : $stationMeter);
 
         return [
             'power_kw' => isset($liveMeter['power_kw']) ? (float) $liveMeter['power_kw'] : null,
