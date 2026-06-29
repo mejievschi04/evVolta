@@ -32,7 +32,10 @@ class SessionPresentationService
             : null;
 
         if ($session->station) {
-            $session->station->setAttribute('live_status', $session->station->liveStatus());
+            $session->station->setAttribute(
+                'live_status',
+                $session->station->liveStatus((int) ($session->ocpp_connector_id ?: 1))
+            );
         }
 
         $payload = $session->toArray();

@@ -671,7 +671,6 @@ class OcppServe extends Command
 
         $station->update([
             'status' => Station::STATUS_CHARGING,
-            'meter_value_kwh' => $meterStart ?? $station->meter_value_kwh,
             'last_ocpp_message_at' => now(),
         ]);
 
@@ -702,8 +701,6 @@ class OcppServe extends Command
             'sampled_at' => $metrics['sampled_at'] ?? now()->toIso8601String(),
         ], static fn ($value) => $value !== null && $value !== '');
 
-        $configuration['live_meter'] = $liveMeter;
-
         if ($connectorId > 0) {
             $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
             $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], [
@@ -713,16 +710,10 @@ class OcppServe extends Command
             $configuration['connectors'] = $connectors;
         }
 
-        $stationUpdate = [
+        $station->update([
             'last_ocpp_message_at' => now(),
             'ocpp_configuration' => $configuration,
-        ];
-
-        if ($meterKwh !== null) {
-            $stationUpdate['meter_value_kwh'] = $meterKwh;
-        }
-
-        $station->update($stationUpdate);
+        ]);
 
         $session = $this->findSessionForTransaction($station, $transactionId, $connectorId);
 
@@ -838,7 +829,6 @@ class OcppServe extends Command
         }
 
         $station->update([
-            'meter_value_kwh' => $meterStop ?? $station->meter_value_kwh,
             'last_ocpp_message_at' => now(),
         ]);
         $station->markConnectorAvailable((int) ($session?->ocpp_connector_id ?: 1));
@@ -1198,14 +1188,10 @@ class OcppServe extends Command
             ->whereNull('ocpp_transaction_id');
 
         if ($connectorId && $connectorId > 0) {
-            $byConnector = (clone $query)
+            return (clone $query)
                 ->where('ocpp_connector_id', $connectorId)
                 ->latest('id')
                 ->first();
-
-            if ($byConnector) {
-                return $byConnector;
-            }
         }
 
         return $query->latest('id')->first();
@@ -1226,14 +1212,10 @@ class OcppServe extends Command
             });
 
         if ($connectorId && $connectorId > 0) {
-            $byConnector = (clone $query)
+            return (clone $query)
                 ->where('ocpp_connector_id', $connectorId)
                 ->latest('id')
                 ->first();
-
-            if ($byConnector) {
-                return $byConnector;
-            }
         }
 
         return $query->latest('id')->first();
@@ -1317,14 +1299,10 @@ class OcppServe extends Command
                 return $pending;
             }
 
-            return ChargingSession::query()
-                ->where('station_id', $station->id)
-                ->whereNull('end_time')
-                ->latest('id')
-                ->first();
+            return null;
         }
 
-        return ChargingSession::query()
+        $query = ChargingSession::query()
             ->where('station_id', $station->id)
             ->where(function ($query) use ($transactionId): void {
                 $query->where('ocpp_transaction_id', $transactionId);
@@ -1332,9 +1310,13 @@ class OcppServe extends Command
                 if (is_numeric($transactionId)) {
                     $query->orWhere('id', (int) $transactionId);
                 }
-            })
-            ->latest('id')
-            ->first();
+            });
+
+        if ($connectorId > 0) {
+            $query->where('ocpp_connector_id', $connectorId);
+        }
+
+        return $query->latest('id')->first();
     }
 
     private function wattHoursToKwh(mixed $value): ?float

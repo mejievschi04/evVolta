@@ -111,11 +111,14 @@ class ChargingStopService
         $minutes = max(1, (int) $session->start_time->diffInMinutes($endTime));
 
         if ($meterStopKwh !== null) {
-            $station->update(['meter_value_kwh' => $meterStopKwh]);
             $station = $station->fresh();
         }
 
-        $meterStop = $meterStopKwh ?? $station->meter_value_kwh;
+        $liveMetrics = is_array($session->live_metrics) ? $session->live_metrics : [];
+        $connectorId = (int) ($session->ocpp_connector_id ?: 1);
+        $meterStop = $meterStopKwh
+            ?? ($liveMetrics['energy_kwh'] ?? null)
+            ?? $station->connectorLiveMeterEnergy($connectorId);
         $meterStart = SessionEnergyService::effectiveMeterStart($session->meter_start_kwh);
 
         if ($meterStop !== null && SessionEnergyService::usesSessionRelativeRegister($session)) {
@@ -123,7 +126,14 @@ class ChargingStopService
         } elseif ($meterStop !== null && $meterStart !== null) {
             $kwhConsumed = round(max(0, (float) $meterStop - $meterStart), 3);
         } else {
-            $kwhConsumed = $this->resolveKwhConsumed($session, $station);
+            $kwhConsumed = app(SessionEnergyService::class)->telemetryKwhDelivered($session);
+            if (
+                $kwhConsumed <= 0
+                && ! $this->isGatewayMode()
+                && SessionEnergyService::effectiveMeterStart($session->meter_start_kwh) === null
+            ) {
+                $kwhConsumed = $this->resolveKwhConsumed($session, $station);
+            }
         }
 
         $session->update([

@@ -193,6 +193,46 @@ class DualPortChargingTest extends TestCase
         $this->assertSame(99.0, $port1['meter_value_kwh']);
     }
 
+    public function test_session_telemetry_does_not_use_other_port_station_live(): void
+    {
+        $user = $this->createPersonalUser();
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'meter_value_kwh' => 99,
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'live_meter' => ['power_kw' => 42.0, 'energy_kwh' => 99.0],
+                'connectors' => [
+                    1 => [
+                        'connectorId' => 1,
+                        'status' => 'Charging',
+                        'live_meter' => ['power_kw' => 42.0, 'energy_kwh' => 99.0],
+                    ],
+                    2 => [
+                        'connectorId' => 2,
+                        'status' => 'Charging',
+                        'live_meter' => ['power_kw' => 7.0, 'energy_kwh' => 3.0],
+                    ],
+                ],
+            ],
+        ]);
+
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 2,
+            'start_time' => now(),
+            'kwh_consumed' => 0,
+            'live_metrics' => null,
+        ]);
+
+        $telemetry = $session->fresh(['station'])->telemetry;
+        $this->assertNull($telemetry['power_kw']);
+        $this->assertNull($telemetry['meter_total_kwh']);
+    }
+
     public function test_resolve_start_connector_skips_port_with_active_session(): void
     {
         $user = $this->createPersonalUser();

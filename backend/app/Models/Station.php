@@ -188,10 +188,29 @@ class Station extends Model
                 ? (isset($selectedConnector['live_meter']['energy_kwh'])
                     ? (float) $selectedConnector['live_meter']['energy_kwh']
                     : null)
-                : $this->meter_value_kwh,
+                : null,
             'mode' => config('services.ocpp.mode', 'simulator'),
             ...$this->liveMeterFields($configuration, $selectedConnector, $connectorId !== null),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function connectorLiveMeter(int $connectorId): array
+    {
+        $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
+        $connectors = $this->normalizedConnectors($configuration);
+        $meter = $connectors[$connectorId]['live_meter'] ?? null;
+
+        return is_array($meter) ? $meter : [];
+    }
+
+    public function connectorLiveMeterEnergy(int $connectorId): ?float
+    {
+        $meter = $this->connectorLiveMeter($connectorId);
+
+        return isset($meter['energy_kwh']) ? (float) $meter['energy_kwh'] : null;
     }
 
     /**
@@ -200,20 +219,24 @@ class Station extends Model
      */
     private function liveMeterFields(array $configuration, ?array $connector = null, bool $connectorScoped = false): array
     {
-        $connectorMeter = is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : [];
-        $stationMeter = is_array($configuration['live_meter'] ?? null) ? $configuration['live_meter'] : [];
+        if (! $connectorScoped) {
+            return [
+                'power_kw' => null,
+                'current_a' => null,
+                'voltage_v' => null,
+                'soc_percent' => null,
+                'meter_sampled_at' => null,
+            ];
+        }
 
-        // Per-conector: foloseste DOAR contorul conectorului cerut, ca sa nu apara cifrele altui port.
-        $liveMeter = $connectorScoped
-            ? $connectorMeter
-            : ($connectorMeter !== [] ? $connectorMeter : $stationMeter);
+        $connectorMeter = is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : [];
 
         return [
-            'power_kw' => isset($liveMeter['power_kw']) ? (float) $liveMeter['power_kw'] : null,
-            'current_a' => isset($liveMeter['current_a']) ? (float) $liveMeter['current_a'] : null,
-            'voltage_v' => isset($liveMeter['voltage_v']) ? (float) $liveMeter['voltage_v'] : null,
-            'soc_percent' => isset($liveMeter['soc_percent']) ? (float) $liveMeter['soc_percent'] : null,
-            'meter_sampled_at' => $liveMeter['sampled_at'] ?? null,
+            'power_kw' => isset($connectorMeter['power_kw']) ? (float) $connectorMeter['power_kw'] : null,
+            'current_a' => isset($connectorMeter['current_a']) ? (float) $connectorMeter['current_a'] : null,
+            'voltage_v' => isset($connectorMeter['voltage_v']) ? (float) $connectorMeter['voltage_v'] : null,
+            'soc_percent' => isset($connectorMeter['soc_percent']) ? (float) $connectorMeter['soc_percent'] : null,
+            'meter_sampled_at' => $connectorMeter['sampled_at'] ?? null,
         ];
     }
 

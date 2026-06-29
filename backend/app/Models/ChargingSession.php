@@ -97,7 +97,6 @@ class ChargingSession extends Model
     public function getTelemetryAttribute(): array
     {
         $live = is_array($this->live_metrics) ? $this->live_metrics : [];
-        $stationLive = $this->station?->liveStatus($this->ocpp_connector_id) ?? [];
         $kwhDelivered = app(SessionEnergyService::class)->telemetryKwhDelivered($this);
         $this->loadMissing('user');
         $pricePerKwh = app(TariffService::class)->pricePerKwhForUser($this->user);
@@ -106,14 +105,14 @@ class ChargingSession extends Model
             'kwh_consumed' => $kwhDelivered,
             'meter_start_kwh' => $this->meter_start_kwh,
             'meter_stop_kwh' => $this->meter_stop_kwh,
-            'meter_total_kwh' => $live['energy_kwh'] ?? $stationLive['meter_value_kwh'] ?? null,
-            'power_kw' => $this->resolveLivePowerKw($live, $stationLive),
-            'current_a' => $live['current_a'] ?? $stationLive['current_a'] ?? null,
-            'voltage_v' => $live['voltage_v'] ?? $stationLive['voltage_v'] ?? null,
-            'soc_percent' => $live['soc_percent'] ?? $stationLive['soc_percent'] ?? null,
+            'meter_total_kwh' => $live['energy_kwh'] ?? null,
+            'power_kw' => isset($live['power_kw']) ? round((float) $live['power_kw'], 3) : null,
+            'current_a' => $live['current_a'] ?? null,
+            'voltage_v' => $live['voltage_v'] ?? null,
+            'soc_percent' => $live['soc_percent'] ?? null,
             'temperature_c' => $live['temperature_c'] ?? null,
             'power_samples' => is_array($live['power_samples'] ?? null) ? $live['power_samples'] : [],
-            'sampled_at' => $live['sampled_at'] ?? $stationLive['meter_sampled_at'] ?? null,
+            'sampled_at' => $live['sampled_at'] ?? null,
             'ocpp_transaction_id' => $this->ocpp_transaction_id,
             'ocpp_connector_id' => $this->ocpp_connector_id,
             'connector_label' => $this->ocpp_connector_id
@@ -142,19 +141,7 @@ class ChargingSession extends Model
     public function getPowerKwLiveAttribute(): ?float
     {
         $live = is_array($this->live_metrics) ? $this->live_metrics : [];
-        $stationLive = $this->station?->liveStatus($this->ocpp_connector_id) ?? [];
 
-        return $this->resolveLivePowerKw($live, $stationLive);
-    }
-
-    /**
-     * @param  array<string, mixed>  $live
-     * @param  array<string, mixed>  $stationLive
-     */
-    private function resolveLivePowerKw(array $live, array $stationLive): ?float
-    {
-        $power = $live['power_kw'] ?? $stationLive['power_kw'] ?? null;
-
-        return $power !== null ? round((float) $power, 3) : null;
+        return isset($live['power_kw']) ? round((float) $live['power_kw'], 3) : null;
     }
 }
