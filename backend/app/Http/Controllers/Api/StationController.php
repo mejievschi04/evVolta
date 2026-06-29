@@ -63,9 +63,11 @@ class StationController extends Controller
 
         Station::markStaleOcppConnectionsOffline();
 
-        $stations = $query->orderBy('name')->get()->map(function (Station $station) use ($favoriteStationIds) {
+        $user = $request->user();
+
+        $stations = $query->orderBy('name')->get()->map(function (Station $station) use ($favoriteStationIds, $user) {
             $station->setAttribute('is_favorite', in_array($station->id, $favoriteStationIds, true));
-            $station->setAttribute('live_status', $station->liveStatus(null, $request->user()));
+            $station->setAttribute('live_status', $station->liveStatus(null, $user));
             $station->setAttribute('display_status', $station->displayStatus());
             $station->setAttribute('reservation_policy', $station->reservationPolicy());
 
