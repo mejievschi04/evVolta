@@ -131,6 +131,10 @@ class ReservationService
                 throw new RuntimeException('Intervalul selectat se suprapune cu o alta rezervare.', 422);
             }
 
+            if (! $station->connectorCanReserve($connectorId, $user)) {
+                throw new RuntimeException('Conectorul este ocupat sau indisponibil pentru rezervare.', 422);
+            }
+
             if ($station->activeReservationForConnector($connectorId, $user)) {
                 throw new RuntimeException('Conectorul are deja o rezervare activa.', 422);
             }

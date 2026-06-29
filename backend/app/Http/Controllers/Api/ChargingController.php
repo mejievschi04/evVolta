@@ -68,9 +68,29 @@ class ChargingController extends Controller
                     throw new RuntimeException('Statia nu a fost gasita.', 404);
                 }
 
-                $connectorId = $station->resolveStartConnectorId(
-                    isset($payload['connector_id']) ? (int) $payload['connector_id'] : null
-                );
+                $requestedConnector = isset($payload['connector_id']) ? (int) $payload['connector_id'] : null;
+
+                if ($requestedConnector !== null) {
+                    if ($station->hasActiveSessionOnConnector($requestedConnector)) {
+                        $occupant = ChargingSession::query()
+                            ->where('station_id', $station->id)
+                            ->where('ocpp_connector_id', $requestedConnector)
+                            ->whereNull('end_time')
+                            ->first();
+
+                        if ($occupant && $occupant->user_id !== $user->id) {
+                            throw new RuntimeException('Conectorul este deja folosit de alt utilizator.', 422);
+                        }
+                    }
+
+                    if (! $station->connectorCanStart($requestedConnector)) {
+                        throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
+                    }
+
+                    $connectorId = $requestedConnector;
+                } else {
+                    $connectorId = $station->resolveStartConnectorId(null);
+                }
 
                 $this->reservationService->assertUserMayStart($user, $station, $connectorId);
 
@@ -78,37 +98,59 @@ class ChargingController extends Controller
                     throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
                 }
 
-                $activeSession = ChargingSession::query()
+                $activeOnConnector = ChargingSession::query()
                     ->where('station_id', $station->id)
+                    ->where('ocpp_connector_id', $connectorId)
                     ->whereNull('end_time')
                     ->lockForUpdate()
                     ->first();
 
-                if ($activeSession && $activeSession->user_id !== $request->user()->id) {
-                    throw new RuntimeException('Statia are deja o sesiune activa.', 422);
+                if ($activeOnConnector && $activeOnConnector->user_id !== $user->id) {
+                    throw new RuntimeException('Conectorul este deja folosit de alt utilizator.', 422);
                 }
 
-                if ($activeSession && $activeSession->user_id === $request->user()->id) {
+                $activeUserSession = ChargingSession::query()
+                    ->where('station_id', $station->id)
+                    ->where('user_id', $user->id)
+                    ->whereNull('end_time')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($activeUserSession) {
+                    $activeConnector = (int) ($activeUserSession->ocpp_connector_id ?: 0);
                     if (
-                        $activeSession->ocpp_transaction_id
-                        && $this->ocppService->sessionIsPhysicallyActive($activeSession, $station)
+                        $activeConnector > 0
+                        && $activeConnector !== $connectorId
+                        && $activeUserSession->ocpp_transaction_id
+                        && $this->ocppService->sessionIsPhysicallyActive($activeUserSession, $station)
+                    ) {
+                        throw new RuntimeException(
+                            'Ai deja o sesiune activa pe alt conector la aceasta statie.',
+                            422
+                        );
+                    }
+
+                    if (
+                        $activeUserSession->ocpp_transaction_id
+                        && $activeConnector === $connectorId
+                        && $this->ocppService->sessionIsPhysicallyActive($activeUserSession, $station)
                     ) {
                         return [
-                            'session' => $activeSession->fresh(),
+                            'session' => $activeUserSession->fresh(),
                             'station' => $station->fresh(),
                         ];
                     }
 
                     $this->ocppService->ensureReadyForRemoteCommands($station);
 
-                    $activeSession->update([
+                    $activeUserSession->update([
                         'ocpp_connector_id' => $connectorId,
                         'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $request->user()),
                     ]);
                     $station->update(['status' => Station::STATUS_CHARGING]);
 
                     return [
-                        'session' => $activeSession->fresh(),
+                        'session' => $activeUserSession->fresh(),
                         'station' => $station->fresh(),
                     ];
                 }

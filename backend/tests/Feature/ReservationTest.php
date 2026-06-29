@@ -83,6 +83,40 @@ class ReservationTest extends TestCase
             ->assertJsonPath('message', 'Intervalul selectat se suprapune cu o alta rezervare.');
     }
 
+    public function test_booking_on_occupied_connector_is_rejected(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', true);
+
+        $user = $this->createPersonalUser(['wallet_balance' => 500]);
+        $station = $this->createReservableStation([
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Charging'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $startsAt = now()->addHour()->startOfMinute();
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/reservations', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+                'starts_at' => $startsAt->toIso8601String(),
+                'duration_minutes' => 60,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Conectorul este ocupat sau indisponibil pentru rezervare.');
+
+        $this->actingAs($user, 'api')
+            ->getJson("/api/stations/{$station->id}/reservations/availability")
+            ->assertOk()
+            ->assertJsonPath('connectors.0.can_reserve', false)
+            ->assertJsonPath('connectors.1.can_reserve', true);
+    }
+
     public function test_booking_queues_reserve_now_in_gateway_mode(): void
     {
         Config::set('services.ocpp.mode', 'gateway');

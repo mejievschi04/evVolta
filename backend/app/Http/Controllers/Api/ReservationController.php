@@ -107,6 +107,15 @@ class ReservationController extends Controller
         return response()->json([
             'station_id' => $station->id,
             'policy' => $station->reservationPolicy(),
+            'connectors' => collect($station->expectedConnectorIds())
+                ->map(fn (int $id) => [
+                    'id' => $id,
+                    'label' => Station::connectorPortLabel($id),
+                    'can_reserve' => $station->connectorCanReserve($id, $request->user()),
+                    'availability' => $station->liveStatus($id, $request->user())['availability'] ?? null,
+                ])
+                ->values()
+                ->all(),
             'slots' => $this->reservationService->availabilityForStation($station, $connectorId, $day),
         ]);
     }

@@ -65,7 +65,7 @@ class StationController extends Controller
 
         $stations = $query->orderBy('name')->get()->map(function (Station $station) use ($favoriteStationIds) {
             $station->setAttribute('is_favorite', in_array($station->id, $favoriteStationIds, true));
-            $station->setAttribute('live_status', $station->liveStatus());
+            $station->setAttribute('live_status', $station->liveStatus(null, $request->user()));
             $station->setAttribute('display_status', $station->displayStatus());
             $station->setAttribute('reservation_policy', $station->reservationPolicy());
 

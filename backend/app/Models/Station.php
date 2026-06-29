@@ -136,7 +136,7 @@ class Station extends Model
         'ocpp_configuration' => 'array',
     ];
 
-    public function liveStatus(?int $connectorId = null): array
+    public function liveStatus(?int $connectorId = null, ?User $user = null): array
     {
         $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
         $connectors = $this->normalizedConnectors($configuration);
@@ -151,7 +151,7 @@ class Station extends Model
         $isStale = $isGatewayMode && $isOnline
             && ($secondsSinceLastSeen === null || $secondsSinceLastSeen > ($heartbeatInterval * 2));
         $connectedConnectorId = $this->detectConnectedConnectorId($connectors);
-        $connectorSummaries = $this->connectorsLiveSummary($connectors, $isGatewayMode, $isOnline, $isStale);
+        $connectorSummaries = $this->connectorsLiveSummary($connectors, $isGatewayMode, $isOnline, $isStale, $user);
 
         $availability = $this->availabilityFromOcppStatus($rawConnectorStatus);
         if ($isGatewayMode && (! $isOnline || $isStale)) {
@@ -270,6 +270,41 @@ class Station extends Model
             ->whereNull('end_time')
             ->where('ocpp_connector_id', $connectorId)
             ->exists();
+    }
+
+    public function connectorCanReserve(?int $connectorId, ?User $user = null): bool
+    {
+        if ($connectorId === null || $connectorId <= 0 || ! $this->reservationsEnabled()) {
+            return false;
+        }
+
+        if (! in_array($connectorId, $this->expectedConnectorIds(), true)) {
+            return false;
+        }
+
+        $isGatewayMode = config('services.ocpp.mode', 'simulator') !== 'simulator';
+        if ($isGatewayMode && ! $this->isOcppOnline()) {
+            return false;
+        }
+
+        if ($this->hasActiveSessionOnConnector($connectorId)) {
+            return false;
+        }
+
+        $status = $this->connectorOcppStatus($connectorId);
+        if (in_array($status, ['Charging', 'SuspendedEV', 'SuspendedEVSE', 'Preparing', 'Reserved', 'Faulted', 'Unavailable'], true)) {
+            return false;
+        }
+
+        if ($status === 'Finishing' && $this->hasActiveSessionOnConnector($connectorId)) {
+            return false;
+        }
+
+        if ($this->activeReservationForConnector($connectorId, $user)) {
+            return false;
+        }
+
+        return true;
     }
 
     public function canAcceptRemoteStart(?int $connectorId = null, ?User $user = null): bool
@@ -449,17 +484,29 @@ class Station extends Model
     {
         $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
         $connectors = $this->normalizedConnectors($configuration);
-        $connectedId = $this->detectConnectedConnectorId($connectors);
 
-        if ($connectedId && $this->connectorCanStart($connectedId)) {
+        $connectedId = $this->detectConnectedConnectorId($connectors);
+        if (
+            $connectedId
+            && $this->connectorCanStart($connectedId)
+            && ! $this->hasActiveSessionOnConnector($connectedId)
+        ) {
             return $connectedId;
         }
 
-        if (count($connectors) < 2) {
-            foreach ($connectors as $connectorId => $connector) {
-                if ($this->connectorCanStart((int) $connectorId)) {
-                    return (int) $connectorId;
-                }
+        if (
+            $requested !== null
+            && $requested > 0
+            && $this->connectorCanStart($requested)
+            && ! $this->hasActiveSessionOnConnector($requested)
+        ) {
+            return $requested;
+        }
+
+        foreach ($connectors as $connectorId => $connector) {
+            $id = (int) $connectorId;
+            if ($this->connectorCanStart($id) && ! $this->hasActiveSessionOnConnector($id)) {
+                return $id;
             }
         }
 
@@ -618,19 +665,26 @@ class Station extends Model
      * @param  array<int, array<string, mixed>>  $connectors
      * @return list<array<string, mixed>>
      */
-    private function connectorsLiveSummary(array $connectors, bool $isGatewayMode, bool $isOnline, bool $isStale): array
-    {
+    private function connectorsLiveSummary(
+        array $connectors,
+        bool $isGatewayMode,
+        bool $isOnline,
+        bool $isStale,
+        ?User $user = null,
+    ): array {
         if ($connectors === []) {
             return [];
         }
 
         return collect($connectors)
-            ->map(function (array $connector, int $id) use ($isGatewayMode, $isOnline, $isStale) {
+            ->map(function (array $connector, int $id) use ($isGatewayMode, $isOnline, $isStale, $user) {
                 $status = (string) ($connector['status'] ?? '');
                 $vehicleConnected = $isOnline
                     && ($this->isVehicleConnectedStatus($status)
                         || ($status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id)));
                 $canStart = $this->connectorCanStart($id)
+                    && (! $isGatewayMode || ($isOnline && ! $isStale));
+                $canReserve = $this->connectorCanReserve($id, $user)
                     && (! $isGatewayMode || ($isOnline && ! $isStale));
                 $availability = ($isGatewayMode && (! $isOnline || $isStale))
                     ? self::STATUS_OFFLINE
@@ -643,6 +697,7 @@ class Station extends Model
                     'availability' => $availability,
                     'vehicle_connected' => $vehicleConnected,
                     'can_start' => $canStart,
+                    'can_reserve' => $canReserve,
                     'is_stale_finishing' => $status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id),
                     'has_active_session' => $this->hasActiveSessionOnConnector($id),
                     ...$this->connectorTelemetryFields(is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : []),
