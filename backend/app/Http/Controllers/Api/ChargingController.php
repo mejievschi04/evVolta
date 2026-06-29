@@ -94,6 +94,10 @@ class ChargingController extends Controller
 
                 $this->reservationService->assertUserMayStart($user, $station, $connectorId);
 
+                if (! in_array($connectorId, $station->expectedConnectorIds(), true)) {
+                    throw new RuntimeException('Conector invalid pentru aceasta statie.', 422);
+                }
+
                 if (! $station->canAcceptRemoteStart($connectorId, $user)) {
                     throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
                 }
@@ -156,6 +160,18 @@ class ChargingController extends Controller
                 }
 
                 $this->ocppService->ensureReadyForRemoteCommands($station);
+
+                $expectedConnectorIds = $station->expectedConnectorIds();
+                $occupiedConnectorCount = ChargingSession::query()
+                    ->where('station_id', $station->id)
+                    ->whereNull('end_time')
+                    ->whereIn('ocpp_connector_id', $expectedConnectorIds)
+                    ->distinct()
+                    ->count('ocpp_connector_id');
+
+                if ($occupiedConnectorCount >= count($expectedConnectorIds)) {
+                    throw new RuntimeException('Toate porturile statiei sunt ocupate.', 422);
+                }
 
                 $session = ChargingSession::query()->create([
                     'user_id' => $request->user()->id,

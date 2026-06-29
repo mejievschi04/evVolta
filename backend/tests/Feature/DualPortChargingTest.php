@@ -112,6 +112,53 @@ class DualPortChargingTest extends TestCase
             ->assertJsonPath('message', 'Conectorul este deja folosit de alt utilizator.');
     }
 
+    public function test_third_session_blocked_when_all_ports_busy(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $userA = $this->createPersonalUser(['email' => 'driver-a3@example.test']);
+        $userB = $this->createPersonalUser(['email' => 'driver-b3@example.test']);
+        $userC = $this->createPersonalUser(['email' => 'driver-c3@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Available'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        foreach ([[$userA, 1], [$userB, 2]] as [$user, $connectorId]) {
+            ChargingSession::query()->create([
+                'user_id' => $user->id,
+                'station_id' => $station->id,
+                'ocpp_connector_id' => $connectorId,
+                'ocpp_transaction_id' => (string) (300 + $connectorId),
+                'start_time' => now(),
+                'kwh_consumed' => 1,
+            ]);
+        }
+
+        $this->actingAs($userC, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+            ])
+            ->assertStatus(422);
+
+        $this->assertSame(2, ChargingSession::query()
+            ->where('station_id', $station->id)
+            ->whereNull('end_time')
+            ->count());
+    }
+
     public function test_resolve_start_connector_skips_port_with_active_session(): void
     {
         $user = $this->createPersonalUser();
