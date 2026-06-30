@@ -324,11 +324,23 @@ class Station extends Model
         return in_array($status, self::PLUGGED_CONNECTOR_STATUSES, true);
     }
 
-    public function connectorCanStart(?int $connectorId): bool
+    public function connectorCanStart(?int $connectorId, ?User $user = null): bool
     {
         $status = $this->connectorOcppStatus($connectorId);
 
-        if ($status === null || $status === '' || in_array($status, self::BLOCKED_START_STATUSES, true)) {
+        if ($status === null || $status === '') {
+            return false;
+        }
+
+        if (
+            $status === 'Reserved'
+            && $user
+            && $this->userHasActiveReservationOnConnector($user, $connectorId)
+        ) {
+            return true;
+        }
+
+        if (in_array($status, self::BLOCKED_START_STATUSES, true)) {
             return false;
         }
 
@@ -386,11 +398,7 @@ class Station extends Model
 
     public function canAcceptRemoteStart(?int $connectorId = null, ?User $user = null): bool
     {
-        if ($user && $this->userHasActiveReservationOnConnector($user, $connectorId)) {
-            return true;
-        }
-
-        return $this->connectorCanStart($connectorId);
+        return $this->connectorCanStart($connectorId, $user);
     }
 
     public function reservationsEnabled(): bool

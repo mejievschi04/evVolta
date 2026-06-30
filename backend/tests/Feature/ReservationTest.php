@@ -381,6 +381,83 @@ class ReservationTest extends TestCase
         $this->assertSame(Reservation::STATUS_CANCELLED, $reservation->fresh()->status);
     }
 
+    public function test_verify_plug_reports_unplugged_connector_on_online_station(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+
+        $user = $this->createPersonalUser();
+        $station = $this->createReservableStation([
+            'ocpp_identity' => 'reservable-online',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $reservation = Reservation::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'connector_id' => 1,
+            'ocpp_reservation_id' => 1,
+            'id_tag' => 'VOLTA00000001',
+            'starts_at' => now(),
+            'ends_at' => now()->addHour(),
+            'status' => Reservation::STATUS_CONFIRMED,
+            'fee_amount' => 15,
+            'fee_charged' => true,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson("/api/reservations/{$reservation->id}/verify-plug")
+            ->assertOk()
+            ->assertJsonPath('data.vehicle_connected', false)
+            ->assertJsonPath('data.requires_plug_check', true)
+            ->assertJsonPath('data.connector_status', 'Available');
+    }
+
+    public function test_start_rejects_without_plug_even_with_active_reservation(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser();
+        $station = $this->createReservableStation([
+            'reservation_require_for_start' => true,
+            'ocpp_identity' => 'reservable-online',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        Reservation::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'connector_id' => 1,
+            'ocpp_reservation_id' => 1,
+            'id_tag' => 'VOLTA00000001',
+            'starts_at' => now(),
+            'ends_at' => now()->addHour(),
+            'status' => Reservation::STATUS_CONFIRMED,
+            'fee_amount' => 15,
+            'fee_charged' => true,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Conecteaza masina la portul rezervat inainte de pornire.');
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */

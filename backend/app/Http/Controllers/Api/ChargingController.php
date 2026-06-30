@@ -42,7 +42,7 @@ class ChargingController extends Controller
             $station = Station::query()->findOrFail($payload['station_id']);
             $station = $this->ocppService->syncConnectorStateBeforeStart($station);
 
-            if (config('services.ocpp.mode', 'simulator') !== 'simulator' && ! $station->isOcppOnline()) {
+            if ($this->ocppService->shouldEnforcePlugCheck($station) && ! $station->isOcppOnline()) {
                 throw new RuntimeException('Statia nu este conectata la gateway-ul OCPP.', 422);
             }
 
@@ -83,7 +83,7 @@ class ChargingController extends Controller
                         }
                     }
 
-                    if (! $station->connectorCanStart($requestedConnector)) {
+                    if (! $station->connectorCanStart($requestedConnector, $user)) {
                         throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
                     }
 
@@ -97,6 +97,12 @@ class ChargingController extends Controller
                 if (! in_array($connectorId, $station->expectedConnectorIds(), true)) {
                     throw new RuntimeException('Conector invalid pentru aceasta statie.', 422);
                 }
+
+                if ($this->ocppService->shouldEnforcePlugCheck($station)) {
+                    $station = $this->ocppService->syncConnectorStateBeforeStart($station);
+                }
+
+                $this->reservationService->assertConnectorPlugged($station, $connectorId);
 
                 if (! $station->canAcceptRemoteStart($connectorId, $user)) {
                     throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);

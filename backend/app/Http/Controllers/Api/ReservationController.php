@@ -23,7 +23,7 @@ class ReservationController extends Controller
         $status = trim((string) $request->query('status', ''));
 
         $query = Reservation::query()
-            ->with(['station:id,name,location'])
+            ->with(['station'])
             ->where('user_id', $request->user()->id)
             ->orderByDesc('starts_at');
 
@@ -44,7 +44,7 @@ class ReservationController extends Controller
         }
 
         return response()->json([
-            'data' => $this->reservationService->present($reservation->load('station:id,name,location')),
+            'data' => $this->reservationService->present($reservation->load('station'), true),
         ]);
     }
 
@@ -92,6 +92,23 @@ class ReservationController extends Controller
             'message' => 'Rezervarea a fost anulata.',
             ...$result,
         ]);
+    }
+
+    public function verifyPlug(Request $request, Reservation $reservation): JsonResponse
+    {
+        if ($reservation->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'Rezervarea nu iti apartine.'], 403);
+        }
+
+        try {
+            $plugState = $this->reservationService->verifyPlugForReservation($reservation);
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], $exception->getCode() ?: 500);
+        }
+
+        return response()->json(['data' => $plugState]);
     }
 
     public function availability(Request $request, Station $station): JsonResponse

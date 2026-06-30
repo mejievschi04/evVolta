@@ -174,4 +174,38 @@ class ChargingStartGatewayTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('message', 'Statia nu este conectata la gateway-ul OCPP.');
     }
+
+    public function test_start_rejects_when_connector_is_not_plugged(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+
+        $user = $this->createPersonalUser([
+            'name' => 'Driver',
+            'email' => 'driver-unplugged@example.test',
+        ]);
+
+        $station = Station::query()->create([
+            'name' => 'Online charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'online-station',
+            'ocpp_identity' => 'online-station',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Conecteaza masina la portul rezervat inainte de pornire.');
+    }
 }

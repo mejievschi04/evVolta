@@ -21,9 +21,26 @@ class ReservationService
     /**
      * @return array<string, mixed>
      */
-    public function present(Reservation $reservation): array
+    public function present(Reservation $reservation, bool $refreshConnector = false): array
     {
-        $reservation->loadMissing(['station:id,name,location', 'user:id,name,email']);
+        $reservation->loadMissing(['station', 'user:id,name,email']);
+
+        $station = $reservation->station;
+        if ($station && ! array_key_exists('ocpp_configuration', $station->getAttributes())) {
+            $station = Station::query()->find($reservation->station_id) ?? $station;
+        }
+
+        if ($refreshConnector && $station && $this->ocppService->shouldEnforcePlugCheck($station)) {
+            try {
+                $station = $this->ocppService->syncConnectorStateBeforeStart($station);
+            } catch (\Throwable) {
+                // If the station cannot answer a status refresh, present the last known status.
+            }
+        }
+
+        $connectorStatus = $station?->connectorOcppStatus($reservation->connector_id);
+        $requiresPlugCheck = $station ? $this->ocppService->shouldEnforcePlugCheck($station) : false;
+        $plugDetected = $station ? $station->isPluggedConnectorStatus($connectorStatus) : false;
 
         return [
             'id' => $reservation->id,
@@ -38,8 +55,57 @@ class ReservationService
             'no_show_fee_amount' => round((float) $reservation->no_show_fee_amount, 2),
             'can_start' => $this->canStartCharging($reservation),
             'can_cancel' => $this->canCancel($reservation),
-            'station' => $reservation->station?->only(['id', 'name', 'location']),
+            'connector_status' => $connectorStatus,
+            'station_online' => (bool) $station?->isOcppOnline(),
+            'vehicle_connected' => $plugDetected,
+            'requires_plug_check' => $requiresPlugCheck,
+            'station' => $station?->only(['id', 'name', 'location']),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function verifyPlugForReservation(Reservation $reservation): array
+    {
+        $reservation->loadMissing('station');
+        $station = $reservation->station;
+
+        if (! $station) {
+            throw new RuntimeException('Statia rezervarii nu a fost gasita.', 404);
+        }
+
+        if ($this->ocppService->shouldEnforcePlugCheck($station)) {
+            try {
+                $station = $this->ocppService->syncConnectorStateBeforeStart($station);
+            } catch (\Throwable) {
+                // Present the last known connector status when the station cannot refresh.
+            }
+        }
+
+        $connectorStatus = $station->connectorOcppStatus($reservation->connector_id);
+        $requiresPlugCheck = $this->ocppService->shouldEnforcePlugCheck($station);
+        $plugDetected = $station->isPluggedConnectorStatus($connectorStatus);
+
+        return [
+            'connector_status' => $connectorStatus,
+            'station_online' => $station->isOcppOnline(),
+            'vehicle_connected' => $plugDetected,
+            'requires_plug_check' => $requiresPlugCheck,
+        ];
+    }
+
+    public function assertConnectorPlugged(Station $station, int $connectorId): void
+    {
+        if (! $this->ocppService->shouldEnforcePlugCheck($station)) {
+            return;
+        }
+
+        $status = $station->connectorOcppStatus($connectorId);
+
+        if (! $station->isPluggedConnectorStatus($status)) {
+            throw new RuntimeException('Conecteaza masina la portul rezervat inainte de pornire.', 422);
+        }
     }
 
     /**

@@ -37,6 +37,7 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/reservations/{reservation}', [ReservationController::class, 'show']);
     Route::post('/reservations', [ReservationController::class, 'store']);
     Route::post('/reservations/{reservation}/cancel', [ReservationController::class, 'cancel']);
+    Route::post('/reservations/{reservation}/verify-plug', [ReservationController::class, 'verifyPlug']);
     Route::get('/tariff/current', [TariffController::class, 'current']);
     Route::post('/charging/start', [ChargingController::class, 'start']);
     Route::post('/charging/stop', [ChargingController::class, 'stop']);

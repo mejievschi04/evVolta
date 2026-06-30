@@ -216,6 +216,17 @@ class OcppService
         return config('services.ocpp.mode', 'simulator') === 'simulator';
     }
 
+    public function shouldEnforcePlugCheck(Station $station): bool
+    {
+        if ($this->isSimulatorMode()) {
+            // Simulator mode skips plug checks unless a real charger is connected to the gateway.
+            return $station->ocpp_connection_status === Station::OCPP_CONNECTION_CONNECTED
+                && ($station->last_heartbeat_at !== null || $station->last_ocpp_message_at !== null);
+        }
+
+        return $station->isOcppOnline();
+    }
+
     public function ensureReadyForRemoteCommands(Station $station): void
     {
         if (! $this->isSimulatorMode()) {
