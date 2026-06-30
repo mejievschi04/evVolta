@@ -97,9 +97,17 @@ class ReservationService
             throw new RuntimeException('Conector invalid.', 422);
         }
 
-        $minLead = max(1, (int) config('reservations.min_lead_minutes', 5));
-        if ($startsAt->lessThan(now()->addMinutes($minLead))) {
-            throw new RuntimeException(sprintf('Rezervarea trebuie facuta cu cel putin %d minute inainte.', $minLead), 422);
+        // Rezervarea "acum": toleram decalajul de ceas dintre telefon si server
+        // si latenta retelei. Daca startul cerut este la/aproape de momentul
+        // curent (sau usor in trecut), il fixam la ora serverului.
+        $immediateWindow = now()->addMinutes(2);
+        if ($startsAt->lessThanOrEqualTo($immediateWindow)) {
+            $startsAt = now();
+        } else {
+            $minLead = max(0, (int) config('reservations.min_lead_minutes', 0));
+            if ($minLead > 0 && $startsAt->lessThan(now()->addMinutes($minLead))) {
+                throw new RuntimeException(sprintf('Rezervarea trebuie facuta cu cel putin %d minute inainte.', $minLead), 422);
+            }
         }
 
         $maxAdvanceDays = max(1, (int) $station->reservation_advance_days);
@@ -107,7 +115,7 @@ class ReservationService
             throw new RuntimeException(sprintf('Poti rezerva maxim cu %d zile inainte.', $maxAdvanceDays), 422);
         }
 
-        $maxDuration = max(15, (int) $station->reservation_max_duration_minutes);
+        $maxDuration = min(60, max(15, (int) $station->reservation_max_duration_minutes));
         if ($durationMinutes < 15 || $durationMinutes > $maxDuration) {
             throw new RuntimeException(sprintf('Durata rezervarii trebuie sa fie intre 15 si %d minute.', $maxDuration), 422);
         }
@@ -260,10 +268,11 @@ class ReservationService
             ->where('connector_id', $connectorId)
             ->blocking()
             ->where('starts_at', '<=', now())
-            ->where('ends_at', '>=', now())
-            ->first();
+            ->orderByDesc('starts_at')
+            ->get()
+            ->first(fn (Reservation $reservation) => $reservation->isWithinStartWindow());
 
-        if (! $own || ! $own->isWithinStartWindow()) {
+        if (! $own) {
             throw new RuntimeException('Ai nevoie de o rezervare activa pentru a porni incarcarea.', 422);
         }
     }
@@ -299,12 +308,17 @@ class ReservationService
 
     public function confirmReservation(Reservation $reservation, int $connectorId): void
     {
-        if ($reservation->status !== Reservation::STATUS_PENDING) {
-            return;
-        }
+        // Atomic transition: only a still-pending reservation can become confirmed.
+        // Prevents a late ReserveNow ACCEPTED callback from resurrecting a cancelled reservation.
+        $confirmed = Reservation::query()
+            ->whereKey($reservation->id)
+            ->where('status', Reservation::STATUS_PENDING)
+            ->update(['status' => Reservation::STATUS_CONFIRMED]);
 
-        $reservation->update(['status' => Reservation::STATUS_CONFIRMED]);
-        $reservation->station?->updateConnectorOcppStatus($connectorId, 'Reserved');
+        if ($confirmed > 0) {
+            $reservation->refresh();
+            $reservation->station?->updateConnectorOcppStatus($connectorId, 'Reserved');
+        }
     }
 
     public function handleOcppReserveFailed(Reservation $reservation): void

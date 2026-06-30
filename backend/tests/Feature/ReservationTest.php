@@ -14,6 +14,94 @@ class ReservationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_user_can_book_reservation_starting_now(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', true);
+        Config::set('reservations.min_lead_minutes', 0);
+
+        $user = $this->createPersonalUser([
+            'wallet_balance' => 200,
+        ]);
+
+        $station = $this->createReservableStation([
+            'reservation_max_duration_minutes' => 60,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/reservations', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+                'starts_at' => now()->toIso8601String(),
+                'duration_minutes' => 60,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('reservation.status', Reservation::STATUS_CONFIRMED);
+    }
+
+    public function test_immediate_booking_works_despite_clock_skew(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', true);
+        Config::set('reservations.min_lead_minutes', 5);
+
+        $user = $this->createPersonalUser(['wallet_balance' => 200]);
+        $station = $this->createReservableStation(['reservation_max_duration_minutes' => 60]);
+
+        // Telefon cu ceasul in urma fata de server -> start trimis "in trecut".
+        $this->actingAs($user, 'api')
+            ->postJson('/api/reservations', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+                'starts_at' => now()->subSeconds(90)->toIso8601String(),
+                'duration_minutes' => 60,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('reservation.status', Reservation::STATUS_CONFIRMED);
+    }
+
+    public function test_duration_over_sixty_minutes_is_rejected_even_when_station_allows_more(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', true);
+        Config::set('reservations.min_lead_minutes', 0);
+
+        $user = $this->createPersonalUser(['wallet_balance' => 500]);
+        $station = $this->createReservableStation([
+            'reservation_max_duration_minutes' => 120,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/reservations', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+                'starts_at' => now()->toIso8601String(),
+                'duration_minutes' => 90,
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_duration_over_sixty_minutes_is_rejected(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', true);
+        Config::set('reservations.min_lead_minutes', 0);
+
+        $user = $this->createPersonalUser(['wallet_balance' => 500]);
+        $station = $this->createReservableStation([
+            'reservation_max_duration_minutes' => 60,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/reservations', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+                'starts_at' => now()->toIso8601String(),
+                'duration_minutes' => 90,
+            ])
+            ->assertStatus(422);
+    }
+
     public function test_user_can_book_reservation_in_simulator_mode(): void
     {
         Config::set('services.ocpp.mode', 'simulator');
@@ -233,6 +321,64 @@ class ReservationTest extends TestCase
         ]);
 
         $this->assertSame(70.0, (float) $user->fresh()->wallet_balance);
+    }
+
+    public function test_require_for_start_allows_start_within_grace_after_end(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser();
+        $station = $this->createReservableStation([
+            'reservation_require_for_start' => true,
+            'reservation_grace_minutes' => 20,
+        ]);
+
+        Reservation::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'connector_id' => 1,
+            'ocpp_reservation_id' => 1,
+            'id_tag' => 'VOLTA00000001',
+            'starts_at' => now()->subHour(),
+            'ends_at' => now()->subMinutes(5),
+            'status' => Reservation::STATUS_CONFIRMED,
+            'fee_amount' => 15,
+            'fee_charged' => true,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+            ])
+            ->assertCreated();
+    }
+
+    public function test_confirm_does_not_resurrect_cancelled_reservation(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+
+        $user = $this->createPersonalUser();
+        $station = $this->createReservableStation();
+
+        $reservation = Reservation::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'connector_id' => 1,
+            'ocpp_reservation_id' => 7,
+            'id_tag' => 'VOLTA00000001',
+            'starts_at' => now()->addHour(),
+            'ends_at' => now()->addHours(2),
+            'status' => Reservation::STATUS_CANCELLED,
+            'cancelled_at' => now(),
+            'fee_amount' => 15,
+            'fee_charged' => false,
+        ]);
+
+        app(\App\Services\ReservationService::class)->confirmReservation($reservation, 1);
+
+        $this->assertSame(Reservation::STATUS_CANCELLED, $reservation->fresh()->status);
     }
 
     /**

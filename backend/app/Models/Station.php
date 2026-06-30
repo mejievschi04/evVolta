@@ -153,7 +153,12 @@ class Station extends Model
         $connectedConnectorId = $this->detectConnectedConnectorId($connectors);
         $connectorSummaries = $this->connectorsLiveSummary($connectors, $isGatewayMode, $isOnline, $isStale, $user);
 
-        $availability = $this->availabilityFromOcppStatus($rawConnectorStatus);
+        // Station-level availability (no specific connector requested) must reflect ALL ports:
+        // a dual-port charger is still "available" while one port is free, even if the other charges.
+        $availability = $connectorId === null
+            ? $this->aggregateAvailability($connectors)
+            : $this->availabilityFromOcppStatus($rawConnectorStatus);
+
         if ($isGatewayMode && (! $isOnline || $isStale)) {
             $availability = self::STATUS_OFFLINE;
         } elseif ($isStale) {
@@ -238,6 +243,44 @@ class Station extends Model
             'soc_percent' => isset($connectorMeter['soc_percent']) ? (float) $connectorMeter['soc_percent'] : null,
             'meter_sampled_at' => $connectorMeter['sampled_at'] ?? null,
         ];
+    }
+
+    /**
+     * Aggregate availability across all connectors for the station-level summary.
+     *
+     * @param  array<int, array<string, mixed>>  $connectors
+     */
+    private function aggregateAvailability(array $connectors): string
+    {
+        if ($connectors === []) {
+            return $this->availabilityFromOcppStatus(null);
+        }
+
+        $availabilities = array_map(
+            fn (array $connector, int $id) => $this->connectorDisplayAvailability(
+                (string) ($connector['status'] ?? ''),
+                $id
+            ),
+            array_values($connectors),
+            array_keys($connectors),
+        );
+
+        // Any free port keeps the whole station bookable/startable.
+        if (in_array(self::STATUS_AVAILABLE, $availabilities, true)
+            || in_array('preparing', $availabilities, true)) {
+            return self::STATUS_AVAILABLE;
+        }
+
+        if (in_array(self::STATUS_CHARGING, $availabilities, true)) {
+            return self::STATUS_CHARGING;
+        }
+
+        if (in_array('reserved', $availabilities, true)) {
+            return 'reserved';
+        }
+
+        // Fall back to the first connector's mapped status (faulted/unavailable/offline).
+        return $availabilities[0];
     }
 
     private function availabilityFromOcppStatus(?string $status): string

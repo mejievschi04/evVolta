@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\OcppCommand;
 use App\Models\Station;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class ChargingStopService
@@ -92,6 +93,16 @@ class ChargingStopService
         ?Carbon $endTime = null,
         ?float $meterStopKwh = null,
     ): array {
+        return DB::transaction(function () use ($session, $station, $stopSource, $endTime, $meterStopKwh): array {
+            $station = Station::query()
+                ->whereKey($station->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $session = ChargingSession::query()
+                ->whereKey($session->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
         if ($session->end_time) {
             $invoice = Invoice::query()
                 ->where('source_session_id', $session->id)
@@ -157,6 +168,7 @@ class ChargingStopService
             'duration_minutes' => $minutes,
             'invoice' => $invoice?->fresh(),
         ];
+        });
     }
 
     public function resolveKwhConsumed(ChargingSession $session, Station $station): float

@@ -113,48 +113,58 @@ class ChargingController extends Controller
                     throw new RuntimeException('Conectorul este deja folosit de alt utilizator.', 422);
                 }
 
-                $activeUserSession = ChargingSession::query()
+                $userSessionOnConnector = ChargingSession::query()
                     ->where('station_id', $station->id)
                     ->where('user_id', $user->id)
+                    ->where('ocpp_connector_id', $connectorId)
                     ->whereNull('end_time')
                     ->lockForUpdate()
                     ->first();
 
-                if ($activeUserSession) {
-                    $activeConnector = (int) ($activeUserSession->ocpp_connector_id ?: 0);
+                if ($userSessionOnConnector) {
                     if (
-                        $activeConnector > 0
-                        && $activeConnector !== $connectorId
-                        && $activeUserSession->ocpp_transaction_id
-                        && $this->ocppService->sessionIsPhysicallyActive($activeUserSession, $station)
-                    ) {
-                        throw new RuntimeException(
-                            'Ai deja o sesiune activa pe alt conector la aceasta statie.',
-                            422
-                        );
-                    }
-
-                    if (
-                        $activeUserSession->ocpp_transaction_id
-                        && $activeConnector === $connectorId
-                        && $this->ocppService->sessionIsPhysicallyActive($activeUserSession, $station)
+                        $userSessionOnConnector->ocpp_transaction_id
+                        && $this->ocppService->sessionIsPhysicallyActive($userSessionOnConnector, $station)
                     ) {
                         return [
-                            'session' => $activeUserSession->fresh(),
+                            'session' => $userSessionOnConnector->fresh(),
                             'station' => $station->fresh(),
                         ];
                     }
 
                     $this->ocppService->ensureReadyForRemoteCommands($station);
 
-                    $activeUserSession->update([
-                        'ocpp_connector_id' => $connectorId,
-                        'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $request->user()),
+                    $userSessionOnConnector->update([
+                        'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
                     ]);
                     $station->update(['status' => Station::STATUS_CHARGING]);
 
                     return [
-                        'session' => $activeUserSession->fresh(),
+                        'session' => $userSessionOnConnector->fresh(),
+                        'station' => $station->fresh(),
+                    ];
+                }
+
+                $pendingWithoutConnector = ChargingSession::query()
+                    ->where('station_id', $station->id)
+                    ->where('user_id', $user->id)
+                    ->whereNull('end_time')
+                    ->whereNull('ocpp_transaction_id')
+                    ->whereNull('ocpp_connector_id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($pendingWithoutConnector) {
+                    $this->ocppService->ensureReadyForRemoteCommands($station);
+
+                    $pendingWithoutConnector->update([
+                        'ocpp_connector_id' => $connectorId,
+                        'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
+                    ]);
+                    $station->update(['status' => Station::STATUS_CHARGING]);
+
+                    return [
+                        'session' => $pendingWithoutConnector->fresh(),
                         'station' => $station->fresh(),
                     ];
                 }
@@ -247,6 +257,8 @@ class ChargingController extends Controller
     {
         $payload = $request->validate([
             'station_id' => 'required|exists:stations,id',
+            'connector_id' => 'nullable|integer|min:1|max:8',
+            'session_id' => 'nullable|integer|exists:charging_sessions,id',
         ]);
 
         try {
@@ -260,13 +272,19 @@ class ChargingController extends Controller
                     throw new RuntimeException('Statia nu a fost gasita.', 404);
                 }
 
-                $session = ChargingSession::query()
+                $sessionQuery = ChargingSession::query()
                     ->where('station_id', $station->id)
                     ->where('user_id', $request->user()->id)
                     ->whereNull('end_time')
-                    ->latest('id')
-                    ->lockForUpdate()
-                    ->first();
+                    ->lockForUpdate();
+
+                if (! empty($payload['session_id'])) {
+                    $sessionQuery->whereKey((int) $payload['session_id']);
+                } elseif (! empty($payload['connector_id'])) {
+                    $sessionQuery->where('ocpp_connector_id', (int) $payload['connector_id']);
+                }
+
+                $session = $sessionQuery->latest('id')->first();
 
                 if (! $session) {
                     throw new RuntimeException('Nu exista o sesiune activa pentru acest utilizator si aceasta statie.', 404);

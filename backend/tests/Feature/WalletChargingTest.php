@@ -175,6 +175,31 @@ class WalletChargingTest extends TestCase
         $this->assertSame(99.0, (float) $user->fresh()->wallet_balance);
     }
 
+    public function test_settle_session_is_idempotent(): void
+    {
+        $user = $this->createAppUser(['wallet_balance' => 0]);
+
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => Station::query()->create([
+                'name' => 'Settle station duplicate',
+                'location' => 'Test',
+                'status' => Station::STATUS_CHARGING,
+                'qr_code' => 'settle-station-duplicate',
+            ])->id,
+            'start_time' => now()->subMinutes(10),
+            'end_time' => now(),
+            'kwh_consumed' => 5,
+            'charge_budget' => 100,
+        ]);
+
+        app(WalletService::class)->settleSession($session, 0.20);
+        app(WalletService::class)->settleSession($session->fresh(), 0.20);
+
+        $this->assertSame(99.0, (float) $user->fresh()->wallet_balance);
+        $this->assertSame(1.0, (float) $session->fresh()->charge_budget);
+    }
+
     public function test_customer_can_start_with_target_kwh(): void
     {
         Config::set('billing.price_per_kwh', 0.20);

@@ -233,6 +233,105 @@ class DualPortChargingTest extends TestCase
         $this->assertNull($telemetry['meter_total_kwh']);
     }
 
+    public function test_same_user_can_start_second_session_on_free_port(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'dual-same-user@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Charging'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'ocpp_transaction_id' => '501',
+            'start_source' => 'app',
+            'start_time' => now()->subMinutes(5),
+            'kwh_consumed' => 1.2,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'connector_id' => 2,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('connector_id', 2);
+
+        $this->assertSame(2, ChargingSession::query()
+            ->where('user_id', $user->id)
+            ->where('station_id', $station->id)
+            ->whereNull('end_time')
+            ->count());
+    }
+
+    public function test_stop_can_target_specific_connector_for_user_with_two_sessions(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'dual-stop-user@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Charging'],
+                    2 => ['connectorId' => 2, 'status' => 'Charging'],
+                ],
+            ],
+        ]);
+
+        $sessionPort1 = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'start_source' => 'app',
+            'start_time' => now()->subMinutes(10),
+            'kwh_consumed' => 2,
+        ]);
+
+        $sessionPort2 = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 2,
+            'start_source' => 'app',
+            'start_time' => now()->subMinutes(3),
+            'kwh_consumed' => 0.5,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/stop', [
+                'station_id' => $station->id,
+                'connector_id' => 2,
+            ])
+            ->assertOk()
+            ->assertJsonPath('session.id', $sessionPort2->id);
+
+        $this->assertNull($sessionPort1->fresh()->end_time);
+        $this->assertNotNull($sessionPort2->fresh()->end_time);
+    }
+
     public function test_resolve_start_connector_skips_port_with_active_session(): void
     {
         $user = $this->createPersonalUser();

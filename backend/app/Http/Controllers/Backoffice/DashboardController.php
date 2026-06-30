@@ -688,7 +688,7 @@ class DashboardController extends Controller
         $data['reservation_require_for_start'] = filter_var($data['reservation_require_for_start'] ?? false, FILTER_VALIDATE_BOOL);
         $data['reservation_fee'] = round((float) ($data['reservation_fee'] ?? 15), 2);
         $data['reservation_no_show_fee'] = round((float) ($data['reservation_no_show_fee'] ?? 30), 2);
-        $data['reservation_max_duration_minutes'] = (int) ($data['reservation_max_duration_minutes'] ?? 120);
+        $data['reservation_max_duration_minutes'] = (int) ($data['reservation_max_duration_minutes'] ?? 60);
         $data['reservation_advance_days'] = (int) ($data['reservation_advance_days'] ?? 14);
         $data['reservation_grace_minutes'] = (int) ($data['reservation_grace_minutes'] ?? 20);
         $data['ocpp_connection_status'] = $data['ocpp_identity']

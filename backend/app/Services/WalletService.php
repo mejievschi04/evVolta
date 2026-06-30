@@ -216,28 +216,39 @@ class WalletService
 
     public function settleSession(ChargingSession $session, float $pricePerKwh): float
     {
-        $session->loadMissing('user');
-        $user = $session->user;
+        return DB::transaction(function () use ($session, $pricePerKwh): float {
+            $session = ChargingSession::query()
+                ->whereKey($session->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $session->loadMissing('user');
 
-        if (! $this->enabled() || ! $user?->usesCardPayment()) {
-            return round((float) $session->kwh_consumed * $pricePerKwh, 2);
-        }
+            $user = $session->user;
+            $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
+            $budget = (float) ($session->charge_budget ?? 0);
 
-        $budget = (float) ($session->charge_budget ?? 0);
-        $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
+            if (! $user?->usesCardPayment() || $budget <= 0) {
+                return $actualCost;
+            }
 
-        if ($budget <= 0) {
-            return $actualCost;
-        }
+            $user = User::query()
+                ->whereKey($user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $charged = round(min($actualCost, $budget), 2);
-        $refund = round(max(0, $budget - $charged), 2);
+            $charged = round(min($actualCost, $budget), 2);
+            $refund = round(max(0, $budget - $charged), 2);
 
-        if ($refund > 0) {
-            $user->increment('wallet_balance', $refund);
-        }
+            if ($refund > 0) {
+                $user->increment('wallet_balance', $refund);
+            }
 
-        return $charged;
+            // Mark the hold as settled by shrinking the remaining budget to the
+            // charged amount. Re-running settlement then computes a zero refund.
+            $session->update(['charge_budget' => $charged]);
+
+            return $charged;
+        });
     }
 
     public function creditTopup(

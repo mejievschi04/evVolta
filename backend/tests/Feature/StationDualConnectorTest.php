@@ -63,4 +63,44 @@ class StationDualConnectorTest extends TestCase
         $this->assertSame(3.52, $byId[2]['power_kw']);
         $this->assertSame(0.101, $byId[2]['energy_kwh']);
     }
+
+    public function test_station_level_availability_is_available_when_any_port_is_free(): void
+    {
+        $station = Station::query()->create([
+            'name' => 'VOLTA dual',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Charging'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $this->assertSame(Station::STATUS_AVAILABLE, $station->liveStatus()['availability']);
+        $this->assertSame(Station::STATUS_AVAILABLE, $station->displayStatus());
+
+        $this->assertSame(Station::STATUS_CHARGING, $station->liveStatus(1)['availability']);
+        $this->assertSame(Station::STATUS_AVAILABLE, $station->liveStatus(2)['availability']);
+    }
+
+    public function test_station_level_availability_is_charging_when_all_ports_busy(): void
+    {
+        $station = Station::query()->create([
+            'name' => 'VOLTA dual',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Charging'],
+                    2 => ['connectorId' => 2, 'status' => 'Charging'],
+                ],
+            ],
+        ]);
+
+        $this->assertSame(Station::STATUS_CHARGING, $station->liveStatus()['availability']);
+    }
 }

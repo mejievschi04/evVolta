@@ -611,7 +611,12 @@ class OcppServe extends Command
     private function onStartTransaction(Station $station, array $payload): array
     {
         $idTag = (string) ($payload['idTag'] ?? '');
-        $connectorId = max(1, (int) ($payload['connectorId'] ?? 1));
+        $rawConnectorId = (int) ($payload['connectorId'] ?? 0);
+        if ($rawConnectorId <= 0 && $station->expectedConnectorCount() > 1) {
+            return ['transactionId' => 0, 'idTagInfo' => ['status' => 'Invalid']];
+        }
+
+        $connectorId = max(1, $rawConnectorId);
         $meterStart = $this->normalizeMeterStartFromOcpp($payload['meterStart'] ?? null);
         $startedAt = $this->parseOcppTime($payload['timestamp'] ?? null);
         $user = $this->userFromIdTag($idTag);
@@ -627,14 +632,21 @@ class OcppServe extends Command
         }
 
         if (! $session) {
-            $session = ChargingSession::query()
+            $query = ChargingSession::query()
                 ->where('station_id', $station->id)
                 ->where('user_id', $user->id)
-                ->whereNull('end_time')
-                ->where(function ($query) use ($connectorId) {
+                ->whereNull('end_time');
+
+            if ($station->expectedConnectorCount() > 1) {
+                $query->where('ocpp_connector_id', $connectorId);
+            } else {
+                $query->where(function ($query) use ($connectorId) {
                     $query->where('ocpp_connector_id', $connectorId)
                         ->orWhereNull('ocpp_connector_id');
-                })
+                });
+            }
+
+            $session = $query
                 ->latest('id')
                 ->first();
         }
@@ -831,7 +843,13 @@ class OcppServe extends Command
         $station->update([
             'last_ocpp_message_at' => now(),
         ]);
-        $station->markConnectorAvailable((int) ($session?->ocpp_connector_id ?: 1));
+
+        // Free the exact connector that stopped. Prefer the session's port, then the
+        // payload connector. Never blindly default to port 1 on a dual-port charger.
+        $releaseConnectorId = (int) ($session?->ocpp_connector_id ?: $connectorId);
+        if ($releaseConnectorId > 0) {
+            $station->markConnectorAvailable($releaseConnectorId);
+        }
 
         return ['idTagInfo' => ['status' => 'Accepted']];
     }
@@ -946,6 +964,20 @@ class OcppServe extends Command
                 'error_message' => $errorCode . ': ' . $description,
                 'acknowledged_at' => now(),
             ]);
+
+            // A failed ReserveNow leaves the reservation stuck in "pending" with the
+            // booking fee charged. Roll it back so the slot frees up and the fee is refunded.
+            if ($command->action === 'ReserveNow') {
+                $reservationId = (int) ($command->payload['reservationId'] ?? 0);
+                $reservation = \App\Models\Reservation::query()
+                    ->where('station_id', $station->id)
+                    ->where('ocpp_reservation_id', $reservationId)
+                    ->first();
+
+                if ($reservation) {
+                    app(\App\Services\ReservationService::class)->handleOcppReserveFailed($reservation);
+                }
+            }
         }
 
         $this->recordMessage($station, 'inbound', $uid, $command?->action . 'Error', [
@@ -1194,6 +1226,14 @@ class OcppServe extends Command
                 ->first();
         }
 
+        if ($station->expectedConnectorCount() > 1) {
+            $matches = (clone $query)
+                ->limit(2)
+                ->get();
+
+            return $matches->count() === 1 ? $matches->first() : null;
+        }
+
         return $query->latest('id')->first();
     }
 
@@ -1216,6 +1256,14 @@ class OcppServe extends Command
                 ->where('ocpp_connector_id', $connectorId)
                 ->latest('id')
                 ->first();
+        }
+
+        if ($station->expectedConnectorCount() > 1) {
+            $matches = (clone $query)
+                ->limit(2)
+                ->get();
+
+            return $matches->count() === 1 ? $matches->first() : null;
         }
 
         return $query->latest('id')->first();
@@ -1304,6 +1352,7 @@ class OcppServe extends Command
 
         $query = ChargingSession::query()
             ->where('station_id', $station->id)
+            ->whereNull('end_time')
             ->where(function ($query) use ($transactionId): void {
                 $query->where('ocpp_transaction_id', $transactionId);
 
