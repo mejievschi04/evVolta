@@ -7,7 +7,6 @@ use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\OcppCommand;
 use App\Models\OcppMessage;
-use App\Models\RegistrationRequest;
 use App\Models\Station;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +25,6 @@ class PurgeTestData extends Command
             OcppCommand::query()->delete();
             Invoice::query()->delete();
             ChargingSession::query()->delete();
-            RegistrationRequest::query()->delete();
 
             Station::query()->update([
                 'status' => Station::STATUS_AVAILABLE,

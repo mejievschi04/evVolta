@@ -43,7 +43,6 @@ const sections = [
   { id: 'clients', label: 'Clienti', icon: Users },
   { id: 'wallet', label: 'Alimentari', icon: Wallet },
   { id: 'personal', label: 'Personal', icon: FileText },
-  { id: 'requests', label: 'Cereri', icon: ClipboardList },
   { id: 'invoices', label: 'Facturi', icon: Receipt },
   { id: 'audit', label: 'Audit', icon: ShieldCheck },
   { id: 'settings', label: 'Setari', icon: Settings }
@@ -57,7 +56,6 @@ const endpoints = {
   clients: '/backoffice/users?account_type=customer',
   wallet: '/backoffice/wallet-topups',
   personal: '/backoffice/users?account_type=personal',
-  requests: '/backoffice/registration-requests',
   invoices: '/backoffice/invoices',
   audit: '/backoffice/audit-logs'
 };
@@ -72,7 +70,6 @@ const emptyData = {
   walletRefunds: [],
   walletSummary: null,
   personal: [],
-  requests: [],
   invoices: [],
   audit: []
 };
@@ -1133,7 +1130,6 @@ function DashboardView({ dashboard: initialDashboard, loading: parentLoading, ac
               <DetailMetric label="Total facturat" value={formatCurrency(analytics?.revenue?.invoicedTotal ?? stats?.totalRevenue)} helper={`${formatCurrency(analytics?.revenue?.paidTotal)} incasat`} />
               <DetailMetric label="Alimentari luna" value={formatCurrency(analytics?.wallet?.topupsMonth)} helper={`azi ${formatCurrency(analytics?.wallet?.topupsToday ?? stats?.walletTopupsVolumeToday)}`} />
               <DetailMetric label="Utilizatori" value={formatNumber(stats?.users)} helper={`${formatNumber(analytics?.users?.customer)} prepay`} />
-              <DetailMetric label="Cereri" value={formatNumber(stats?.pendingRequests)} helper="in asteptare" />
               <DetailMetric label="kWh luna" value={`${formatKwh(analytics?.energy?.month)} kWh`} helper={`${formatNumber(analytics?.sessions?.month)} sesiuni`} />
               <DetailMetric label="OCPP" value={formatNumber(stats?.connectedStations)} helper={`mod ${ocpp?.mode ?? '-'}`} />
             </div>
@@ -2748,107 +2744,6 @@ function StationDetailModal({
   );
 }
 
-const requestStatusFilters = [
-  { id: '', label: 'Toate' },
-  { id: 'pending', label: 'In asteptare' },
-  { id: 'approved', label: 'Aprobate' },
-  { id: 'rejected', label: 'Respinse' }
-];
-
-function RequestsView({ rows, loading, onApprove, onReject }) {
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const pendingCount = rows.filter((request) => request.status === 'pending').length;
-  const sortedRows = [...rows].sort((left, right) => {
-    const order = { pending: 0, approved: 1, rejected: 2 };
-    const statusDiff = (order[left.status] ?? 9) - (order[right.status] ?? 9);
-
-    if (statusDiff !== 0) {
-      return statusDiff;
-    }
-
-    return right.id - left.id;
-  });
-  const visibleRows = sortedRows.filter((request) => {
-    if (statusFilter && request.status !== statusFilter) {
-      return false;
-    }
-
-    return matchesQuery(request, query, [
-      (item) => item.name,
-      (item) => item.email,
-      (item) => item.phone,
-      (item) => item.status,
-      (item) => statusLabel(item.status)
-    ]);
-  });
-
-  if (loading) return <LoadingState />;
-
-  return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h2>Cereri inregistrare</h2>
-          <p>{pendingCount > 0 ? `${pendingCount} in asteptare` : 'Istoric cereri procesate'}</p>
-        </div>
-        <ClipboardList size={20} />
-      </div>
-      <div className="status-filters">
-        {requestStatusFilters.map((filter) => (
-          <button
-            className={statusFilter === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
-            key={filter.id || 'all'}
-            onClick={() => setStatusFilter(filter.id)}
-            type="button"
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
-      <Toolbar value={query} onChange={setQuery} />
-      {rows.length === 0 ? (
-        <EmptyState title="Nu exista cereri" />
-      ) : visibleRows.length === 0 ? (
-        <EmptyState title="Nicio cerere gasita" detail="Schimba filtrul sau termenul de cautare." />
-      ) : (
-        visibleRows.map((request) => {
-          const isPending = request.status === 'pending';
-
-          return (
-            <div className="request-row" key={request.id}>
-              <div>
-                <strong>{request.name}</strong>
-                <p>{request.email}</p>
-                {request.phone && <p>{request.phone}</p>}
-                {request.processed_at && (
-                  <p className="request-meta">
-                    Procesata: {new Date(request.processed_at).toLocaleString('ro-RO')}
-                  </p>
-                )}
-              </div>
-              <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
-              <div className="row-actions">
-                {isPending ? (
-                  <>
-                    <button className="secondary-button" onClick={() => onReject(request)} type="button">Respinge</button>
-                    <button className="primary-button" onClick={() => onApprove(request)} type="button">
-                      <CheckCircle2 size={17} />
-                      Aproba
-                    </button>
-                  </>
-                ) : (
-                  <span className="request-meta">Cont creat in Utilizatori</span>
-                )}
-              </div>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
 function SettingsView({ dashboard, compact = false, onSubmit }) {
   const currentUser = dashboard?.currentUser;
   const currentTariff = dashboard?.currentTariff;
@@ -3378,7 +3273,6 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         personalTariff={personalTariff}
       />
     ),
-    requests: <RequestsView rows={data.requests} loading={loading} onApprove={actions.approveRequest} onReject={actions.rejectRequest} />,
     invoices: <InvoicesView rows={data.invoices} loading={loading} onDownload={actions.downloadInvoice} onSend={actions.sendInvoice} onDelete={actions.deleteInvoice} />,
     audit: <AuditView rows={data.audit} loading={loading} onOpenDetail={actions.openAuditDetail} />,
     settings: (
@@ -3423,7 +3317,6 @@ export default function App() {
   const currentUser = data.dashboard?.currentUser;
   const operatorName = currentUser?.name || currentUser?.email || 'Admin';
   const dashboardStats = data.dashboard?.stats;
-  const pendingRequests = dashboardStats?.pendingRequests ?? 0;
 
   useEffect(() => {
     if (authRequired) {
@@ -3734,36 +3627,6 @@ export default function App() {
     );
   }
 
-  async function approveRequest(request) {
-    if (request.status !== 'pending') {
-      return;
-    }
-
-    const password = window.prompt('Parola pentru userul aprobat (minim 6 caractere):');
-    if (!password) {
-      return;
-    }
-
-    await runAction(
-      () => mutateJson(`/backoffice/registration-requests/${request.id}/approve`, {
-        password,
-        password_confirmation: password
-      }),
-      'Cererea a fost aprobata.'
-    );
-  }
-
-  async function rejectRequest(request) {
-    if (request.status !== 'pending') {
-      return;
-    }
-
-    await runAction(
-      () => mutateJson(`/backoffice/registration-requests/${request.id}/reject`),
-      'Cererea a fost respinsa.'
-    );
-  }
-
   async function saveSettings(event) {
     event.preventDefault();
     const raw = formDataToObject(event.currentTarget);
@@ -3871,8 +3734,6 @@ export default function App() {
     openWalletRefund,
     creditUserWallet,
     updateUserAccount,
-    approveRequest,
-    rejectRequest,
     saveSettings
   };
 
@@ -3888,7 +3749,6 @@ export default function App() {
           {sections.map((section) => (
             <SectionButton
               active={activeSection === section.id}
-              badge={section.id === 'requests' ? pendingRequests : 0}
               key={section.id}
               onClick={setActiveSection}
               section={section}
@@ -3913,17 +3773,6 @@ export default function App() {
               <TopMetric label="Neplatite" value={formatNumber(dashboardStats?.unpaidInvoices)} icon={CircleDollarSign} />
               <TopMetric label="Online" value={formatNumber(dashboardStats?.availableStations)} icon={RadioTower} />
             </div>
-            {pendingRequests > 0 ? (
-              <button
-                className="icon-button alert-button"
-                onClick={() => setActiveSection('requests')}
-                type="button"
-                aria-label="Cereri in asteptare"
-              >
-                <Bell size={18} />
-                <span className="nav-badge">{pendingRequests}</span>
-              </button>
-            ) : null}
             <span className="operator" title={operatorName}>{initialsFrom(operatorName)}</span>
           </div>
         </header>

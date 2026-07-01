@@ -8,7 +8,6 @@ use App\Models\AuditLog;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\OcppCommand;
-use App\Models\RegistrationRequest;
 use App\Models\Reservation;
 use App\Models\Station;
 use App\Models\Tariff;
@@ -41,41 +40,6 @@ use Illuminate\Support\Str;
 
 class DashboardController extends Controller
 {
-    private const AUDIT_ENTITY_OPTIONS = [
-        'charging-session' => ChargingSession::class,
-        'registration-request' => RegistrationRequest::class,
-        'station' => Station::class,
-        'tariff' => Tariff::class,
-        'invoice' => Invoice::class,
-        'user' => User::class,
-    ];
-
-    private const STATION_STATUS_OPTIONS = [
-        '' => 'Toate statusurile',
-        Station::STATUS_AVAILABLE => 'Disponibile',
-        Station::STATUS_CHARGING => 'In incarcare',
-        Station::STATUS_OFFLINE => 'Neconectate',
-    ];
-
-    private const SESSION_STATUS_OPTIONS = [
-        '' => 'Toate sesiunile',
-        'active' => 'Doar active',
-        'closed' => 'Doar inchise',
-    ];
-
-    private const INVOICE_STATUS_OPTIONS = [
-        '' => 'Toate facturile',
-        'unpaid' => 'Neplatite',
-        'paid' => 'Platite',
-    ];
-
-    private const REQUEST_STATUS_OPTIONS = [
-        '' => 'Toate cererile',
-        RegistrationRequest::STATUS_PENDING => 'In asteptare',
-        RegistrationRequest::STATUS_APPROVED => 'Aprobate',
-        RegistrationRequest::STATUS_REJECTED => 'Respinse',
-    ];
-
     public function __construct(
         private readonly AuditLogService $auditLogService,
         private readonly BillingService $billingService,
@@ -317,7 +281,6 @@ class DashboardController extends Controller
                 'activeSessions' => ChargingSession::query()->whereNull('end_time')->count(),
                 'totalRevenue' => round((float) Invoice::query()->sum('total_amount'), 2),
                 'unpaidInvoices' => Invoice::query()->where('status', '!=', 'paid')->count(),
-                'pendingRequests' => RegistrationRequest::query()->where('status', RegistrationRequest::STATUS_PENDING)->count(),
                 'walletTopupsPaidToday' => WalletTopup::query()
                     ->where('status', 'paid')
                     ->whereDate('paid_at', $today)
@@ -1674,100 +1637,6 @@ class DashboardController extends Controller
                 'created_at',
             ]),
         ]);
-    }
-
-    public function registrationRequests(Request $request): JsonResponse
-    {
-        $status = trim((string) $request->query('status', ''));
-        $allowedStatuses = [
-            RegistrationRequest::STATUS_PENDING,
-            RegistrationRequest::STATUS_APPROVED,
-            RegistrationRequest::STATUS_REJECTED,
-        ];
-
-        $query = RegistrationRequest::query();
-
-        if ($status !== '' && in_array($status, $allowedStatuses, true)) {
-            $query->where('status', $status);
-        }
-
-        return response()->json([
-            'data' => $query
-                ->orderByRaw("CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END")
-                ->latest('id')
-                ->limit(100)
-                ->get(),
-        ]);
-    }
-
-    public function approveRegistrationRequest(Request $request, RegistrationRequest $registrationRequest): JsonResponse|RedirectResponse
-    {
-        if ($registrationRequest->status !== RegistrationRequest::STATUS_PENDING) {
-            return $this->respondMutationError($request, 'Cererea nu mai este in asteptare.');
-        }
-
-        if (User::query()->where('email', $registrationRequest->email)->exists()) {
-            return $this->respondMutationError($request, 'Exista deja un utilizator cu acest e-mail.');
-        }
-
-        $data = $request->validate([
-            'password' => ['required', 'string', 'min:6', 'confirmed'],
-        ]);
-
-        DB::transaction(function () use ($registrationRequest, $data) {
-            $user = User::query()->create([
-                'name' => $registrationRequest->name,
-                'email' => $registrationRequest->email,
-                'password' => $data['password'],
-                'currency' => 'MDL',
-            ]);
-            $user->forceFill([
-                'is_admin' => false,
-                'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
-            ])->save();
-
-            $registrationRequest->update([
-                'status' => RegistrationRequest::STATUS_APPROVED,
-                'processed_at' => now(),
-            ]);
-
-            $this->auditLogService->record(
-                action: 'backoffice.registration.approved',
-                actor: $this->backofficeActor(),
-                subjectType: RegistrationRequest::class,
-                subjectId: $registrationRequest->id,
-                metadata: [
-                    'user_id' => $user->id,
-                    'email' => $registrationRequest->email,
-                ]
-            );
-        });
-
-        return $this->respondMutation($request, 'Utilizatorul a fost creat si cererea a fost aprobata.');
-    }
-
-    public function rejectRegistrationRequest(Request $request, RegistrationRequest $registrationRequest): JsonResponse|RedirectResponse
-    {
-        if ($registrationRequest->status !== RegistrationRequest::STATUS_PENDING) {
-            return $this->respondMutationError($request, 'Cererea nu mai este in asteptare.');
-        }
-
-        $registrationRequest->update([
-            'status' => RegistrationRequest::STATUS_REJECTED,
-            'processed_at' => now(),
-        ]);
-
-        $this->auditLogService->record(
-            action: 'backoffice.registration.rejected',
-            actor: $this->backofficeActor(),
-            subjectType: RegistrationRequest::class,
-            subjectId: $registrationRequest->id,
-            metadata: [
-                'email' => $registrationRequest->email,
-            ]
-        );
-
-        return $this->respondMutation($request, 'Cererea a fost respinsa.');
     }
 
     public function invoices(Request $request): JsonResponse

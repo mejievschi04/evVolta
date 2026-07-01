@@ -4,7 +4,6 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChargingController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\PaymentController;
-use App\Http\Controllers\Api\RegistrationRequestController;
 use App\Http\Controllers\Api\ReservationController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\WalletController;
@@ -14,10 +13,6 @@ use App\Http\Controllers\Api\StationController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
-Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
-Route::post('/register-request', [RegistrationRequestController::class, 'store'])->middleware('throttle:10,1');
-Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle']);
-
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
     ->middleware('throttle:120,1');
 

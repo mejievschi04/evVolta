@@ -501,17 +501,6 @@ class Station extends Model
         return null;
     }
 
-    public function vehicleConnectedConnectorId(?array $connectors = null): ?int
-    {
-        return $this->detectConnectedConnectorId($connectors);
-    }
-
-    /** @deprecated Use detectConnectedConnectorId() */
-    public function connectedConnectorId(?array $connectors = null): ?int
-    {
-        return $this->detectConnectedConnectorId($connectors);
-    }
-
     /**
      * @return list<int>
      */
@@ -528,16 +517,6 @@ class Station extends Model
             ->map(static fn ($id) => (int) $id)
             ->values()
             ->all();
-    }
-
-    /**
-     * @return list<int>
-     */
-    public function vehicleConnectedConnectorIds(?array $connectors = null): array
-    {
-        $detected = $this->detectConnectedConnectorId($connectors);
-
-        return $detected ? [$detected] : [];
     }
 
     /**

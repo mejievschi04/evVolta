@@ -5,9 +5,7 @@ use App\Http\Controllers\Backoffice\DashboardController;
 use App\Http\Controllers\Payments\StripeRedirectController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::get('/', fn () => redirect()->route('backoffice.login'));
 
 Route::prefix('backoffice')->middleware('security.headers')->group(function () {
     Route::get('/', fn () => redirect()->route('backoffice.login'))->name('backoffice.root');
@@ -44,9 +42,6 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
             ->middleware('throttle:10,1')
             ->name('backoffice.users.wallet_credit');
         Route::post('/users', [DashboardController::class, 'storeUser'])->name('backoffice.users.store');
-        Route::get('/registration-requests', [DashboardController::class, 'registrationRequests'])->name('backoffice.registration_requests');
-        Route::post('/registration-requests/{registrationRequest}/approve', [DashboardController::class, 'approveRegistrationRequest'])->name('backoffice.registration_requests.approve');
-        Route::post('/registration-requests/{registrationRequest}/reject', [DashboardController::class, 'rejectRegistrationRequest'])->name('backoffice.registration_requests.reject');
         Route::get('/wallet-topups', [DashboardController::class, 'walletTopups'])->name('backoffice.wallet_topups');
         Route::post('/wallet-topups/{topup}/refund', [DashboardController::class, 'refundWalletTopup'])->name('backoffice.wallet_topups.refund');
         Route::get('/invoices', [DashboardController::class, 'invoices'])->name('backoffice.invoices');

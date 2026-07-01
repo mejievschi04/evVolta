@@ -216,7 +216,6 @@ button {
 .stat-card p,
 .stat-card span,
 .compact-row p,
-.request-row p,
 .table-row p {
   margin: 0;
   color: var(--muted);
@@ -2062,8 +2061,7 @@ button {
 }
 
 .table-row,
-.compact-row,
-.request-row {
+.compact-row {
   display: grid;
   align-items: center;
   gap: 14px;
@@ -2081,8 +2079,7 @@ button {
 }
 
 .table-row:hover,
-.compact-row:hover,
-.request-row:hover {
+.compact-row:hover {
   border-color: rgba(228, 255, 33, 0.28);
   background-color: rgba(15, 18, 11, 0.86);
   transform: translateY(-1px);
@@ -2280,11 +2277,6 @@ button {
 .diagnostics-result span {
   overflow-wrap: anywhere;
   font-size: 13px;
-}
-
-.request-row {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  margin-bottom: 10px;
 }
 
 .status-filters {
@@ -2969,10 +2961,6 @@ button {
 
   .top-metric {
     justify-content: space-between;
-  }
-
-  .request-row {
-    grid-template-columns: 1fr;
   }
 
   .row-actions {

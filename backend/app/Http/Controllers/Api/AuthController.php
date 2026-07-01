@@ -17,54 +17,6 @@ class AuthController extends Controller
     ) {
     }
 
-    public function register(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'name' => 'required|string|min:2|max:255',
-            'email' => [
-                'required',
-                'email',
-                'max:255',
-                Rule::unique('users', 'email'),
-            ],
-            'password' => ['required', 'string', 'min:6', 'confirmed'],
-        ], [
-            'email.unique' => 'Acest e-mail este deja folosit.',
-        ]);
-
-        $user = User::query()->create([
-            'name' => trim($data['name']),
-            'email' => strtolower(trim($data['email'])),
-            'password' => $data['password'],
-            'currency' => 'MDL',
-        ]);
-
-        $user->forceFill([
-            'is_admin' => false,
-            'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
-        ])->save();
-
-        $token = Auth::guard('api')->login($user);
-
-        $this->auditLogService->record(
-            action: 'auth.register',
-            actor: $user,
-            subjectType: User::class,
-            subjectId: $user->id,
-            metadata: [
-                'email' => $user->email,
-                'ip' => $request->ip(),
-            ],
-        );
-
-        return response()->json([
-            'message' => 'Contul a fost creat.',
-            'access_token' => $token,
-            'token_type' => 'bearer',
-            'user' => $user->fresh(),
-        ], 201);
-    }
-
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
