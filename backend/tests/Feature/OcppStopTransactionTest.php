@@ -65,6 +65,59 @@ class OcppStopTransactionTest extends TestCase
         $this->assertSame(0.45, (float) $session->kwh_consumed);
         $this->assertSame(1.45, (float) $session->meter_stop_kwh);
         $this->assertSame('app', $session->stop_source);
+        $this->assertSame('SoftReset', $session->ocpp_stop_reason);
+        $this->assertIsArray($session->ocpp_stop_context);
+        $this->assertSame('StopTransaction', $session->ocpp_stop_context['trigger'] ?? null);
+    }
+
+    public function test_stop_transaction_other_reason_sets_ocpp_stop_source(): void
+    {
+        $user = User::query()->create([
+            'name' => 'Driver',
+            'email' => 'other-reason@example.test',
+            'password' => bcrypt('password123'),
+        ]);
+
+        $station = Station::query()->create([
+            'name' => 'VOLTA dual',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_identity' => '5D419400481F59D750010068',
+            'meter_value_kwh' => 2.0,
+        ]);
+
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 2,
+            'ocpp_transaction_id' => '42',
+            'start_time' => now()->subMinutes(12),
+            'meter_start_kwh' => 1.0,
+            'kwh_consumed' => 0.8,
+        ]);
+
+        $command = app(OcppServe::class);
+        $method = (new ReflectionClass($command))->getMethod('onStopTransaction');
+        $method->setAccessible(true);
+
+        $method->invoke(
+            $command,
+            $station,
+            [
+                'transactionId' => 42,
+                'connectorId' => 2,
+                'meterStop' => 1800,
+                'timestamp' => now()->toIso8601String(),
+                'reason' => 'Other',
+            ],
+            app(\App\Services\BillingService::class)
+        );
+
+        $session->refresh();
+
+        $this->assertNotNull($session->end_time);
+        $this->assertSame('ocpp', $session->stop_source);
+        $this->assertSame('Other', $session->ocpp_stop_reason);
     }
 
     public function test_ghost_stop_transaction_on_pending_session_is_ignored(): void

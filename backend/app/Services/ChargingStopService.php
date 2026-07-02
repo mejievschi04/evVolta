@@ -6,6 +6,7 @@ use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\OcppCommand;
 use App\Models\Station;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -92,8 +93,10 @@ class ChargingStopService
         string $stopSource = 'app',
         ?Carbon $endTime = null,
         ?float $meterStopKwh = null,
+        ?string $ocppStopReason = null,
+        ?array $ocppStopContext = null,
     ): array {
-        return DB::transaction(function () use ($session, $station, $stopSource, $endTime, $meterStopKwh): array {
+        return DB::transaction(function () use ($session, $station, $stopSource, $endTime, $meterStopKwh, $ocppStopReason, $ocppStopContext): array {
             $station = Station::query()
                 ->whereKey($station->id)
                 ->lockForUpdate()
@@ -147,12 +150,22 @@ class ChargingStopService
             }
         }
 
-        $session->update([
+        $update = [
             'end_time' => $endTime,
             'kwh_consumed' => $kwhConsumed,
             'meter_stop_kwh' => $meterStop,
             'stop_source' => $stopSource,
-        ]);
+        ];
+
+        if ($ocppStopReason !== null && $ocppStopReason !== '') {
+            $update['ocpp_stop_reason'] = $ocppStopReason;
+        }
+
+        if ($ocppStopContext !== null && $ocppStopContext !== []) {
+            $update['ocpp_stop_context'] = $ocppStopContext;
+        }
+
+        $session->update($update);
 
         $invoice = $this->billingService->finalizeBillingForSession($session->fresh());
         $station->markConnectorAvailable((int) ($session->ocpp_connector_id ?: 1));
@@ -236,7 +249,180 @@ class ChargingStopService
             return null;
         }
 
-        return $this->finalizeStop($session, $station->fresh(), $stopSource)['session'];
+        $stopContext = app(OcppSessionDebugService::class)->buildStopContext(
+            $station,
+            $session,
+            'StatusNotification:' . $connectorStatus,
+            ['status_notification_connector_id' => $connectorId]
+        );
+
+        return $this->finalizeStop(
+            $session,
+            $station->fresh(),
+            $stopSource,
+            null,
+            null,
+            null,
+            $stopContext
+        )['session'];
+    }
+
+    /**
+     * Keep at most one open session per user + station + connector.
+     * Closes duplicate rows and abandoned zombies before a new start.
+     */
+    public function reconcileOpenSessionsBeforeStart(
+        Station $station,
+        int $userId,
+        int $connectorId
+    ): ?ChargingSession {
+        $station = $station->fresh();
+
+        $open = ChargingSession::query()
+            ->where('station_id', $station->id)
+            ->where('user_id', $userId)
+            ->where('ocpp_connector_id', $connectorId)
+            ->whereNull('end_time')
+            ->orderByDesc('id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($open->isEmpty()) {
+            return null;
+        }
+
+        $keep = $open
+            ->filter(fn (ChargingSession $session) => $this->sessionIsCurrentlyCharging($session, $station))
+            ->sortByDesc('id')
+            ->first() ?? $open->first();
+
+        foreach ($open as $session) {
+            if ((int) $session->id === (int) $keep->id) {
+                continue;
+            }
+
+            $this->finalizeStop(
+                $session,
+                $station,
+                'system',
+                null,
+                null,
+                'StaleDuplicate',
+                ['trigger' => 'reconcile_duplicate']
+            );
+        }
+
+        if ($keep && $this->shouldCloseStaleAbandonedSession($keep, $station)) {
+            $this->finalizeStop(
+                $keep,
+                $station,
+                'system',
+                null,
+                null,
+                'StaleAbandoned',
+                ['trigger' => 'reconcile_abandoned']
+            );
+
+            return null;
+        }
+
+        return $keep?->fresh();
+    }
+
+    public function reconcileAllOpenSessionsForUser(User|int $user): void
+    {
+        $userId = $user instanceof User ? (int) $user->id : (int) $user;
+
+        $openSessions = ChargingSession::query()
+            ->with('station')
+            ->where('user_id', $userId)
+            ->whereNull('end_time')
+            ->whereNotNull('ocpp_connector_id')
+            ->orderByDesc('id')
+            ->get();
+
+        $seen = [];
+
+        foreach ($openSessions as $session) {
+            if (! $session->station) {
+                continue;
+            }
+
+            $key = $session->station_id . ':' . $session->ocpp_connector_id;
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+
+            DB::transaction(function () use ($session, $userId): void {
+                $station = Station::query()
+                    ->whereKey($session->station_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $station) {
+                    return;
+                }
+
+                $this->reconcileOpenSessionsBeforeStart(
+                    $station,
+                    $userId,
+                    (int) $session->ocpp_connector_id
+                );
+            });
+        }
+    }
+
+    private function shouldCloseStaleAbandonedSession(ChargingSession $session, Station $station): bool
+    {
+        if ($this->sessionIsCurrentlyCharging($session, $station)) {
+            return false;
+        }
+
+        if ($this->pendingRemoteStop($session)) {
+            return false;
+        }
+
+        $connectorId = (int) ($session->ocpp_connector_id ?: 1);
+        $status = $station->connectorOcppStatus($connectorId);
+
+        if (in_array($status, ['Charging', 'SuspendedEV', 'SuspendedEVSE'], true)) {
+            return false;
+        }
+
+        if (
+            $status === 'Preparing'
+            && $session->start_time
+            && $session->start_time->greaterThan(now()->subMinutes(3))
+        ) {
+            return false;
+        }
+
+        if (
+            $session->ocpp_transaction_id
+            && $session->start_time
+            && $session->start_time->greaterThan(now()->subMinutes(2))
+        ) {
+            return false;
+        }
+
+        if (! $session->ocpp_transaction_id) {
+            return $session->start_time === null
+                || $session->start_time->lessThanOrEqualTo(now()->subMinutes(2));
+        }
+
+        return in_array($status, ['Available', 'Finishing'], true)
+            && $this->shouldAutoFinalizeOnConnectorRelease($session, $station, $status);
+    }
+
+    public function sessionIsCurrentlyCharging(ChargingSession $session, Station $station): bool
+    {
+        $connectorId = (int) ($session->ocpp_connector_id ?: 1);
+        $status = $station->connectorOcppStatus($connectorId);
+
+        return in_array($status, ['Charging', 'SuspendedEV', 'SuspendedEVSE'], true);
     }
 
     private function sessionHadChargingActivity(ChargingSession $session): bool

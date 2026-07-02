@@ -151,6 +151,7 @@ class Station extends Model
         $isStale = $isGatewayMode && $isOnline
             && ($secondsSinceLastSeen === null || $secondsSinceLastSeen > ($heartbeatInterval * 2));
         $connectedConnectorId = $this->detectConnectedConnectorId($connectors);
+        $startCandidates = $user ? $this->startConnectorCandidatesForUser($user) : [];
         $connectorSummaries = $this->connectorsLiveSummary($connectors, $isGatewayMode, $isOnline, $isStale, $user);
 
         // Station-level availability (no specific connector requested) must reflect ALL ports:
@@ -167,9 +168,12 @@ class Station extends Model
 
         return [
             'availability' => $availability,
-            'can_start' => $connectedConnectorId
-                && $this->connectorCanStart($connectedConnectorId)
+            'can_start' => count($startCandidates) > 0
                 && (! $isGatewayMode || ($isOnline && ! $isStale)),
+            'requires_connector_selection' => count($startCandidates) > 1,
+            'auto_start_connector_id' => count($startCandidates) === 1 ? $startCandidates[0] : null,
+            'start_connector_candidates' => $this->startConnectorCandidateOptions($user),
+            'plugged_connector_ids' => $this->pluggedConnectorIds($connectors),
             'connection_status' => $isGatewayMode
                 ? ($isOnline
                     ? self::OCPP_CONNECTION_CONNECTED
@@ -359,6 +363,131 @@ class Station extends Model
             ->whereNull('end_time')
             ->where('ocpp_connector_id', $connectorId)
             ->exists();
+    }
+
+    public function connectorOccupiedByOtherUser(int $connectorId, int $userId): bool
+    {
+        return ChargingSession::query()
+            ->where('station_id', $this->id)
+            ->where('ocpp_connector_id', $connectorId)
+            ->whereNull('end_time')
+            ->where('user_id', '!=', $userId)
+            ->exists();
+    }
+
+    public function userHasActiveSessionOnConnector(int $connectorId, int $userId): bool
+    {
+        return ChargingSession::query()
+            ->where('station_id', $this->id)
+            ->where('ocpp_connector_id', $connectorId)
+            ->where('user_id', $userId)
+            ->whereNull('end_time')
+            ->exists();
+    }
+
+    /**
+     * Porturi pe care utilizatorul curent poate porni (nu sunt ocupate de alt user).
+     *
+     * @return list<int>
+     */
+    public function startConnectorCandidatesForUser(?User $user): array
+    {
+        if (! $user) {
+            return [];
+        }
+
+        $candidates = collect($this->expectedConnectorIds())
+            ->filter(fn (int $connectorId) => $this->connectorIsStartCandidateForUser($connectorId, $user))
+            ->values()
+            ->all();
+
+        $plugged = array_values(array_filter(
+            $candidates,
+            fn (int $connectorId) => $this->isPluggedConnectorStatus($this->connectorOcppStatus($connectorId))
+        ));
+
+        if (count($plugged) > 0) {
+            return $plugged;
+        }
+
+        return $candidates;
+    }
+
+    public function connectorIsStartCandidateForUser(int $connectorId, User $user): bool
+    {
+        if ($this->connectorOccupiedByOtherUser($connectorId, (int) $user->id)) {
+            return false;
+        }
+
+        if ($this->userHasActiveSessionOnConnector($connectorId, (int) $user->id)) {
+            return false;
+        }
+
+        if ($this->hasActiveSessionOnConnector($connectorId)) {
+            return false;
+        }
+
+        $status = $this->connectorOcppStatus($connectorId);
+
+        if ($status === null || $status === '') {
+            return false;
+        }
+
+        if (in_array($status, ['Charging', 'SuspendedEV', 'SuspendedEVSE'], true)) {
+            return false;
+        }
+
+        if (! $this->connectorCanStart($connectorId, $user)) {
+            return false;
+        }
+
+        if ($this->isPluggedConnectorStatus($status)) {
+            return true;
+        }
+
+        return in_array($status, self::STARTABLE_CONNECTOR_STATUSES, true);
+    }
+
+    public function resolveStartConnectorIdForUser(?User $user, ?int $requested = null): int
+    {
+        if ($requested !== null && $requested > 0) {
+            if (! $user || ! $this->connectorIsStartCandidateForUser($requested, $user)) {
+                throw new \RuntimeException('Conectorul selectat nu este disponibil pentru tine.', 422);
+            }
+
+            return $requested;
+        }
+
+        if ($user) {
+            $candidates = $this->startConnectorCandidatesForUser($user);
+
+            if (count($candidates) === 1) {
+                return $candidates[0];
+            }
+
+            if (count($candidates) > 1) {
+                throw new \RuntimeException(
+                    'Mai multe porturi au masina conectata. Alege portul A sau B in aplicatie.',
+                    422
+                );
+            }
+        }
+
+        return $this->resolveStartConnectorId($requested);
+    }
+
+    /**
+     * @return list<array{id: int, label: string}>
+     */
+    public function startConnectorCandidateOptions(?User $user): array
+    {
+        return collect($this->startConnectorCandidatesForUser($user))
+            ->map(fn (int $connectorId) => [
+                'id' => $connectorId,
+                'label' => self::connectorPortLabel($connectorId),
+            ])
+            ->values()
+            ->all();
     }
 
     public function connectorCanReserve(?int $connectorId, ?User $user = null): bool
@@ -745,8 +874,12 @@ class Station extends Model
                 $status = (string) ($connector['status'] ?? '');
                 $vehicleConnected = $isOnline
                     && ($this->isVehicleConnectedStatus($status)
+                        || $this->isPluggedConnectorStatus($status)
                         || ($status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id)));
-                $canStart = $this->connectorCanStart($id)
+                $canStart = $this->connectorCanStart($id, $user)
+                    && (! $isGatewayMode || ($isOnline && ! $isStale));
+                $canStartForUser = $user
+                    && $this->connectorIsStartCandidateForUser($id, $user)
                     && (! $isGatewayMode || ($isOnline && ! $isStale));
                 $canReserve = $this->connectorCanReserve($id, $user)
                     && (! $isGatewayMode || ($isOnline && ! $isStale));
@@ -761,6 +894,13 @@ class Station extends Model
                     'availability' => $availability,
                     'vehicle_connected' => $vehicleConnected,
                     'can_start' => $canStart,
+                    'can_start_for_user' => $canStartForUser,
+                    'occupied_by_other_user' => $user
+                        ? $this->connectorOccupiedByOtherUser($id, (int) $user->id)
+                        : false,
+                    'my_active_session' => $user
+                        ? $this->userHasActiveSessionOnConnector($id, (int) $user->id)
+                        : false,
                     'can_reserve' => $canReserve,
                     'is_stale_finishing' => $status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id),
                     'has_active_session' => $this->hasActiveSessionOnConnector($id),

@@ -86,11 +86,9 @@ class ChargingController extends Controller
                     if (! $station->connectorCanStart($requestedConnector, $user)) {
                         throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
                     }
-
-                    $connectorId = $requestedConnector;
-                } else {
-                    $connectorId = $station->resolveStartConnectorId(null);
                 }
+
+                $connectorId = $station->resolveStartConnectorIdForUser($user, $requestedConnector);
 
                 $this->reservationService->assertUserMayStart($user, $station, $connectorId);
 
@@ -107,6 +105,12 @@ class ChargingController extends Controller
                 if (! $station->canAcceptRemoteStart($connectorId, $user)) {
                     throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
                 }
+
+                $this->chargingStopService->reconcileOpenSessionsBeforeStart(
+                    $station,
+                    (int) $user->id,
+                    $connectorId
+                );
 
                 $activeOnConnector = ChargingSession::query()
                     ->where('station_id', $station->id)
@@ -125,12 +129,13 @@ class ChargingController extends Controller
                     ->where('ocpp_connector_id', $connectorId)
                     ->whereNull('end_time')
                     ->lockForUpdate()
+                    ->latest('id')
                     ->first();
 
                 if ($userSessionOnConnector) {
                     if (
                         $userSessionOnConnector->ocpp_transaction_id
-                        && $this->ocppService->sessionIsPhysicallyActive($userSessionOnConnector, $station)
+                        && $this->chargingStopService->sessionIsCurrentlyCharging($userSessionOnConnector, $station)
                     ) {
                         return [
                             'session' => $userSessionOnConnector->fresh(),
@@ -244,8 +249,18 @@ class ChargingController extends Controller
                 ];
             });
         } catch (RuntimeException $exception) {
+            $stationModel = isset($payload['station_id'])
+                ? Station::query()->find($payload['station_id'])
+                : null;
+            $candidates = $stationModel
+                ? $stationModel->startConnectorCandidateOptions($request->user())
+                : [];
+
             return response()->json([
                 'message' => $exception->getMessage(),
+                'requires_connector_selection' => count($candidates) > 1
+                    && str_contains($exception->getMessage(), 'Alege portul'),
+                'connectors' => $candidates,
             ], $exception->getCode() ?: 500);
         }
 

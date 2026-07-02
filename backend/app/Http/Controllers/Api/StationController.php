@@ -162,7 +162,7 @@ class StationController extends Controller
 
         $response = [
             'station_id' => $station->id,
-            'live_status' => $station->liveStatus(),
+            'live_status' => $station->liveStatus(null, $request->user()),
         ];
 
         if ($activeSession) {

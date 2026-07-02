@@ -18,6 +18,8 @@ class ChargingSession extends Model
         'meter_stop_kwh',
         'start_source',
         'stop_source',
+        'ocpp_stop_reason',
+        'ocpp_stop_context',
         'start_time',
         'end_time',
         'kwh_consumed',
@@ -35,6 +37,7 @@ class ChargingSession extends Model
         'meter_start_kwh' => 'float',
         'meter_stop_kwh' => 'float',
         'live_metrics' => 'array',
+        'ocpp_stop_context' => 'array',
     ];
 
     protected $appends = [

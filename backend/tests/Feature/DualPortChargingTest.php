@@ -250,7 +250,7 @@ class DualPortChargingTest extends TestCase
                 'NumberOfConnectors' => 2,
                 'connectors' => [
                     1 => ['connectorId' => 1, 'status' => 'Charging'],
-                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                    2 => ['connectorId' => 2, 'status' => 'Preparing'],
                 ],
             ],
         ]);
@@ -357,6 +357,82 @@ class DualPortChargingTest extends TestCase
             'kwh_consumed' => 0,
         ]);
 
-        $this->assertSame(2, $station->resolveStartConnectorId(2));
+        $this->assertSame(2, $station->resolveStartConnectorIdForUser($user, null));
+    }
+
+    public function test_both_ports_preparing_requires_explicit_connector_selection(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'dual-both-preparing@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Preparing'],
+                    2 => ['connectorId' => 2, 'status' => 'Preparing'],
+                ],
+            ],
+        ]);
+
+        $live = $station->liveStatus(null, $user);
+        $this->assertTrue($live['requires_connector_selection']);
+        $this->assertSame([1, 2], collect($live['start_connector_candidates'])->pluck('id')->all());
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('requires_connector_selection', true);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'connector_id' => 2,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('connector_id', 2);
+    }
+
+    public function test_single_port_preparing_auto_detects_connector(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'dual-single-preparing@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Preparing'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $live = $station->liveStatus(null, $user);
+        $this->assertFalse($live['requires_connector_selection']);
+        $this->assertSame(1, $live['auto_start_connector_id']);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('connector_id', 1);
     }
 }

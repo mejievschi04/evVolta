@@ -23,6 +23,8 @@ class SessionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $this->chargingStopService->reconcileAllOpenSessionsForUser($request->user());
+
         $sessions = ChargingSession::query()
             ->with('station')
             ->where('user_id', $request->user()->id)

@@ -3,6 +3,7 @@ import {
   Activity,
   BatteryCharging,
   Bell,
+  Bug,
   Calendar,
   CheckCircle2,
   CircleDollarSign,
@@ -397,6 +398,50 @@ function sessionKwhDelivered(session) {
 
 function sessionPowerKw(session) {
   return session?.power_kw_live ?? session?.telemetry?.power_kw ?? null;
+}
+
+function formatSessionStopInfo(session) {
+  if (!session?.end_time) {
+    return null;
+  }
+
+  const parts = [];
+
+  if (session.stop_source === 'app') {
+    parts.push('Oprire app');
+  } else if (session.stop_source === 'ocpp') {
+    parts.push('Oprire statie');
+  } else if (session.stop_source === 'backoffice') {
+    parts.push('Oprire backoffice');
+  }
+
+  if (session.ocpp_stop_reason) {
+    parts.push(`motiv ${session.ocpp_stop_reason}`);
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function ocppRelationLabel(relation) {
+  return {
+    session_stop: 'Oprire sesiune',
+    session_start: 'Start sesiune',
+    session_connector: 'Conector sesiune',
+    other_connector: 'Alt conector',
+    station_wide: 'Stație întreagă',
+    session_command: 'Comandă sesiune',
+    neutral: '—'
+  }[relation] ?? relation ?? '—';
+}
+
+function ocppRelationClass(relation) {
+  return {
+    session_stop: 'ocpp-timeline-stop',
+    other_connector: 'ocpp-timeline-other',
+    session_connector: 'ocpp-timeline-session',
+    station_wide: 'ocpp-timeline-reset',
+    session_command: 'ocpp-timeline-command'
+  }[relation] ?? '';
 }
 
 function effectiveStationStatus(station) {
@@ -1560,7 +1605,7 @@ function ReservationsView({ rows, loading }) {
   );
 }
 
-function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadInvoice }) {
+function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadInvoice, onDebug }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const visibleRows = rows.filter((session) => {
@@ -1616,6 +1661,9 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadIn
                 {session.target_kwh > 0 ? ` · limita ${formatKwh(session.target_kwh)} kWh` : ''}
               </p>
             )}
+            {formatSessionStopInfo(session) ? (
+              <p className="request-meta">{formatSessionStopInfo(session)}</p>
+            ) : null}
           </div>
           <span className="live-kwh">
             {formatKwh(sessionKwhDelivered(session))} kWh
@@ -1629,6 +1677,10 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadIn
           ) : null}
           <div className="row-actions end-actions">
             <strong>{session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}</strong>
+            <button className="secondary-button mini-button" onClick={() => onDebug(session)} type="button">
+              <Bug size={14} />
+              OCPP
+            </button>
             {session.invoice?.id && onDownloadInvoice ? (
               <button className="secondary-button mini-button" onClick={() => onDownloadInvoice(session.invoice)} type="button">
                 <Download size={14} />
@@ -1751,6 +1803,146 @@ function AuditView({ rows, loading, onOpenDetail }) {
   );
 }
 
+function SessionOcppDebugModal({ detail, loading, error, onClose, onReload }) {
+  if (!detail) {
+    return null;
+  }
+
+  const session = detail.session ?? {};
+  const analysis = detail.analysis ?? {};
+  const timeline = detail.timeline ?? [];
+  const stopContext = detail.stop_context;
+  const connectorsNow = detail.connector_states_now ?? [];
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal-panel modal-panel-wide ocpp-debug-modal">
+        <div className="panel-header">
+          <div>
+            <h2>Debug OCPP · sesiune #{session.id}</h2>
+            <p>
+              {session.user?.name ?? '-'}
+              {session.ocpp_connector_id ? ` · port ${session.ocpp_connector_id === 2 ? 'B' : session.ocpp_connector_id === 1 ? 'A' : `C${session.ocpp_connector_id}`}` : ''}
+              {session.ocpp_transaction_id ? ` · tx ${session.ocpp_transaction_id}` : ''}
+            </p>
+          </div>
+          <div className="row-actions">
+            <button className="secondary-button mini-button" onClick={onReload} type="button">
+              <RefreshCw size={14} />
+              Reincarca
+            </button>
+            <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+        {loading && <LoadingState />}
+
+        {!loading && (
+          <>
+            <div className="billing-summary-grid">
+              <div className="billing-stat">
+                <span>Stop source</span>
+                <strong>{session.stop_source ?? '—'}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Motiv OCPP</span>
+                <strong>{session.ocpp_stop_reason ?? '—'}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Start</span>
+                <strong>{formatDateTime(session.start_time)}</strong>
+              </div>
+              <div className="billing-stat">
+                <span>Sfarsit</span>
+                <strong>{formatDateTime(session.end_time)}</strong>
+              </div>
+            </div>
+
+            {analysis.hypothesis ? (
+              <div className="ocpp-debug-hypothesis">
+                <strong>Analiza:</strong> {analysis.hypothesis}
+              </div>
+            ) : null}
+
+            <div className="detail-section">
+              <h3>Conectori (stare curenta)</h3>
+              <div className="ocpp-connector-grid">
+                {connectorsNow.map((connector) => (
+                  <div className="ocpp-connector-card" key={connector.connector_id}>
+                    <strong>Port {connector.label ?? connector.connector_id}</strong>
+                    <span>{connector.status ?? '—'}</span>
+                    {connector.error_code && connector.error_code !== 'NoError' ? (
+                      <span className="ocpp-error-chip">{connector.error_code}</span>
+                    ) : null}
+                    {connector.info ? <p>{connector.info}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {stopContext ? (
+              <div className="detail-section">
+                <h3>Context la oprire (snapshot)</h3>
+                <div className="meta-grid">
+                  <span>Trigger: <strong>{stopContext.trigger ?? '—'}</strong></span>
+                  <span>Capturat: <strong>{formatDateTime(stopContext.captured_at)}</strong></span>
+                </div>
+                {Array.isArray(stopContext.connector_states) && stopContext.connector_states.length > 0 ? (
+                  <div className="ocpp-connector-grid compact">
+                    {stopContext.connector_states.map((connector) => (
+                      <div className="ocpp-connector-card" key={`snap-${connector.connector_id}`}>
+                        <strong>Port {connector.label ?? connector.connector_id}</strong>
+                        <span>{connector.status ?? '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="detail-section">
+              <h3>Timeline OCPP</h3>
+              <p className="detail-empty">
+                Fereastra: {formatDateTime(detail.window?.from)} → {formatDateTime(detail.window?.to)}
+                {' · '}
+                {timeline.length} evenimente
+              </p>
+              {timeline.length === 0 ? (
+                <p className="detail-empty">Nu exista mesaje OCPP in aceasta fereastra.</p>
+              ) : (
+                <div className="ocpp-timeline">
+                  {timeline.map((entry) => (
+                    <details className={`ocpp-timeline-row ${ocppRelationClass(entry.relation)}`} key={`${entry.kind}-${entry.id}-${entry.at}`}>
+                      <summary>
+                        <span className="ocpp-timeline-time">{formatDateTime(entry.at)}</span>
+                        <span className="ocpp-timeline-badge">{entry.direction === 'inbound' ? 'IN' : 'OUT'}</span>
+                        <span className="ocpp-timeline-action">{entry.action}</span>
+                        <span className="ocpp-timeline-summary">{entry.summary}</span>
+                        <span className="ocpp-timeline-relation">{ocppRelationLabel(entry.relation)}</span>
+                      </summary>
+                      <pre className="ocpp-timeline-payload">{JSON.stringify(entry.payload, null, 2)}</pre>
+                      {entry.response_payload ? (
+                        <pre className="ocpp-timeline-payload muted">{JSON.stringify(entry.response_payload, null, 2)}</pre>
+                      ) : null}
+                    </details>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose} type="button">Inchide</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AuditDetailModal({ detail, loading, error, onClose }) {
   if (!detail) {
     return null;
@@ -1819,6 +2011,9 @@ function AuditDetailModal({ detail, loading, error, onClose }) {
                   <span>Statie: <strong>{entry.session.station?.name ?? '-'}</strong></span>
                   <span>Start: <strong>{formatDateTime(entry.session.start_time)}</strong></span>
                   <span>kWh: <strong>{formatKwh(entry.session.kwh_consumed)}</strong></span>
+                  {entry.session.ocpp_stop_reason ? (
+                    <span>Motiv OCPP: <strong>{entry.session.ocpp_stop_reason}</strong></span>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -2494,6 +2689,9 @@ function UserDetailModal({
                         <p>
                           {session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}
                         </p>
+                        {formatSessionStopInfo(session) ? (
+                          <p className="request-meta">{formatSessionStopInfo(session)}</p>
+                        ) : null}
                       </div>
                       <span className="live-kwh">
             {formatKwh(sessionKwhDelivered(session))} kWh
@@ -3241,6 +3439,7 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         loading={loading}
         onStop={actions.stopSession}
         onDelete={actions.deleteSession}
+        onDebug={actions.openSessionOcppDebug}
         onDownloadInvoice={actions.downloadInvoice}
         onRefresh={onRefresh}
       />
@@ -3310,6 +3509,10 @@ export default function App() {
   const [auditDetail, setAuditDetail] = useState(null);
   const [auditDetailLoading, setAuditDetailLoading] = useState(false);
   const [auditDetailError, setAuditDetailError] = useState('');
+  const [sessionOcppDebug, setSessionOcppDebug] = useState(null);
+  const [sessionOcppDebugLoading, setSessionOcppDebugLoading] = useState(false);
+  const [sessionOcppDebugError, setSessionOcppDebugError] = useState('');
+  const [sessionOcppDebugId, setSessionOcppDebugId] = useState(null);
   const activeTitle = useMemo(
     () => sections.find((section) => section.id === activeSection)?.label ?? 'Dashboard',
     [activeSection]
@@ -3329,6 +3532,22 @@ export default function App() {
 
     return () => window.clearInterval(timer);
   }, [authRequired]);
+
+  async function loadSessionOcppDebug(sessionId, silent = false) {
+    if (!silent) {
+      setSessionOcppDebugLoading(true);
+    }
+    setSessionOcppDebugError('');
+
+    try {
+      const payload = await fetchJson(`/backoffice/sessions/${sessionId}/ocpp-debug`);
+      setSessionOcppDebug(payload.data);
+    } catch (error) {
+      setSessionOcppDebugError(error.message || 'Nu am putut incarca debug-ul OCPP.');
+    } finally {
+      setSessionOcppDebugLoading(false);
+    }
+  }
 
   async function loadStationDetail(stationId, silent = false) {
     if (!silent) {
@@ -3705,6 +3924,11 @@ export default function App() {
         setAuditDetailLoading(false);
       }
     },
+    openSessionOcppDebug: async (session) => {
+      setSessionOcppDebugId(session.id);
+      setSessionOcppDebug({ session });
+      await loadSessionOcppDebug(session.id);
+    },
     openUserDetail: async (user) => {
       setUserDetail({ user });
       setUserDetailLoading(true);
@@ -3849,6 +4073,17 @@ export default function App() {
           setAuditDetail(null);
           setAuditDetailError('');
         }}
+      />
+      <SessionOcppDebugModal
+        detail={sessionOcppDebug}
+        error={sessionOcppDebugError}
+        loading={sessionOcppDebugLoading}
+        onClose={() => {
+          setSessionOcppDebug(null);
+          setSessionOcppDebugId(null);
+          setSessionOcppDebugError('');
+        }}
+        onReload={() => sessionOcppDebugId && loadSessionOcppDebug(sessionOcppDebugId, true)}
       />
       <StationDetailModal
         detail={stationDetail}

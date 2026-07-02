@@ -2979,3 +2979,147 @@ button {
     width: 100%;
   }
 }
+
+.ocpp-debug-modal .panel-header {
+  align-items: flex-start;
+}
+
+.ocpp-debug-hypothesis {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 80, 0.35);
+  background: rgba(255, 180, 80, 0.08);
+  color: #f6e7c8;
+  line-height: 1.5;
+}
+
+.ocpp-connector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.ocpp-connector-grid.compact {
+  margin-top: 10px;
+}
+
+.ocpp-connector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(223, 255, 0, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ocpp-connector-card p {
+  margin: 0;
+  color: #b8c98d;
+  font-size: 12px;
+}
+
+.ocpp-error-chip {
+  display: inline-flex;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 96, 96, 0.16);
+  color: #ffb0b0;
+  font-size: 11px;
+}
+
+.ocpp-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.ocpp-timeline-row {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ocpp-timeline-row summary {
+  display: grid;
+  grid-template-columns: 150px 42px 130px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ocpp-timeline-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.ocpp-timeline-time {
+  color: #d7e7b0;
+  font-size: 12px;
+}
+
+.ocpp-timeline-badge {
+  display: inline-flex;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(223, 255, 0, 0.12);
+  color: #e8ff8d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ocpp-timeline-action {
+  font-weight: 600;
+}
+
+.ocpp-timeline-summary {
+  color: #b8c98d;
+  font-size: 13px;
+}
+
+.ocpp-timeline-relation {
+  color: #9eb878;
+  font-size: 12px;
+  text-align: right;
+}
+
+.ocpp-timeline-payload {
+  margin: 0;
+  padding: 0 12px 12px;
+  color: #c9dc9f;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow: auto;
+}
+
+.ocpp-timeline-payload.muted {
+  color: #8fa86d;
+}
+
+.ocpp-timeline-stop {
+  border-color: rgba(255, 120, 120, 0.35);
+}
+
+.ocpp-timeline-other {
+  border-color: rgba(255, 180, 80, 0.35);
+}
+
+.ocpp-timeline-session {
+  border-color: rgba(120, 180, 255, 0.28);
+}
+
+.ocpp-timeline-reset {
+  border-color: rgba(200, 120, 255, 0.28);
+}
+
+@media (max-width: 900px) {
+  .ocpp-timeline-row summary {
+    grid-template-columns: 1fr;
+  }
+}

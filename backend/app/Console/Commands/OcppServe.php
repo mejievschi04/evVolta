@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\BillingService;
 use App\Services\ChargingStopService;
 use App\Services\OcppMeterValuesParser;
+use App\Services\OcppSessionDebugService;
 use App\Services\OcppService;
 use App\Services\SessionEnergyService;
 use App\Services\WalletService;
@@ -605,6 +606,12 @@ class OcppServe extends Command
 
     private function onDataTransfer(array $payload): array
     {
+        Log::info('OCPP DataTransfer', [
+            'vendor_id' => $payload['vendorId'] ?? null,
+            'message_id' => $payload['messageId'] ?? null,
+            'data' => $payload['data'] ?? null,
+        ]);
+
         return ['status' => 'Accepted', 'data' => ''];
     }
 
@@ -822,14 +829,48 @@ class OcppServe extends Command
 
         if ($session && ! $session->end_time) {
             $stopSource = $this->resolveStopSourceForSession($session, $reason);
+            $normalizedReason = $reason !== '' ? $reason : null;
+
+            Log::info('OCPP StopTransaction finalized session', [
+                'station' => $station->ocpp_identity,
+                'connector_id' => $connectorId > 0 ? $connectorId : (int) ($session->ocpp_connector_id ?: 0),
+                'transaction_id' => $transactionId !== '' ? $transactionId : '0',
+                'reason' => $normalizedReason,
+                'session_id' => $session->id,
+                'stop_source' => $stopSource,
+            ]);
+
+            $stopContext = app(OcppSessionDebugService::class)->buildStopContext(
+                $station->fresh(),
+                $session,
+                'StopTransaction',
+                ['stop_transaction' => $payload]
+            );
 
             app(ChargingStopService::class)->finalizeStop(
                 $session,
                 $station->fresh(),
                 $stopSource,
                 $endedAt,
-                $meterStop
+                $meterStop,
+                $normalizedReason,
+                $stopContext
             );
+        } elseif ($session) {
+            Log::info('OCPP StopTransaction ignored: session already closed', [
+                'station' => $station->ocpp_identity,
+                'connector_id' => $connectorId,
+                'transaction_id' => $transactionId !== '' ? $transactionId : '0',
+                'reason' => $reason !== '' ? $reason : null,
+                'session_id' => $session->id,
+            ]);
+        } else {
+            Log::warning('OCPP StopTransaction ignored: no matching session', [
+                'station' => $station->ocpp_identity,
+                'connector_id' => $connectorId,
+                'transaction_id' => $transactionId !== '' ? $transactionId : '0',
+                'reason' => $reason !== '' ? $reason : null,
+            ]);
         }
 
         $stopIdTag = strtoupper(trim((string) ($payload['idTag'] ?? '')));

@@ -19,6 +19,7 @@ use App\Services\BillingService;
 use App\Services\ChargingStopService;
 use App\Services\InvoiceDocumentService;
 use App\Services\SessionPresentationService;
+use App\Services\OcppSessionDebugService;
 use App\Services\OcppService;
 use App\Services\ReservationService;
 use App\Services\StripePaymentService;
@@ -46,6 +47,7 @@ class DashboardController extends Controller
         private readonly ChargingStopService $chargingStopService,
         private readonly InvoiceDocumentService $invoiceDocumentService,
         private readonly OcppService $ocppService,
+        private readonly OcppSessionDebugService $ocppSessionDebugService,
         private readonly SessionPresentationService $sessionPresentationService,
         private readonly TariffService $tariffService,
         private readonly ReservationService $reservationService,
@@ -1018,6 +1020,13 @@ class DashboardController extends Controller
 
         return response()->json([
             'data' => $sessions,
+        ]);
+    }
+
+    public function sessionOcppDebug(ChargingSession $session): JsonResponse
+    {
+        return response()->json([
+            'data' => $this->ocppSessionDebugService->debugPayload($session->fresh(['station', 'user'])),
         ]);
     }
 
