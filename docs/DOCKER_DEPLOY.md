@@ -165,7 +165,8 @@ nano .env.docker
 
 | Variabilă | Când |
 |-----------|------|
-| `STRIPE_SECRET`, `STRIPE_PUBLIC`, `STRIPE_WEBHOOK_SECRET` | Plăți online |
+| `MAIB_PROJECT_ID`, `MAIB_PROJECT_SECRET`, `MAIB_SIGNATURE_KEY` | Plăți wallet (card MAIB) |
+| `STRIPE_*` | Doar dacă `PAYMENT_PROVIDER=stripe` |
 | `MAIL_*` | Trimitere facturi pe email |
 | `HTTP_PORT` | Dacă 8080 e ocupat (ex. `8081`) |
 
@@ -345,24 +346,38 @@ Deschide `https://ocpp.volta.md` → login backoffice.
 
 ---
 
-## 10. Stripe, OCPP, mobile
+## 10. Plăți (MAIB), OCPP, mobile
 
-### Stripe
+### MAIB (wallet topup — implicit)
 
-1. Completează în `.env.docker`:
-   ```env
-   STRIPE_SECRET=sk_live_...
-   STRIPE_PUBLIC=pk_live_...
-   STRIPE_WEBHOOK_SECRET=whsec_...
-   MOBILE_APP_SCHEME=voltaev
-   ```
-2. Webhook în Stripe Dashboard:
-   - URL: `https://ocpp.volta.md/api/stripe/webhook`
-   - Eveniment: `checkout.session.completed`
-3. Restart:
-   ```bash
-   docker compose restart app ocpp scheduler
-   ```
+În **`.env.docker`** (nu `backend/.env` pe host):
+
+```env
+PAYMENT_PROVIDER=maib
+MAIB_PROJECT_ID=...
+MAIB_PROJECT_SECRET=...
+MAIB_SIGNATURE_KEY=...
+MAIB_BASE_URL=https://api.maibmerchants.md/v1
+MAIB_LANGUAGE=ro
+MOBILE_APP_SCHEME=voltaev
+```
+
+Apoi:
+
+```bash
+docker compose --env-file .env.docker up -d app ocpp scheduler
+docker compose --env-file .env.docker exec app php artisan config:clear
+```
+
+În portalul MAIB: Callback `https://ocpp.volta.md/api/maib/callback`, Ok/Fail pe `/payments/maib/success` și `/payments/maib/fail`.
+
+Detalii: [`backend/docs/MAIB_SETUP.md`](../backend/docs/MAIB_SETUP.md).
+
+### Stripe (opțional, fallback)
+
+1. În `.env.docker`: `PAYMENT_PROVIDER=stripe` + `STRIPE_SECRET` / `STRIPE_PUBLIC` / `STRIPE_WEBHOOK_SECRET`
+2. Webhook: `https://ocpp.volta.md/api/stripe/webhook` → `checkout.session.completed`
+3. `docker compose restart app ocpp scheduler`
 
 Vezi și [`backend/docs/STRIPE_SETUP.md`](../backend/docs/STRIPE_SETUP.md).
 
@@ -509,7 +524,7 @@ docker compose restart app
 - [ ] `curl https://ocpp.volta.md/up` — OK
 - [ ] Login backoffice funcțional
 - [ ] `APP_DEBUG=false`
-- [ ] Stripe webhook (dacă plăți active)
+- [ ] MAIB în `.env.docker` + URL-uri callback în portal (sau Stripe, dacă e fallback)
 - [ ] Stație test: BootNotification → start → stop
 - [ ] Backup periodic volum `pgdata` (PostgreSQL)
 

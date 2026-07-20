@@ -6,7 +6,14 @@ Documentație: [maib e-Commerce API](https://docs.maibmerchants.md/e-commerce/ma
 
 ## Unde pui secretele (tu)
 
-Doar în **`backend/.env`** pe server (și local pentru test). Nu în mobile, git sau backoffice.
+Nu în mobile, git sau backoffice.
+
+| Cum rulează backend-ul | Fișier |
+|------------------------|--------|
+| **Docker pe VPS** (recomandat) | **`.env.docker`** în root-ul proiectului (`/var/www/app/evVolta/.env.docker`) |
+| Local fără Docker | `backend/.env` |
+
+Pe Docker, `.env.docker` e montat ca `/var/www/backend/.env` în container — **nu** edita `backend/.env` pe host (poate fi gol).
 
 ```env
 PAYMENT_PROVIDER=maib
@@ -18,7 +25,22 @@ MAIB_BASE_URL=https://api.maibmerchants.md/v1
 MAIB_LANGUAGE=ro
 ```
 
-Valorile vin din proiectul din [maibmerchants](https://maibmerchants.md) după activare.
+Valorile vin din proiectul din [maibmerchants](https://maibmerchants.md) după activare (test sau production).
+
+### Pe VPS cu Docker — pași
+
+```bash
+cd /var/www/app/evVolta   # calea ta pe VPS
+nano .env.docker          # adaugă / completează blocul MAIB de mai sus
+# dacă lipsește fișierul:
+#   cp deploy/docker.env.example .env.docker && ln -sf .env.docker .env
+
+docker compose --env-file .env.docker up -d app ocpp scheduler
+docker compose --env-file .env.docker exec app php artisan config:clear
+
+# verificare (secretul nu apare în clar dacă grepezi doar cheia):
+docker compose --env-file .env.docker exec app grep '^MAIB_\|^PAYMENT_PROVIDER' /var/www/backend/.env
+```
 
 Opțional (fallback Stripe):
 
@@ -27,8 +49,6 @@ Opțional (fallback Stripe):
 # STRIPE_SECRET=...
 # STRIPE_WEBHOOK_SECRET=...
 ```
-
-După modificare pe VPS: `php artisan config:clear` (sau rebuild container).
 
 ## URL-uri în portalul MAIB (Project settings)
 
