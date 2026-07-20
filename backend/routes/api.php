@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\MaibCallbackController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChargingController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1');
+Route::post('/maib/callback', [MaibCallbackController::class, 'handle'])
     ->middleware('throttle:120,1');
 
 Route::middleware('auth:api')->group(function () {

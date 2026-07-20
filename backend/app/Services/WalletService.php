@@ -356,6 +356,7 @@ class WalletService
         WalletTopup $topup,
         StripePaymentService $stripePaymentService,
         ?float $amount = null,
+        ?MaibPaymentService $maibPaymentService = null,
     ): array {
         $topup->loadMissing('user');
         $user = $topup->user;
@@ -395,9 +396,10 @@ class WalletService
             throw new RuntimeException('Clientul are o incarcare activa. Opreste sesiunea inainte de retur.', 422);
         }
 
+        $maibPaymentService ??= app(MaibPaymentService::class);
         $refunded = $amount;
 
-        DB::transaction(function () use ($topup, $user, $amount, $stripePaymentService, &$refunded) {
+        DB::transaction(function () use ($topup, $user, $amount, $stripePaymentService, $maibPaymentService, &$refunded) {
             $topup = WalletTopup::query()->lockForUpdate()->findOrFail($topup->id);
             $user = User::query()->lockForUpdate()->findOrFail($user->id);
 
@@ -408,7 +410,7 @@ class WalletService
                 throw new RuntimeException('Nu mai exista suma disponibila pentru retur.', 422);
             }
 
-            $stripeRefundId = null;
+            $providerRefundId = null;
 
             if ($topup->payment_provider === 'stripe') {
                 if (! $topup->payment_intent_id) {
@@ -427,7 +429,29 @@ class WalletService
                     $slice,
                     $topup->currency ?: ($user->currency ?: 'MDL')
                 );
-                $stripeRefundId = $stripeRefund['id'] ?? null;
+                $providerRefundId = $stripeRefund['id'] ?? null;
+            } elseif ($topup->payment_provider === 'maib') {
+                if (! $topup->payment_session_id) {
+                    throw new RuntimeException(
+                        'Plata originala nu poate fi returnata automat. Lipseste payId MAIB.',
+                        422
+                    );
+                }
+
+                if (! $maibPaymentService->isConfigured()) {
+                    throw new RuntimeException('MAIB nu este configurat.', 422);
+                }
+
+                // MAIB allows only one refund per payment.
+                if ((float) $topup->amount_refunded > 0) {
+                    throw new RuntimeException(
+                        'MAIB permite o singura returnare pe plata. Contacteaza suportul bancar pentru rest.',
+                        422
+                    );
+                }
+
+                $maibRefund = $maibPaymentService->refund((string) $topup->payment_session_id, $slice);
+                $providerRefundId = $maibRefund['id'] ?? $topup->payment_session_id;
             }
 
             WalletRefund::query()->create([
@@ -437,7 +461,7 @@ class WalletService
                 'currency' => $topup->currency ?: ($user->currency ?: 'MDL'),
                 'status' => 'completed',
                 'payment_provider' => $topup->payment_provider ?: 'local',
-                'stripe_refund_id' => $stripeRefundId,
+                'stripe_refund_id' => $providerRefundId,
             ]);
 
             $topup->increment('amount_refunded', $slice);

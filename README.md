@@ -90,5 +90,6 @@ bash deploy/deploy.sh
 
 - `OCPP_MODE=gateway` (implicit) pentru statii reale; `simulator` pentru demo fara hardware
 - Oprire fortata statie: `php artisan ocpp:force-stop {ocpp_identity} --connector=2`
-- Billing prepay: alimentare wallet (Stripe) + debit la fiecare sesiune; factura se emite automat dupa plata
+- Billing prepay: alimentare wallet (MAIB card / opțional Stripe) + debit la fiecare sesiune; factura se emite automat dupa plata
 - QR statie: campul `qr_code` (serial hardware sau `station:<slug>`)
+- Setup MAIB: [`backend/docs/MAIB_SETUP.md`](backend/docs/MAIB_SETUP.md)

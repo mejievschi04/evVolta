@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Backoffice\AuthController as BackofficeAuthController;
 use App\Http\Controllers\Backoffice\DashboardController;
+use App\Http\Controllers\Payments\MaibRedirectController;
 use App\Http\Controllers\Payments\StripeRedirectController;
 use Illuminate\Support\Facades\Route;
 
@@ -59,3 +60,9 @@ Route::get('/payments/stripe/success', [StripeRedirectController::class, 'succes
 
 Route::get('/payments/stripe/cancel', [StripeRedirectController::class, 'cancel'])
     ->name('payments.stripe.cancel');
+
+Route::get('/payments/maib/success', [MaibRedirectController::class, 'success'])
+    ->name('payments.maib.success');
+
+Route::get('/payments/maib/fail', [MaibRedirectController::class, 'fail'])
+    ->name('payments.maib.fail');

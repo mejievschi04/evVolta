@@ -41,6 +41,19 @@ return [
         'public' => env('STRIPE_PUBLIC'),
     ],
 
+    'maib' => [
+        'project_id' => env('MAIB_PROJECT_ID'),
+        'project_secret' => env('MAIB_PROJECT_SECRET'),
+        'signature_key' => env('MAIB_SIGNATURE_KEY'),
+        'base_url' => rtrim(env('MAIB_BASE_URL', 'https://api.maibmerchants.md/v1'), '/'),
+        'language' => env('MAIB_LANGUAGE', 'ro'),
+    ],
+
+    'payment' => [
+        // maib | stripe — provider for wallet topup checkout
+        'provider' => env('PAYMENT_PROVIDER', 'maib'),
+    ],
+
     'mobile' => [
         'scheme' => env('MOBILE_APP_SCHEME', 'voltaev'),
     ],
