@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\WalletTopup;
-use App\Services\AuditLogService;
 use App\Services\MaibPaymentService;
 use App\Services\StripePaymentService;
 use App\Services\WalletService;
@@ -18,20 +17,12 @@ class WalletController extends Controller
     public function show(Request $request, WalletService $walletService): JsonResponse
     {
         $user = $request->user();
-        $devTopupEnabled = $walletService->devTopupEnabled()
-            && $walletService->enabled()
-            && $user->usesCardPayment();
 
         return response()->json([
             'wallet_balance' => $walletService->balance($user),
             'currency' => $user->currency ?? 'MDL',
             'requires_prepaid' => $walletService->enabled() && $user->usesCardPayment(),
             'prepaid_wallet_enabled' => $walletService->enabled(),
-            'dev_topup_enabled' => $devTopupEnabled,
-            'dev_topup_max_amount' => $devTopupEnabled ? $walletService->devTopupMaxAmount() : null,
-            'dev_topup_daily_remaining' => $devTopupEnabled
-                ? round(max(0, $walletService->devTopupDailyLimit() - $walletService->devTopupDailyCredited($user)), 2)
-                : null,
             'charge_options' => $walletService->enabled() && $user->usesCardPayment()
                 ? $walletService->chargeOptions($user)
                 : null,
@@ -143,66 +134,6 @@ class WalletController extends Controller
             'checkout_url' => $checkout['url'],
             'payment_session_id' => $checkout['id'],
             'payment_provider' => $provider,
-        ]);
-    }
-
-    public function localTopup(
-        Request $request,
-        WalletService $walletService,
-        AuditLogService $auditLogService,
-    ): JsonResponse {
-        abort_unless($walletService->devTopupEnabled() && $walletService->enabled(), 404);
-
-        $user = $request->user();
-        $maxAmount = $walletService->devTopupMaxAmount();
-
-        $data = $request->validate([
-            'amount' => 'nullable|numeric|min:'.WalletService::MIN_BUDGET_AMOUNT.'|max:'.$maxAmount,
-        ]);
-
-        $amount = isset($data['amount'])
-            ? round((float) $data['amount'], 2)
-            : min(500.0, $maxAmount);
-
-        try {
-            $walletService->assertDevTopupAllowed($user, $amount);
-        } catch (RuntimeException $exception) {
-            if ((int) $exception->getCode() === 404) {
-                abort(404);
-            }
-
-            return response()->json([
-                'message' => $exception->getMessage(),
-            ], (int) ($exception->getCode() ?: 422));
-        }
-
-        $topup = WalletTopup::query()->create([
-            'user_id' => $user->id,
-            'amount' => $amount,
-            'currency' => $user->currency ?? 'MDL',
-            'status' => 'pending',
-            'payment_provider' => 'local',
-        ]);
-
-        $walletService->creditTopup($topup);
-
-        $auditLogService->record(
-            action: 'wallet.dev_topup',
-            actor: $user,
-            subjectType: WalletTopup::class,
-            subjectId: $topup->id,
-            metadata: [
-                'credited' => $amount,
-                'wallet_balance' => $walletService->balance($user->fresh()),
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-            ],
-        );
-
-        return response()->json([
-            'wallet_balance' => $walletService->balance($user->fresh()),
-            'currency' => $user->currency ?? 'MDL',
-            'credited' => $amount,
         ]);
     }
 

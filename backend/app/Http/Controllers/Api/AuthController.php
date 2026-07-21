@@ -5,15 +5,19 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\UserDeletionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 
 class AuthController extends Controller
 {
     public function __construct(
         private readonly AuditLogService $auditLogService,
+        private readonly UserDeletionService $userDeletionService,
     ) {
     }
 
@@ -176,6 +180,48 @@ class AuthController extends Controller
 
         return response()->json([
             'user' => $user->fresh(),
+        ]);
+    }
+
+    public function deleteAccount(Request $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::guard('api')->user();
+
+        if ($user->isAdmin()) {
+            Auth::guard('api')->logout();
+
+            return response()->json([
+                'message' => 'Contul de administrator se foloseste doar in backoffice.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        if (! Hash::check($data['password'], $user->password)) {
+            return response()->json([
+                'message' => 'Parola este incorecta.',
+            ], 422);
+        }
+
+        try {
+            $this->userDeletionService->delete($user, $user, 'auth.account_deleted');
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], $exception->getCode() >= 400 ? $exception->getCode() : 422);
+        }
+
+        try {
+            Auth::guard('api')->logout();
+        } catch (\Throwable) {
+            // Token may already be invalid after account deletion.
+        }
+
+        return response()->json([
+            'message' => 'Contul a fost sters.',
         ]);
     }
 }

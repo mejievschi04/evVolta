@@ -54,7 +54,7 @@ class ReservationController extends Controller
             'station_id' => 'required|exists:stations,id',
             'connector_id' => 'required|integer|min:1|max:8',
             'starts_at' => 'required|date',
-            'duration_minutes' => 'required|integer|min:15|max:480',
+            'duration_minutes' => 'required|integer|min:15|max:30',
         ]);
 
         try {

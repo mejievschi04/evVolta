@@ -43,6 +43,9 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::post('/users/{user}/wallet-credit', [DashboardController::class, 'creditUserWallet'])
             ->middleware('throttle:10,1')
             ->name('backoffice.users.wallet_credit');
+        Route::post('/users/{user}/delete', [DashboardController::class, 'deleteUser'])
+            ->middleware('throttle:10,1')
+            ->name('backoffice.users.delete');
         Route::post('/users', [DashboardController::class, 'storeUser'])->name('backoffice.users.store');
         Route::get('/wallet-topups', [DashboardController::class, 'walletTopups'])->name('backoffice.wallet_topups');
         Route::post('/wallet-topups/{topup}/refund', [DashboardController::class, 'refundWalletTopup'])->name('backoffice.wallet_topups.refund');

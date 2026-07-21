@@ -181,7 +181,7 @@ class ReservationService
             throw new RuntimeException(sprintf('Poti rezerva maxim cu %d zile inainte.', $maxAdvanceDays), 422);
         }
 
-        $maxDuration = min(60, max(15, (int) $station->reservation_max_duration_minutes));
+        $maxDuration = min(30, max(15, (int) $station->reservation_max_duration_minutes));
         if ($durationMinutes < 15 || $durationMinutes > $maxDuration) {
             throw new RuntimeException(sprintf('Durata rezervarii trebuie sa fie intre 15 si %d minute.', $maxDuration), 422);
         }

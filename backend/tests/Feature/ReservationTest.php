@@ -25,7 +25,7 @@ class ReservationTest extends TestCase
         ]);
 
         $station = $this->createReservableStation([
-            'reservation_max_duration_minutes' => 60,
+            'reservation_max_duration_minutes' => 30,
         ]);
 
         $this->actingAs($user, 'api')
@@ -33,7 +33,7 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => now()->toIso8601String(),
-                'duration_minutes' => 60,
+                'duration_minutes' => 30,
             ])
             ->assertCreated()
             ->assertJsonPath('reservation.status', Reservation::STATUS_CONFIRMED);
@@ -46,7 +46,7 @@ class ReservationTest extends TestCase
         Config::set('reservations.min_lead_minutes', 5);
 
         $user = $this->createPersonalUser(['wallet_balance' => 200]);
-        $station = $this->createReservableStation(['reservation_max_duration_minutes' => 60]);
+        $station = $this->createReservableStation(['reservation_max_duration_minutes' => 30]);
 
         // Telefon cu ceasul in urma fata de server -> start trimis "in trecut".
         $this->actingAs($user, 'api')
@@ -54,13 +54,13 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => now()->subSeconds(90)->toIso8601String(),
-                'duration_minutes' => 60,
+                'duration_minutes' => 30,
             ])
             ->assertCreated()
             ->assertJsonPath('reservation.status', Reservation::STATUS_CONFIRMED);
     }
 
-    public function test_duration_over_sixty_minutes_is_rejected_even_when_station_allows_more(): void
+    public function test_duration_over_thirty_minutes_is_rejected_even_when_station_allows_more(): void
     {
         Config::set('services.ocpp.mode', 'simulator');
         Config::set('billing.prepaid_wallet_enabled', true);
@@ -76,12 +76,12 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => now()->toIso8601String(),
-                'duration_minutes' => 90,
+                'duration_minutes' => 45,
             ])
             ->assertStatus(422);
     }
 
-    public function test_duration_over_sixty_minutes_is_rejected(): void
+    public function test_duration_over_thirty_minutes_is_rejected(): void
     {
         Config::set('services.ocpp.mode', 'simulator');
         Config::set('billing.prepaid_wallet_enabled', true);
@@ -89,7 +89,7 @@ class ReservationTest extends TestCase
 
         $user = $this->createPersonalUser(['wallet_balance' => 500]);
         $station = $this->createReservableStation([
-            'reservation_max_duration_minutes' => 60,
+            'reservation_max_duration_minutes' => 30,
         ]);
 
         $this->actingAs($user, 'api')
@@ -97,7 +97,7 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => now()->toIso8601String(),
-                'duration_minutes' => 90,
+                'duration_minutes' => 45,
             ])
             ->assertStatus(422);
     }
@@ -120,7 +120,7 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => $startsAt->toIso8601String(),
-                'duration_minutes' => 60,
+                'duration_minutes' => 30,
             ]);
 
         $response->assertCreated()
@@ -131,10 +131,10 @@ class ReservationTest extends TestCase
             'user_id' => $user->id,
             'station_id' => $station->id,
             'status' => Reservation::STATUS_CONFIRMED,
-            'fee_charged' => true,
+            'fee_charged' => false,
         ]);
 
-        $this->assertSame(185.0, (float) $user->fresh()->wallet_balance);
+        $this->assertSame(200.0, (float) $user->fresh()->wallet_balance);
     }
 
     public function test_overlapping_reservation_is_rejected(): void
@@ -165,7 +165,7 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => $startsAt->copy()->addMinutes(30)->toIso8601String(),
-                'duration_minutes' => 60,
+                'duration_minutes' => 30,
             ])
             ->assertStatus(422)
             ->assertJsonPath('message', 'Intervalul selectat se suprapune cu o alta rezervare.');
@@ -193,7 +193,7 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => $startsAt->toIso8601String(),
-                'duration_minutes' => 60,
+                'duration_minutes' => 30,
             ])
             ->assertStatus(422)
             ->assertJsonPath('message', 'Conectorul este ocupat sau indisponibil pentru rezervare.');
@@ -224,7 +224,7 @@ class ReservationTest extends TestCase
                 'station_id' => $station->id,
                 'connector_id' => 1,
                 'starts_at' => $startsAt->toIso8601String(),
-                'duration_minutes' => 45,
+                'duration_minutes' => 30,
             ])
             ->assertCreated()
             ->assertJsonPath('reservation.status', Reservation::STATUS_PENDING);
@@ -468,9 +468,9 @@ class ReservationTest extends TestCase
             'location' => 'Chisinau',
             'status' => Station::STATUS_AVAILABLE,
             'reservations_enabled' => true,
-            'reservation_fee' => 15,
-            'reservation_no_show_fee' => 30,
-            'reservation_max_duration_minutes' => 120,
+            'reservation_fee' => 0,
+            'reservation_no_show_fee' => 0,
+            'reservation_max_duration_minutes' => 30,
             'reservation_advance_days' => 14,
             'reservation_grace_minutes' => 20,
             'ocpp_configuration' => [

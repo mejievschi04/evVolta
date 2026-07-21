@@ -22,76 +22,6 @@ class WalletService
         return (bool) config('billing.prepaid_wallet_enabled', false);
     }
 
-    public function devTopupEnabled(): bool
-    {
-        return app()->environment('local') || (bool) config('billing.wallet_dev_topup_enabled', false);
-    }
-
-    public function devTopupMaxAmount(): float
-    {
-        return max(self::MIN_BUDGET_AMOUNT, (float) config('billing.wallet_dev_topup_max_amount', 1000));
-    }
-
-    public function devTopupDailyLimit(): float
-    {
-        return max(self::MIN_BUDGET_AMOUNT, (float) config('billing.wallet_dev_topup_daily_limit', 5000));
-    }
-
-    public function devTopupDailyCredited(User $user): float
-    {
-        return round((float) WalletTopup::query()
-            ->where('user_id', $user->id)
-            ->where('payment_provider', 'local')
-            ->where('status', 'paid')
-            ->where('paid_at', '>=', now()->startOfDay())
-            ->sum('amount'), 2);
-    }
-
-    /**
-     * @throws RuntimeException
-     */
-    public function assertDevTopupAllowed(User $user, float $amount): void
-    {
-        if (! $this->devTopupEnabled() || ! $this->enabled()) {
-            throw new RuntimeException('Not found.', 404);
-        }
-
-        if (! $user->usesCardPayment()) {
-            throw new RuntimeException('Alimentarea wallet nu este disponibila pentru acest cont.', 422);
-        }
-
-        $amount = round($amount, 2);
-        $maxAmount = $this->devTopupMaxAmount();
-
-        if ($amount < self::MIN_BUDGET_AMOUNT) {
-            throw new RuntimeException(
-                sprintf('Minim %.2f MDL.', self::MIN_BUDGET_AMOUNT),
-                422
-            );
-        }
-
-        if ($amount > $maxAmount) {
-            throw new RuntimeException(
-                sprintf('Maxim %.2f MDL per alimentare test.', $maxAmount),
-                422
-            );
-        }
-
-        $dailyLimit = $this->devTopupDailyLimit();
-        $dailyTotal = $this->devTopupDailyCredited($user);
-
-        if ($dailyTotal + $amount > $dailyLimit) {
-            throw new RuntimeException(
-                sprintf(
-                    'Limita zilnica de alimentare test este %.2f MDL (ramas %.2f MDL).',
-                    $dailyLimit,
-                    max(0, $dailyLimit - $dailyTotal)
-                ),
-                422
-            );
-        }
-    }
-
     public function balance(User $user): float
     {
         return round((float) $user->wallet_balance, 2);
@@ -442,14 +372,8 @@ class WalletService
                     throw new RuntimeException('MAIB nu este configurat.', 422);
                 }
 
-                // MAIB allows only one refund per payment.
-                if ((float) $topup->amount_refunded > 0) {
-                    throw new RuntimeException(
-                        'MAIB permite o singura returnare pe plata. Contacteaza suportul bancar pentru rest.',
-                        422
-                    );
-                }
-
+                // Checkout API: o returnare pe plata poate fi partiala sau totala.
+                // Daca banca respinge retururi multiple, mesajul vine din API.
                 $maibRefund = $maibPaymentService->refund((string) $topup->payment_session_id, $slice);
                 $providerRefundId = $maibRefund['id'] ?? $topup->payment_session_id;
             }

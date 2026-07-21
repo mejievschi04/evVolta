@@ -153,4 +153,61 @@ class BackofficeUsersTest extends TestCase
             ])
             ->assertNotFound();
     }
+
+    public function test_backoffice_can_delete_user(): void
+    {
+        $admin = $this->createAdminUser(['email' => 'admin@example.test']);
+        $customer = $this->createAppUser([
+            'email' => 'customer@example.test',
+            'wallet_balance' => 0,
+        ]);
+
+        $session = [
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ];
+
+        $this->withSession($session)
+            ->postJson('/backoffice/users/' . $customer->id . '/delete')
+            ->assertOk()
+            ->assertJsonPath('message', 'Contul a fost sters.');
+
+        $this->assertDatabaseMissing('users', ['id' => $customer->id]);
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'backoffice.user.deleted',
+            'actor_user_id' => $admin->id,
+            'subject_id' => $customer->id,
+        ]);
+    }
+
+    public function test_backoffice_cannot_delete_admin_user(): void
+    {
+        $admin = $this->createAdminUser(['email' => 'admin@example.test']);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/users/' . $admin->id . '/delete')
+            ->assertNotFound();
+    }
+
+    public function test_backoffice_delete_user_is_blocked_with_wallet_balance(): void
+    {
+        $admin = $this->createAdminUser(['email' => 'admin@example.test']);
+        $customer = $this->createAppUser([
+            'email' => 'customer@example.test',
+            'wallet_balance' => 120,
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/users/' . $customer->id . '/delete')
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Soldul contului trebuie sa fie zero inainte de stergere.');
+
+        $this->assertDatabaseHas('users', ['id' => $customer->id]);
+    }
 }

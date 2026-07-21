@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   BatteryCharging,
@@ -142,7 +142,7 @@ function useBackofficeData() {
     authRequired: false
   });
 
-  async function load(silent = false) {
+  const load = useCallback(async (silent = false) => {
     if (!silent) {
       setState((current) => ({ ...current, loading: true }));
     }
@@ -214,11 +214,11 @@ function useBackofficeData() {
         authRequired: false
       };
     });
-  }
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   return { ...state, reload: load };
 }
@@ -378,19 +378,6 @@ function fitMapView(stations) {
   };
 }
 
-function formatSecondsAgo(seconds) {
-  if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) {
-    return '-';
-  }
-
-  const value = Number(seconds);
-  if (value < 60) {
-    return `${value}s`;
-  }
-
-  return `${Math.floor(value / 60)}m ${value % 60}s`;
-}
-
 function sessionKwhDelivered(session) {
   const delivered = session?.kwh_delivered ?? session?.telemetry?.kwh_consumed ?? session?.kwh_consumed;
   return delivered ?? 0;
@@ -420,6 +407,26 @@ function formatSessionStopInfo(session) {
   }
 
   return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function formatSessionDuration(session) {
+  const start = session?.start_time ? new Date(session.start_time).getTime() : null;
+
+  if (!start) {
+    return '-';
+  }
+
+  const end = session?.end_time ? new Date(session.end_time).getTime() : Date.now();
+  const minutes = Math.max(0, Math.floor((end - start) / 60000));
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+
+  return remainder > 0 ? `${hours} h ${remainder} min` : `${hours} h`;
 }
 
 function ocppRelationLabel(relation) {
@@ -1605,100 +1612,234 @@ function ReservationsView({ rows, loading }) {
   );
 }
 
+function SessionModernCard({ session, onStop, onDelete, onDownloadInvoice, onDebug }) {
+  const isActive = !session.end_time;
+  const kwh = sessionKwhDelivered(session);
+  const powerKw = sessionPowerKw(session);
+  const stopInfo = formatSessionStopInfo(session);
+  const spent = session.billing?.amount_spent;
+  const userLabel = session.user?.name ?? session.user?.email ?? 'Client necunoscut';
+
+  return (
+    <article className={`session-card-modern ${isActive ? 'tone-warning' : 'tone-success'}`}>
+      <div className="station-card-top">
+        <div className="station-card-icon">
+          <BatteryCharging size={18} />
+        </div>
+        <div className="station-card-main">
+          <strong>{userLabel}</strong>
+          {session.user?.email && session.user?.name ? (
+            <p className="station-card-identity">{session.user.email}</p>
+          ) : null}
+          <p className="station-card-location">
+            <Zap size={13} />
+            {session.station?.name ?? 'Statie necunoscuta'}
+            {session.ocpp_connector_id ? ` · Conector C${session.ocpp_connector_id}` : ''}
+          </p>
+          <p className="station-card-identity">
+            <Clock3 size={13} />
+            {session.start_time ? formatDateTime(session.start_time) : '-'}
+            {isActive ? ' · in curs' : ` · ${formatSessionDuration(session)}`}
+          </p>
+        </div>
+        <div className="station-card-badges">
+          <Badge variant={isActive ? 'warning' : 'success'}>{isActive ? 'Activa' : 'Inchisa'}</Badge>
+          {!isActive && spent != null ? (
+            <Badge variant="success">{formatMoney(spent)}</Badge>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="station-card-metrics session-card-metrics">
+        <div className="station-metric">
+          <span>Consum</span>
+          <strong className={isActive ? 'metric-live' : ''}>{formatKwh(kwh)} kWh</strong>
+        </div>
+        <div className="station-metric">
+          <span>Putere</span>
+          <strong className={isActive && powerKw != null ? 'metric-live' : ''}>
+            {isActive && powerKw != null ? `${formatKwh(powerKw, 2)} kW` : '-'}
+          </strong>
+        </div>
+        <div className="station-metric">
+          <span>Buget</span>
+          <strong>{session.charge_budget > 0 ? formatMoney(session.charge_budget) : '-'}</strong>
+        </div>
+        <div className="station-metric">
+          <span>Limita kWh</span>
+          <strong>{session.target_kwh > 0 ? formatKwh(session.target_kwh) : '-'}</strong>
+        </div>
+      </div>
+
+      {(session.ocpp_transaction_id || stopInfo || session.invoice?.id) ? (
+        <div className="station-card-chips">
+          {session.ocpp_transaction_id ? (
+            <span className="station-chip">tx {session.ocpp_transaction_id}</span>
+          ) : null}
+          {stopInfo ? <span className="station-chip">{stopInfo}</span> : null}
+          {session.invoice?.id ? (
+            <span className="station-chip station-chip-live">Factura emisa</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="station-card-actions">
+        <div className="station-card-actions-main">
+          <button className="secondary-button mini-button" onClick={() => onDebug(session)} type="button">
+            <Bug size={14} />
+            Debug OCPP
+          </button>
+          {session.invoice?.id && onDownloadInvoice ? (
+            <button className="secondary-button mini-button" onClick={() => onDownloadInvoice(session.invoice)} type="button">
+              <Download size={14} />
+              Factura
+            </button>
+          ) : null}
+          {isActive ? (
+            <button className="secondary-button mini-button danger-text" onClick={() => onStop(session)} type="button">
+              <Square size={14} />
+              Opreste
+            </button>
+          ) : null}
+        </div>
+        <div className="station-card-actions-icons">
+          <button className="icon-button danger-icon" onClick={() => onDelete(session)} type="button" title="Sterge sesiunea">
+            <X size={15} />
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadInvoice, onDebug }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const visibleRows = rows.filter((session) => {
-    if (statusFilter === 'active' && session.end_time) return false;
-    if (statusFilter === 'closed' && !session.end_time) return false;
 
-    return matchesQuery(session, query, [
-      (item) => item.user?.name,
-      (item) => item.user?.email,
-      (item) => item.station?.name,
-      (item) => item.ocpp_transaction_id,
-      (item) => item.end_time ? 'inchisa' : 'activa'
-    ]);
-  });
+  const summary = useMemo(() => {
+    const active = rows.filter((session) => !session.end_time);
+    const closed = rows.filter((session) => session.end_time);
+    const totalKwh = rows.reduce((sum, session) => sum + Number(sessionKwhDelivered(session) || 0), 0);
+    const totalRevenue = closed.reduce(
+      (sum, session) => sum + Number(session.billing?.amount_spent || 0),
+      0
+    );
+
+    return {
+      total: rows.length,
+      active: active.length,
+      closed: closed.length,
+      totalKwh,
+      totalRevenue
+    };
+  }, [rows]);
+
+  const visibleRows = useMemo(() => rows
+    .filter((session) => {
+      if (statusFilter === 'active' && session.end_time) return false;
+      if (statusFilter === 'closed' && !session.end_time) return false;
+
+      return matchesQuery(session, query, [
+        (item) => item.user?.name,
+        (item) => item.user?.email,
+        (item) => item.station?.name,
+        (item) => item.ocpp_transaction_id,
+        (item) => item.end_time ? 'inchisa' : 'activa'
+      ]);
+    })
+    .sort((left, right) => {
+      const leftTime = left.start_time ? new Date(left.start_time).getTime() : 0;
+      const rightTime = right.start_time ? new Date(right.start_time).getTime() : 0;
+
+      return rightTime - leftTime;
+    }), [rows, query, statusFilter]);
+
+  if (loading && !rows.length) return <LoadingState />;
 
   return (
-    <ListPanel
-      loading={loading}
-      title="Sesiuni"
-      subtitle="kWh din contor OCPP (ca pe display statie)"
-      emptyTitle="Nu exista sesiuni"
-      rows={visibleRows}
-      searchValue={query}
-      onSearchChange={setQuery}
-      noResults={rows.length > 0 && visibleRows.length === 0}
-      onRefresh={onRefresh}
-      filters={(
-        <div className="status-filters">
-          {sessionStatusFilters.map((filter) => (
-            <button
-              className={statusFilter === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
-              key={filter.id || 'all'}
-              onClick={() => setStatusFilter(filter.id)}
-              type="button"
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      )}
-      render={(session) => (
-        <>
+    <div className="view-stack sessions-page">
+      <div className="panel sessions-panel">
+        <div className="panel-header stations-panel-header">
           <div>
-            <strong>{session.user?.name ?? '-'}</strong>
-            <p>
-              {session.station?.name ?? '-'}
-              {session.ocpp_connector_id ? ` · C${session.ocpp_connector_id}` : ''}
-              {session.ocpp_transaction_id ? ` · tx ${session.ocpp_transaction_id}` : ''}
-            </p>
-            {session.charge_budget > 0 && (
-              <p className="request-meta">
-                Buget {formatMoney(session.charge_budget)}
-                {session.target_kwh > 0 ? ` · limita ${formatKwh(session.target_kwh)} kWh` : ''}
-              </p>
-            )}
-            {formatSessionStopInfo(session) ? (
-              <p className="request-meta">{formatSessionStopInfo(session)}</p>
-            ) : null}
+            <h2>Sesiuni</h2>
+            <p>Monitorizare incarcare, consum OCPP si actiuni rapide</p>
+            <div className="stations-inline-stats">
+              <span><strong>{formatNumber(summary.total)}</strong> total</span>
+              <span className="tone-warning"><strong>{formatNumber(summary.active)}</strong> active</span>
+              <span className="tone-success"><strong>{formatNumber(summary.closed)}</strong> inchise</span>
+              <span className="tone-live"><strong>{formatKwh(summary.totalKwh, 1)}</strong> kWh total</span>
+              <span><strong>{formatMoney(summary.totalRevenue)}</strong> incasat</span>
+            </div>
           </div>
-          <span className="live-kwh">
-            {formatKwh(sessionKwhDelivered(session))} kWh
-            {!session.end_time && sessionPowerKw(session) != null
-              ? ` · ${formatKwh(sessionPowerKw(session), 2)} kW`
-              : ''}
-          </span>
-          <Badge variant={session.end_time ? 'success' : 'warning'}>{session.end_time ? 'Inchisa' : 'Activa'}</Badge>
-          {session.end_time && session.billing?.amount_spent != null ? (
-            <Badge variant="success">{formatMoney(session.billing.amount_spent)}</Badge>
-          ) : null}
-          <div className="row-actions end-actions">
-            <strong>{session.start_time ? new Date(session.start_time).toLocaleString('ro-RO') : '-'}</strong>
-            <button className="secondary-button mini-button" onClick={() => onDebug(session)} type="button">
-              <Bug size={14} />
-              OCPP
-            </button>
-            {session.invoice?.id && onDownloadInvoice ? (
-              <button className="secondary-button mini-button" onClick={() => onDownloadInvoice(session.invoice)} type="button">
-                <Download size={14} />
-                Factura
-              </button>
-            ) : null}
-            {!session.end_time && (
-              <button className="secondary-button mini-button" onClick={() => onStop(session)} type="button">
-                Opreste
-              </button>
-            )}
-            <button className="icon-button danger-icon" onClick={() => onDelete(session)} type="button" aria-label="Sterge sesiunea">
-              <X size={16} />
-            </button>
+          <BatteryCharging size={20} />
+        </div>
+
+        <div className="sessions-summary-bar">
+          <div className="stations-summary-tile">
+            <span>Total sesiuni</span>
+            <strong>{formatNumber(summary.total)}</strong>
           </div>
-        </>
-      )}
-    />
+          <div className="stations-summary-tile tone-warning">
+            <span>Active acum</span>
+            <strong>{formatNumber(summary.active)}</strong>
+          </div>
+          <div className="stations-summary-tile tone-success">
+            <span>Finalizate</span>
+            <strong>{formatNumber(summary.closed)}</strong>
+          </div>
+          <div className="stations-summary-tile tone-live">
+            <span>Energie livrata</span>
+            <strong>{formatKwh(summary.totalKwh, 1)}</strong>
+          </div>
+          <div className="stations-summary-tile">
+            <span>Valoare incasata</span>
+            <strong>{formatMoney(summary.totalRevenue)}</strong>
+          </div>
+        </div>
+
+        <div className="stations-control-bar sessions-control-bar">
+          <Toolbar onRefresh={onRefresh} value={query} onChange={setQuery} />
+          <div className="stations-filter-row">
+            {sessionStatusFilters.map((filter) => (
+              <button
+                className={statusFilter === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
+                key={filter.id || 'all'}
+                onClick={() => setStatusFilter(filter.id)}
+                type="button"
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          <span className="stations-result-count">{formatNumber(visibleRows.length)} afisate</span>
+        </div>
+
+        {rows.length === 0 ? (
+          <EmptyState
+            detail="Cand apar sesiuni de incarcare, le vei vedea aici cu consum si status."
+            title="Nu exista sesiuni"
+          />
+        ) : visibleRows.length === 0 ? (
+          <EmptyState
+            detail="Schimba filtrul sau termenul de cautare."
+            title="Niciun rezultat"
+          />
+        ) : (
+          <div className="stations-card-grid sessions-card-grid">
+            {visibleRows.map((session) => (
+              <SessionModernCard
+                key={session.id}
+                onDebug={onDebug}
+                onDelete={onDelete}
+                onDownloadInvoice={onDownloadInvoice}
+                onStop={onStop}
+                session={session}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -2150,7 +2291,9 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
       ) : (
         <div className="table">
           {visibleRows.map((topup) => {
-            const refundableAmount = Number(topup.refundable_amount ?? 0);
+            const refundableAmount = Number(
+              topup.effective_refundable_amount ?? topup.refundable_amount ?? 0
+            );
             const canRefund = topup.status === 'paid' && refundableAmount > 0;
 
             return (
@@ -2370,6 +2513,9 @@ function UserDetailModal({
   onUpdateUser,
   updateSaving,
   updateError,
+  onDeleteUser,
+  deleteSaving,
+  deleteError,
 }) {
   const [creditAmount, setCreditAmount] = useState('500');
   const [editForm, setEditForm] = useState({
@@ -2706,6 +2852,24 @@ function UserDetailModal({
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="detail-section detail-section-danger">
+              <h3>Stergere cont</h3>
+              <p className="detail-empty">
+                Sterge definitiv contul utilizatorului. Soldul trebuie sa fie zero, fara incarcare activa sau facturi neplatite.
+              </p>
+              {deleteError ? <div className="error-banner">{deleteError}</div> : null}
+              <div className="modal-actions">
+                <button
+                  className="secondary-button danger-text"
+                  disabled={deleteSaving}
+                  onClick={() => onDeleteUser?.(user)}
+                  type="button"
+                >
+                  {deleteSaving ? 'Se sterge...' : 'Sterge contul definitiv'}
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -3171,7 +3335,14 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
   }
 
   const refundableAmount = Number(topup.refundable_amount ?? 0);
+  const walletBalance = Number(topup.user?.wallet_balance ?? 0);
+  const maxRefund = Number(
+    topup.effective_refundable_amount
+      ?? Math.min(refundableAmount, Math.max(0, walletBalance))
+  );
   const userLabel = topup.user?.email ?? topup.user?.name ?? `user #${topup.user_id}`;
+  const provider = String(topup.payment_provider || 'local');
+  const isCardProvider = provider === 'stripe' || provider === 'maib';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -3191,11 +3362,11 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
         <div className="billing-summary-grid">
           <div className="billing-stat">
             <span>Disponibil retur</span>
-            <strong>{formatMoney(refundableAmount)}</strong>
+            <strong>{formatMoney(maxRefund)}</strong>
           </div>
           <div className="billing-stat">
             <span>Sold client</span>
-            <strong>{formatMoney(topup.user?.wallet_balance)}</strong>
+            <strong>{formatMoney(walletBalance)}</strong>
           </div>
           {topup.amount_refunded > 0 ? (
             <div className="billing-stat">
@@ -3209,9 +3380,9 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
           <label className="full-field">
             Suma de returnat (MDL)
             <input
-              defaultValue={refundableAmount > 0 ? refundableAmount.toFixed(2) : ''}
+              defaultValue={maxRefund > 0 ? maxRefund.toFixed(2) : ''}
               inputMode="decimal"
-              max={refundableAmount}
+              max={maxRefund}
               min="0.01"
               name="amount"
               placeholder="0.00"
@@ -3220,14 +3391,35 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
               type="number"
             />
           </label>
+          <div className="full-field" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              className="secondary-button"
+              disabled={maxRefund <= 0}
+              onClick={(event) => {
+                event.preventDefault();
+                const input = event.currentTarget.form?.elements?.namedItem('amount');
+                if (input && 'value' in input) {
+                  input.value = maxRefund.toFixed(2);
+                }
+              }}
+              type="button"
+            >
+              Retur total ({formatMoney(maxRefund)})
+            </button>
+          </div>
           <p className="field-hint full-field">
-            Returnezi pe cardul folosit la aceasta alimentare. Maxim {formatMoney(refundableAmount)}.
+            {isCardProvider
+              ? `Returnezi pe card (provider: ${provider}). Poti returna partial sau total, maxim ${formatMoney(maxRefund)}.`
+              : `Debitezi soldul wallet (fara retur pe card). Maxim ${formatMoney(maxRefund)}.`}
+            {walletBalance < refundableAmount
+              ? ' Soldul clientului limiteaza suma (a cheltuit o parte din alimentare).'
+              : ''}
           </p>
         </div>
 
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose} type="button">Renunta</button>
-          <button className="primary-button danger-text" disabled={saving || refundableAmount <= 0} type="submit">
+          <button className="primary-button danger-text" disabled={saving || maxRefund <= 0} type="submit">
             {saving ? 'Se proceseaza' : 'Confirma returul'}
           </button>
         </div>
@@ -3351,15 +3543,15 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
             </label>
             <label>
               Taxa rezervare (MDL)
-              <input defaultValue={entity?.reservation_fee ?? 15} name="reservation_fee" inputMode="decimal" />
+              <input defaultValue={entity?.reservation_fee ?? 0} name="reservation_fee" inputMode="decimal" />
             </label>
             <label>
               Taxa no-show (MDL)
-              <input defaultValue={entity?.reservation_no_show_fee ?? 30} name="reservation_no_show_fee" inputMode="decimal" />
+              <input defaultValue={entity?.reservation_no_show_fee ?? 0} name="reservation_no_show_fee" inputMode="decimal" />
             </label>
             <label>
               Durata max (minute)
-              <input defaultValue={entity?.reservation_max_duration_minutes ?? 120} name="reservation_max_duration_minutes" inputMode="numeric" />
+              <input defaultValue={entity?.reservation_max_duration_minutes ?? 30} name="reservation_max_duration_minutes" inputMode="numeric" />
             </label>
             <label>
               Avans maxim (zile)
@@ -3502,6 +3694,8 @@ export default function App() {
   const [userCreditError, setUserCreditError] = useState('');
   const [userUpdateSaving, setUserUpdateSaving] = useState(false);
   const [userUpdateError, setUserUpdateError] = useState('');
+  const [userDeleteSaving, setUserDeleteSaving] = useState(false);
+  const [userDeleteError, setUserDeleteError] = useState('');
   const [stationDetail, setStationDetail] = useState(null);
   const [stationDetailLoading, setStationDetailLoading] = useState(false);
   const [stationDetailError, setStationDetailError] = useState('');
@@ -3531,7 +3725,7 @@ export default function App() {
     }, 12000);
 
     return () => window.clearInterval(timer);
-  }, [authRequired]);
+  }, [authRequired, reload]);
 
   async function loadSessionOcppDebug(sessionId, silent = false) {
     if (!silent) {
@@ -3723,6 +3917,29 @@ export default function App() {
     }
   }
 
+  async function deleteUserAccount(user) {
+    const label = user.email ?? user.name ?? `utilizatorul #${user.id}`;
+    if (!window.confirm(`Stergi definitiv ${label}? Actiunea este permanenta.`)) {
+      return;
+    }
+
+    setUserDeleteSaving(true);
+    setUserDeleteError('');
+    setActionError('');
+    setActionMessage('');
+
+    try {
+      const response = await mutateJson(`/backoffice/users/${user.id}/delete`);
+      setActionMessage(response?.message || 'Cont sters.');
+      setUserDetail(null);
+      await reload(true);
+    } catch (error) {
+      setUserDeleteError(error.message || 'Stergerea contului nu a reusit.');
+    } finally {
+      setUserDeleteSaving(false);
+    }
+  }
+
   async function handleWalletRefundSubmit(event) {
     event.preventDefault();
 
@@ -3732,7 +3949,11 @@ export default function App() {
 
     const values = formDataToObject(event.currentTarget);
     const amount = Number(String(values.amount ?? '').replace(',', '.'));
-    const refundableAmount = Number(walletRefundTopup.refundable_amount ?? 0);
+    const refundableAmount = Number(
+      walletRefundTopup.effective_refundable_amount
+        ?? walletRefundTopup.refundable_amount
+        ?? 0
+    );
 
     if (!Number.isFinite(amount) || amount <= 0) {
       setActionError('Introdu o suma valida pentru retur.');
@@ -4058,8 +4279,12 @@ export default function App() {
           setUserDetail(null);
           setUserDetailError('');
           setUserCreditError('');
+          setUserDeleteError('');
         }}
         onCreditWallet={creditUserWallet}
+        onDeleteUser={deleteUserAccount}
+        deleteError={userDeleteError}
+        deleteSaving={userDeleteSaving}
         onDownloadInvoice={downloadInvoice}
         onUpdateUser={updateUserAccount}
         updateError={userUpdateError}

@@ -140,7 +140,8 @@ class WalletRefundTest extends TestCase
             ->getJson('/backoffice/wallet-topups')
             ->assertOk()
             ->assertJsonPath('data.0.amount_refunded', 50)
-            ->assertJsonPath('data.0.refundable_amount', 150);
+            ->assertJsonPath('data.0.refundable_amount', 150)
+            ->assertJsonPath('data.0.effective_refundable_amount', 150);
     }
 
     public function test_backoffice_partial_refund(): void

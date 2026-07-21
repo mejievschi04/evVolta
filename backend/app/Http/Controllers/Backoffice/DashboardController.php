@@ -24,6 +24,7 @@ use App\Services\OcppService;
 use App\Services\ReservationService;
 use App\Services\StripePaymentService;
 use App\Services\TariffService;
+use App\Services\UserDeletionService;
 use App\Services\WalletService;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\PngWriter;
@@ -51,6 +52,7 @@ class DashboardController extends Controller
         private readonly SessionPresentationService $sessionPresentationService,
         private readonly TariffService $tariffService,
         private readonly ReservationService $reservationService,
+        private readonly UserDeletionService $userDeletionService,
     )
     {
     }
@@ -641,7 +643,7 @@ class DashboardController extends Controller
             'reservation_require_for_start' => 'nullable|boolean',
             'reservation_fee' => 'nullable|numeric|min:0|max:10000',
             'reservation_no_show_fee' => 'nullable|numeric|min:0|max:10000',
-            'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:480',
+            'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:30',
             'reservation_advance_days' => 'nullable|integer|min:1|max:30',
             'reservation_grace_minutes' => 'nullable|integer|min:0|max:120',
         ]);
@@ -651,9 +653,9 @@ class DashboardController extends Controller
         $data['ocpp_version'] = $data['ocpp_version'] ?? '1.6J';
         $data['reservations_enabled'] = filter_var($data['reservations_enabled'] ?? false, FILTER_VALIDATE_BOOL);
         $data['reservation_require_for_start'] = filter_var($data['reservation_require_for_start'] ?? false, FILTER_VALIDATE_BOOL);
-        $data['reservation_fee'] = round((float) ($data['reservation_fee'] ?? 15), 2);
-        $data['reservation_no_show_fee'] = round((float) ($data['reservation_no_show_fee'] ?? 30), 2);
-        $data['reservation_max_duration_minutes'] = (int) ($data['reservation_max_duration_minutes'] ?? 60);
+        $data['reservation_fee'] = round((float) ($data['reservation_fee'] ?? 0), 2);
+        $data['reservation_no_show_fee'] = round((float) ($data['reservation_no_show_fee'] ?? 0), 2);
+        $data['reservation_max_duration_minutes'] = (int) ($data['reservation_max_duration_minutes'] ?? 30);
         $data['reservation_advance_days'] = (int) ($data['reservation_advance_days'] ?? 14);
         $data['reservation_grace_minutes'] = (int) ($data['reservation_grace_minutes'] ?? 20);
         $data['ocpp_connection_status'] = $data['ocpp_identity']
@@ -699,7 +701,7 @@ class DashboardController extends Controller
             'reservation_require_for_start' => 'nullable|boolean',
             'reservation_fee' => 'nullable|numeric|min:0|max:10000',
             'reservation_no_show_fee' => 'nullable|numeric|min:0|max:10000',
-            'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:480',
+            'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:30',
             'reservation_advance_days' => 'nullable|integer|min:1|max:30',
             'reservation_grace_minutes' => 'nullable|integer|min:0|max:120',
         ]);
@@ -718,6 +720,9 @@ class DashboardController extends Controller
         }
         if (array_key_exists('reservation_no_show_fee', $data)) {
             $data['reservation_no_show_fee'] = round((float) $data['reservation_no_show_fee'], 2);
+        }
+        if (array_key_exists('reservation_max_duration_minutes', $data)) {
+            $data['reservation_max_duration_minutes'] = min(30, max(15, (int) $data['reservation_max_duration_minutes']));
         }
         if ($station->ocpp_identity !== $data['ocpp_identity']) {
             $data['ocpp_connection_status'] = $data['ocpp_identity']
@@ -1359,26 +1364,32 @@ class DashboardController extends Controller
         }
 
         return response()->json([
-            'data' => $listQuery->get()->map(fn (WalletTopup $topup) => [
-                'id' => $topup->id,
-                'user_id' => $topup->user_id,
-                'amount' => round((float) $topup->amount, 2),
-                'amount_refunded' => round((float) $topup->amount_refunded, 2),
-                'refundable_amount' => $topup->refundableAmount(),
-                'currency' => $topup->currency,
-                'status' => $topup->status,
-                'payment_provider' => $topup->payment_provider,
-                'payment_session_id' => $topup->payment_session_id,
-                'paid_at' => $topup->paid_at,
-                'created_at' => $topup->created_at,
-                'user' => $topup->user?->only([
-                    'id',
-                    'name',
-                    'email',
-                    'account_type',
-                    'wallet_balance',
-                ]),
-            ]),
+            'data' => $listQuery->get()->map(function (WalletTopup $topup) {
+                $refundable = $topup->refundableAmount();
+                $walletBalance = round((float) ($topup->user?->wallet_balance ?? 0), 2);
+
+                return [
+                    'id' => $topup->id,
+                    'user_id' => $topup->user_id,
+                    'amount' => round((float) $topup->amount, 2),
+                    'amount_refunded' => round((float) $topup->amount_refunded, 2),
+                    'refundable_amount' => $refundable,
+                    'effective_refundable_amount' => round(min($refundable, max(0, $walletBalance)), 2),
+                    'currency' => $topup->currency,
+                    'status' => $topup->status,
+                    'payment_provider' => $topup->payment_provider,
+                    'payment_session_id' => $topup->payment_session_id,
+                    'paid_at' => $topup->paid_at,
+                    'created_at' => $topup->created_at,
+                    'user' => $topup->user?->only([
+                        'id',
+                        'name',
+                        'email',
+                        'account_type',
+                        'wallet_balance',
+                    ]),
+                ];
+            }),
             'refunds' => WalletRefund::query()
                 ->with([
                     'user:id,name,email,account_type,wallet_balance',
@@ -1646,6 +1657,29 @@ class DashboardController extends Controller
                 'created_at',
             ]),
         ]);
+    }
+
+    public function deleteUser(Request $request, User $user): JsonResponse|RedirectResponse
+    {
+        if ($user->isAdmin()) {
+            abort(404);
+        }
+
+        try {
+            $this->userDeletionService->delete(
+                $user,
+                $this->backofficeActor(),
+                'backoffice.user.deleted',
+            );
+        } catch (RuntimeException $exception) {
+            return $this->respondMutationError(
+                $request,
+                $exception->getMessage(),
+                (int) ($exception->getCode() ?: 422),
+            );
+        }
+
+        return $this->respondMutation($request, 'Contul a fost sters.');
     }
 
     public function invoices(Request $request): JsonResponse

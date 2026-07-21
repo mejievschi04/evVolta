@@ -24,6 +24,7 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::patch('/me', [AuthController::class, 'updateProfile']);
+    Route::post('/me/delete', [AuthController::class, 'deleteAccount'])->middleware('throttle:5,1');
     Route::get('/stations', [StationController::class, 'index']);
     Route::post('/stations/resolve-qr', [StationController::class, 'resolveQr']);
     Route::post('/stations/{station}/refresh-status', [StationController::class, 'refreshStatus']);
@@ -46,8 +47,6 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/wallet', [WalletController::class, 'show']);
     Route::get('/wallet/topups', [WalletController::class, 'indexTopups']);
     Route::post('/wallet/topup-checkout', [WalletController::class, 'createTopupCheckout']);
-    Route::post('/wallet/local-topup', [WalletController::class, 'localTopup'])
-        ->middleware('throttle:wallet-dev-topup');
     Route::post('/wallet/topups/{topup}/verify-payment', [WalletController::class, 'verifyTopupPayment']);
     Route::get('/invoices', [InvoiceController::class, 'index']);
     Route::get('/invoices/{invoice}/download', [InvoiceController::class, 'download']);

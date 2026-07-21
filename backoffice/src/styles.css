@@ -750,7 +750,7 @@ button {
 }
 
 .detail-metric span {
-  color: #9eb08a;
+  color: var(--muted-strong);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.35px;
@@ -758,14 +758,14 @@ button {
 }
 
 .detail-metric strong {
-  color: var(--ink);
+  color: var(--neon);
   font-size: 15px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
 
 .detail-metric small {
-  color: #7f916d;
+  color: #b8c98d;
   font-size: 10px;
   font-weight: 700;
 }
@@ -1189,6 +1189,69 @@ button {
 .stations-panel {
   overflow: hidden;
   padding: 12px 14px;
+}
+
+.sessions-page .sessions-panel {
+  overflow: hidden;
+  padding: 12px 14px;
+}
+
+.sessions-page .panel-header h2 {
+  font-size: 17px;
+}
+
+.sessions-page .panel-header p {
+  font-size: 11px;
+}
+
+.sessions-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.sessions-control-bar {
+  margin-bottom: 14px;
+}
+
+.sessions-card-grid {
+  margin-top: 2px;
+}
+
+.session-card-modern {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(7, 9, 5, 0.82);
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.session-card-modern:hover {
+  border-color: rgba(255, 238, 0, 0.18);
+  transform: translateY(-1px);
+}
+
+.session-card-modern.tone-success {
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+.session-card-modern.tone-warning {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.session-card-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.session-card-modern .station-card-actions-main .secondary-button.mini-button {
+  flex: 1;
+  justify-content: center;
+  min-width: 88px;
 }
 
 .stations-panel .panel-header h2 {
@@ -2230,6 +2293,15 @@ button {
   font-size: 16px;
 }
 
+.detail-section-danger {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 77, 103, 0.18);
+}
+
+.detail-section-danger h3 {
+  color: #ff8ea0;
+}
+
 .detail-empty {
   margin: 0;
   color: #b8c98d;
@@ -2796,6 +2868,7 @@ button {
   .station-network-columns,
   .station-status-grid,
   .stations-summary-bar,
+  .sessions-summary-bar,
   .station-card-metrics,
   .dash-kpi-grid,
   .dash-side-metrics,
@@ -2904,6 +2977,7 @@ button {
   .station-network-columns,
   .station-status-grid,
   .stations-summary-bar,
+  .sessions-summary-bar,
   .station-card-metrics,
   .stations-card-grid,
   .dash-kpi-grid,
