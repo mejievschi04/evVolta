@@ -433,7 +433,7 @@ class WalletService
             } elseif ($topup->payment_provider === 'maib') {
                 if (! $topup->payment_session_id) {
                     throw new RuntimeException(
-                        'Plata originala nu poate fi returnata automat. Lipseste payId MAIB.',
+                        'Plata originala nu poate fi returnata automat. Lipseste checkoutId MAIB.',
                         422
                     );
                 }

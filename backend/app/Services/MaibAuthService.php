@@ -8,14 +8,12 @@ use RuntimeException;
 
 class MaibAuthService
 {
-    private const ACCESS_CACHE_KEY = 'maib.access_token';
-
-    private const REFRESH_CACHE_KEY = 'maib.refresh_token';
+    private const ACCESS_CACHE_KEY = 'maib.checkout.access_token';
 
     public function isConfigured(): bool
     {
-        return filled(config('services.maib.project_id'))
-            && filled(config('services.maib.project_secret'));
+        return filled(config('services.maib.client_id'))
+            && filled(config('services.maib.client_secret'));
     }
 
     public function accessToken(): string
@@ -25,54 +23,43 @@ class MaibAuthService
             return $cached;
         }
 
-        $refresh = Cache::get(self::REFRESH_CACHE_KEY);
-        if (is_string($refresh) && $refresh !== '') {
-            try {
-                return $this->storeTokenResponse($this->requestToken(['refreshToken' => $refresh]));
-            } catch (RuntimeException) {
-                Cache::forget(self::REFRESH_CACHE_KEY);
-            }
-        }
-
-        return $this->storeTokenResponse($this->requestToken([
-            'projectId' => (string) config('services.maib.project_id'),
-            'projectSecret' => (string) config('services.maib.project_secret'),
-        ]));
+        return $this->storeTokenResponse($this->requestToken());
     }
 
     public function clearCachedTokens(): void
     {
         Cache::forget(self::ACCESS_CACHE_KEY);
-        Cache::forget(self::REFRESH_CACHE_KEY);
     }
 
     /**
-     * @param  array<string, string>  $payload
      * @return array<string, mixed>
      */
-    private function requestToken(array $payload): array
+    private function requestToken(): array
     {
-        if (! $this->isConfigured() && ! isset($payload['refreshToken'])) {
+        if (! $this->isConfigured()) {
             throw new RuntimeException('Plata MAIB nu este configurata. Contacteaza administratorul.', 422);
         }
 
         $response = Http::acceptJson()
             ->asJson()
             ->timeout(20)
-            ->post($this->baseUrl().'/generate-token', $payload);
+            ->post($this->baseUrl().'/v2/auth/token', [
+                'clientId' => (string) config('services.maib.client_id'),
+                'clientSecret' => (string) config('services.maib.client_secret'),
+            ]);
 
         $body = $response->json() ?? [];
 
         if (! $response->successful() || ($body['ok'] ?? false) !== true) {
             $message = data_get($body, 'errors.0.errorMessage')
-                ?: 'Nu am putut genera token-ul MAIB.';
+                ?: 'Nu am putut genera token-ul MAIB Checkout.';
 
             throw new RuntimeException($message, 422);
         }
 
         $result = $body['result'] ?? null;
         if (! is_array($result) || empty($result['accessToken'])) {
-            throw new RuntimeException('Raspuns invalid la generarea token-ului MAIB.', 422);
+            throw new RuntimeException('Raspuns invalid la generarea token-ului MAIB Checkout.', 422);
         }
 
         return $result;
@@ -87,17 +74,14 @@ class MaibAuthService
         $expiresIn = max(30, (int) ($result['expiresIn'] ?? 300) - 30);
         Cache::put(self::ACCESS_CACHE_KEY, $accessToken, $expiresIn);
 
-        $refreshToken = (string) ($result['refreshToken'] ?? '');
-        if ($refreshToken !== '') {
-            $refreshExpiresIn = max(60, (int) ($result['refreshExpiresIn'] ?? 1800) - 60);
-            Cache::put(self::REFRESH_CACHE_KEY, $refreshToken, $refreshExpiresIn);
-        }
-
         return $accessToken;
     }
 
     private function baseUrl(): string
     {
-        return rtrim((string) config('services.maib.base_url', 'https://api.maibmerchants.md/v1'), '/');
+        $base = rtrim((string) config('services.maib.base_url', 'https://api.maibmerchants.md'), '/');
+
+        // Legacy env may still include /v1 — Checkout paths are rooted at host.
+        return preg_replace('#/v1$#', '', $base) ?: 'https://api.maibmerchants.md';
     }
 }

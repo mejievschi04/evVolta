@@ -19,34 +19,31 @@ class MaibWalletPaymentTest extends TestCase
         config([
             'billing.prepaid_wallet_enabled' => true,
             'services.payment.provider' => 'maib',
-            'services.maib.project_id' => 'test-project',
-            'services.maib.project_secret' => 'test-secret',
-            'services.maib.signature_key' => '8508706b-3454-4733-8295-56e617c4abcf',
-            'services.maib.base_url' => 'https://api.maibmerchants.md/v1',
+            'services.maib.client_id' => 'test-client',
+            'services.maib.client_secret' => 'test-secret',
+            'services.maib.signature_key' => '67be8e54-ac28-485d-9369-27f6d3c55a27',
+            'services.maib.base_url' => 'https://api.maibmerchants.md',
             'services.maib.language' => 'ro',
             'services.stripe.secret' => null,
         ]);
     }
 
-    public function test_create_topup_checkout_returns_maib_pay_url(): void
+    public function test_create_topup_checkout_returns_maib_checkout_url(): void
     {
         Http::fake([
-            'https://api.maibmerchants.md/v1/generate-token' => Http::response([
+            'https://api.maibmerchants.md/v2/auth/token' => Http::response([
                 'ok' => true,
                 'result' => [
                     'accessToken' => 'access-token',
                     'expiresIn' => 300,
-                    'refreshToken' => 'refresh-token',
-                    'refreshExpiresIn' => 1800,
                     'tokenType' => 'Bearer',
                 ],
             ]),
-            'https://api.maibmerchants.md/v1/pay' => Http::response([
+            'https://api.maibmerchants.md/v2/checkouts' => Http::response([
                 'ok' => true,
                 'result' => [
-                    'payId' => 'f16a9006-128a-46bc-8e2a-77a6ee99df75',
-                    'orderId' => 'wallet-topup-1',
-                    'payUrl' => 'https://maib.ecommerce.md/pay/test',
+                    'checkoutId' => 'f6d0812a-50ee-47ec-bb3f-d3b3a4dda40d',
+                    'checkoutUrl' => 'https://checkout.maib.md/test',
                 ],
             ]),
         ]);
@@ -56,13 +53,13 @@ class MaibWalletPaymentTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/wallet/topup-checkout', ['amount' => 100])
             ->assertOk()
-            ->assertJsonPath('checkout_url', 'https://maib.ecommerce.md/pay/test')
+            ->assertJsonPath('checkout_url', 'https://checkout.maib.md/test')
             ->assertJsonPath('payment_provider', 'maib');
 
         $topup = WalletTopup::query()->where('user_id', $user->id)->first();
         $this->assertNotNull($topup);
         $this->assertSame('maib', $topup->payment_provider);
-        $this->assertSame('f16a9006-128a-46bc-8e2a-77a6ee99df75', $topup->payment_session_id);
+        $this->assertSame('f6d0812a-50ee-47ec-bb3f-d3b3a4dda40d', $topup->payment_session_id);
         $this->assertSame('pending', $topup->status);
     }
 
@@ -75,40 +72,30 @@ class MaibWalletPaymentTest extends TestCase
             'currency' => 'MDL',
             'status' => 'pending',
             'payment_provider' => 'maib',
-            'payment_session_id' => 'f16a9006-128a-46bc-8e2a-77a6ee99df75',
+            'payment_session_id' => '5a4d27a4-79f5-426b-9403-cccdeee81747',
         ]);
 
-        $result = [
-            'payId' => 'f16a9006-128a-46bc-8e2a-77a6ee99df75',
-            'orderId' => 'wallet-topup-'.$topup->id,
-            'status' => 'OK',
-            'statusCode' => '000',
-            'statusMessage' => 'Approved',
-            'threeDs' => 'AUTHENTICATED',
-            'rrn' => '331711380059',
-            'approval' => '327593',
-            'cardNumber' => '510218******1124',
+        $payload = [
+            'checkoutId' => '5a4d27a4-79f5-426b-9403-cccdeee81747',
             'amount' => 100,
             'currency' => 'MDL',
+            'orderId' => 'wallet-topup-'.$topup->id,
+            'paymentId' => '379b31a3-8283-43d4-8a7b-eef8c0736a32',
+            'paymentAmount' => 100,
+            'paymentCurrency' => 'MDL',
+            'paymentStatus' => 'Executed',
+            'retrievalReferenceNumber' => 'ABC324353245',
+            'processingStatus' => 'OK',
+            'paymentMethod' => 'Card',
         ];
 
-        $signature = app(MaibPaymentService::class)->buildSignature($result);
-
-        $this->postJson('/api/maib/callback', [
-            'result' => $result,
-            'signature' => $signature,
-        ])->assertOk()->assertJsonPath('matched', true);
+        $this->postSignedMaibCallback($payload)->assertOk()->assertJsonPath('matched', true);
 
         $this->assertSame(120.0, (float) $user->fresh()->wallet_balance);
         $this->assertSame('paid', $topup->fresh()->status);
-        $this->assertSame('331711380059', $topup->fresh()->payment_intent_id);
+        $this->assertSame('ABC324353245', $topup->fresh()->payment_intent_id);
 
-        // Idempotent second callback
-        $this->postJson('/api/maib/callback', [
-            'result' => $result,
-            'signature' => $signature,
-        ])->assertOk();
-
+        $this->postSignedMaibCallback($payload)->assertOk();
         $this->assertSame(120.0, (float) $user->fresh()->wallet_balance);
     }
 
@@ -121,46 +108,62 @@ class MaibWalletPaymentTest extends TestCase
             'currency' => 'MDL',
             'status' => 'pending',
             'payment_provider' => 'maib',
-            'payment_session_id' => 'pay-invalid-sig',
+            'payment_session_id' => 'checkout-invalid-sig',
         ]);
 
-        $this->postJson('/api/maib/callback', [
-            'result' => [
-                'payId' => 'pay-invalid-sig',
-                'orderId' => 'wallet-topup-'.$topup->id,
-                'status' => 'OK',
-                'amount' => 50,
-                'currency' => 'MDL',
+        $payload = [
+            'checkoutId' => 'checkout-invalid-sig',
+            'orderId' => 'wallet-topup-'.$topup->id,
+            'paymentId' => 'pay-1',
+            'paymentStatus' => 'Executed',
+            'amount' => 50,
+            'currency' => 'MDL',
+        ];
+        $raw = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $timestamp = (string) (int) (microtime(true) * 1000);
+
+        $this->call(
+            'POST',
+            '/api/maib/callback',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_SIGNATURE' => 'invalid-signature',
+                'HTTP_X_SIGNATURE_TIMESTAMP' => $timestamp,
             ],
-            'signature' => 'invalid-signature',
-        ])->assertForbidden();
+            $raw
+        )->assertForbidden();
 
         $this->assertSame(0.0, (float) $user->fresh()->wallet_balance);
         $this->assertSame('pending', $topup->fresh()->status);
     }
 
-    public function test_verify_payment_fallback_credits_when_maib_status_ok(): void
+    public function test_verify_payment_fallback_credits_when_checkout_completed(): void
     {
         Http::fake([
-            'https://api.maibmerchants.md/v1/generate-token' => Http::response([
+            'https://api.maibmerchants.md/v2/auth/token' => Http::response([
                 'ok' => true,
                 'result' => [
                     'accessToken' => 'access-token',
                     'expiresIn' => 300,
-                    'refreshToken' => 'refresh-token',
-                    'refreshExpiresIn' => 1800,
                     'tokenType' => 'Bearer',
                 ],
             ]),
-            'https://api.maibmerchants.md/v1/pay-info/*' => Http::response([
+            'https://api.maibmerchants.md/v2/checkouts/*' => Http::response([
                 'ok' => true,
                 'result' => [
-                    'payId' => 'pay-verify-1',
-                    'orderId' => 'wallet-topup-99',
-                    'status' => 'OK',
-                    'rrn' => 'rrn-1',
+                    'id' => 'pay-verify-1',
+                    'status' => 'Completed',
                     'amount' => 80,
                     'currency' => 'MDL',
+                    'payment' => [
+                        'paymentId' => 'pay-verify-payment-1',
+                        'status' => 'Executed',
+                        'referenceNumber' => 'rrn-1',
+                    ],
                 ],
             ]),
         ]);
@@ -184,27 +187,41 @@ class MaibWalletPaymentTest extends TestCase
         $this->assertSame('paid', $topup->fresh()->status);
     }
 
-    public function test_signature_matches_maib_documentation_example(): void
+    public function test_callback_hmac_matches_checkout_algorithm(): void
     {
-        $result = [
-            'payId' => 'f16a9006-128a-46bc-8e2a-77a6ee99df75',
-            'orderId' => '123',
-            'status' => 'OK',
-            'statusCode' => '000',
-            'statusMessage' => 'Approved',
-            'threeDs' => 'AUTHENTICATED',
-            'rrn' => '331711380059',
-            'approval' => '327593',
-            'cardNumber' => '510218******1124',
-            'amount' => 10.25,
-            'currency' => 'MDL',
-        ];
+        $rawBody = '{"checkoutId":"5a4d27a4-79f5-426b-9403-cccdeee81747","amount":1234.56}';
+        $timestamp = '1761032516817';
+        $key = '67be8e54-ac28-485d-9369-27f6d3c55a27';
 
-        $signature = app(MaibPaymentService::class)->buildSignature(
-            $result,
-            '8508706b-3454-4733-8295-56e617c4abcf'
+        $signature = app(MaibPaymentService::class)->buildCallbackSignature($rawBody, $timestamp, $key);
+        $expected = base64_encode(hash_hmac('sha256', $rawBody.'.'.$timestamp, $key, true));
+
+        $this->assertSame($expected, $signature);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function postSignedMaibCallback(array $payload)
+    {
+        $raw = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $this->assertIsString($raw);
+        $timestamp = (string) (int) (microtime(true) * 1000);
+        $signature = app(MaibPaymentService::class)->buildCallbackSignature($raw, $timestamp);
+
+        return $this->call(
+            'POST',
+            '/api/maib/callback',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_SIGNATURE' => $signature,
+                'HTTP_X_SIGNATURE_TIMESTAMP' => $timestamp,
+            ],
+            $raw
         );
-
-        $this->assertSame('5wHkZvm9lFeXxSeFF0ui2CnAp7pCEFSNmuHYFYJlC0s=', $signature);
     }
 }

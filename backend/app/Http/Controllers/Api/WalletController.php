@@ -283,13 +283,14 @@ class WalletController extends Controller
         }
 
         $status = (string) ($info['status'] ?? '');
-        $paymentStatus = $status === 'OK' ? 'paid' : 'unpaid';
+        $paid = $maibPaymentService->isCheckoutPaid($info);
+        $paymentStatus = $paid ? 'paid' : 'unpaid';
 
-        if ($status === 'OK') {
+        if ($paid) {
             $walletService->creditTopup(
                 $topup,
-                (string) ($info['payId'] ?? $topup->payment_session_id),
-                isset($info['rrn']) ? (string) $info['rrn'] : null,
+                $maibPaymentService->extractPaymentId($info) ?? $topup->payment_session_id,
+                $maibPaymentService->extractRrn($info),
             );
         }
 

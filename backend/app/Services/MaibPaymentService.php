@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Models\WalletTopup;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -38,62 +39,126 @@ class MaibPaymentService
         $payload = [
             'amount' => round((float) $topup->amount, 2),
             'currency' => $currency,
-            'clientIp' => $this->normalizeClientIp($clientIp),
             'language' => $language,
-            'description' => 'Alimentare cont Volta EV',
-            'orderId' => $orderId,
             'callbackUrl' => url('/api/maib/callback'),
-            'okUrl' => route('payments.maib.success', ['wallet_topup_id' => $topup->id]),
+            'successUrl' => route('payments.maib.success', ['wallet_topup_id' => $topup->id]),
             'failUrl' => route('payments.maib.fail', ['wallet_topup_id' => $topup->id]),
+            'orderInfo' => [
+                'id' => $orderId,
+                'description' => 'Alimentare cont Volta EV',
+                'date' => now()->toIso8601String(),
+            ],
+            'payerInfo' => [
+                'ip' => $this->normalizeClientIp($clientIp),
+            ],
         ];
 
         if ($user->name) {
-            $payload['clientName'] = mb_substr((string) $user->name, 0, 128);
+            $payload['payerInfo']['name'] = mb_substr((string) $user->name, 0, 128);
         }
         if ($user->email) {
-            $payload['email'] = mb_substr((string) $user->email, 0, 40);
+            $payload['payerInfo']['email'] = mb_substr((string) $user->email, 0, 40);
         }
         if ($user->phone) {
-            $payload['phone'] = mb_substr((string) $user->phone, 0, 40);
+            $payload['payerInfo']['phone'] = mb_substr((string) $user->phone, 0, 40);
         }
 
-        $body = $this->authorizedJson('POST', '/pay', $payload);
+        $body = $this->authorizedJson('POST', '/v2/checkouts', $payload);
         $result = $body['result'] ?? null;
 
-        if (! is_array($result) || empty($result['payId']) || empty($result['payUrl'])) {
-            throw new RuntimeException('Raspuns invalid de la MAIB la crearea platii.', 422);
+        if (! is_array($result) || empty($result['checkoutId']) || empty($result['checkoutUrl'])) {
+            throw new RuntimeException('Raspuns invalid de la MAIB la crearea checkout-ului.', 422);
         }
 
         return [
-            'id' => (string) $result['payId'],
-            'url' => (string) $result['payUrl'],
-            'order_id' => (string) ($result['orderId'] ?? $orderId),
+            'id' => (string) $result['checkoutId'],
+            'url' => (string) $result['checkoutUrl'],
+            'order_id' => $orderId,
         ];
     }
 
     /**
+     * Checkout session details (GET /v2/checkouts/{id}).
+     *
      * @return array<string, mixed>
      */
-    public function getPaymentInfo(string $payId): array
+    public function getPaymentInfo(string $checkoutId): array
     {
-        $body = $this->authorizedJson('GET', '/pay-info/'.rawurlencode($payId));
+        $body = $this->authorizedJson('GET', '/v2/checkouts/'.rawurlencode($checkoutId));
         $result = $body['result'] ?? null;
 
         if (! is_array($result)) {
-            throw new RuntimeException('Nu am putut citi starea platii MAIB.', 422);
+            throw new RuntimeException('Nu am putut citi starea checkout-ului MAIB.', 422);
         }
 
         return $result;
     }
 
+    public function isCheckoutPaid(array $checkout): bool
+    {
+        $status = strtolower((string) ($checkout['status'] ?? ''));
+        if ($status !== 'completed') {
+            return false;
+        }
+
+        $payment = $checkout['payment'] ?? null;
+        if (! is_array($payment)) {
+            return true;
+        }
+
+        $paymentStatus = strtolower((string) ($payment['status'] ?? $payment['paymentStatus'] ?? ''));
+
+        return $paymentStatus === '' || $paymentStatus === 'executed';
+    }
+
+    public function extractPaymentId(array $checkout): ?string
+    {
+        $payment = $checkout['payment'] ?? null;
+        if (! is_array($payment)) {
+            return null;
+        }
+
+        foreach (['paymentId', 'PaymentId', 'id'] as $key) {
+            $value = $payment[$key] ?? null;
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    public function extractRrn(array $checkout): ?string
+    {
+        $payment = $checkout['payment'] ?? null;
+        if (! is_array($payment)) {
+            return null;
+        }
+
+        foreach (['referenceNumber', 'retrievalReferenceNumber', 'rrn'] as $key) {
+            $value = $payment[$key] ?? null;
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @return array{id: string, status: string, refund_amount: float}
      */
-    public function refund(string $payId, float $amount): array
+    public function refund(string $checkoutId, float $amount): array
     {
-        $body = $this->authorizedJson('POST', '/refund', [
-            'payId' => $payId,
-            'refundAmount' => round($amount, 2),
+        $checkout = $this->getPaymentInfo($checkoutId);
+        $payId = $this->extractPaymentId($checkout);
+        if (! $payId) {
+            throw new RuntimeException('Nu am gasit paymentId MAIB pentru returnare.', 422);
+        }
+
+        $body = $this->authorizedJson('POST', '/v2/payments/'.rawurlencode($payId).'/refund', [
+            'amount' => round($amount, 2),
+            'reason' => 'Returnare alimentare wallet Volta EV',
         ]);
 
         $result = $body['result'] ?? null;
@@ -102,40 +167,61 @@ class MaibPaymentService
         }
 
         $status = (string) ($result['status'] ?? '');
-        if (! in_array($status, ['OK', 'REVERSED'], true)) {
+        if (! in_array($status, ['Created', 'OK', 'REVERSED'], true)) {
             $message = (string) ($result['statusMessage'] ?? 'Returnarea MAIB a esuat.');
             throw new RuntimeException($message, 422);
         }
 
         return [
-            'id' => (string) ($result['payId'] ?? $payId),
+            'id' => (string) ($result['refundId'] ?? $payId),
             'status' => $status,
-            'refund_amount' => (float) ($result['refundAmount'] ?? $amount),
+            'refund_amount' => round($amount, 2),
         ];
     }
 
-    public function verifyCallbackSignature(array $result, string $signature): bool
+    public function verifyCallbackRequest(Request $request): bool
     {
         $key = (string) config('services.maib.signature_key', '');
-        if ($key === '' || $signature === '') {
+        $headerSignature = (string) ($request->header('X-Signature') ?: $request->header('x-signature') ?: '');
+        $timestamp = (string) ($request->header('X-Signature-Timestamp') ?: $request->header('x-signature-timestamp') ?: '');
+        $rawBody = $request->getContent();
+
+        if ($key === '' || $headerSignature === '' || $timestamp === '' || $rawBody === '') {
             return false;
         }
 
-        return hash_equals($this->buildSignature($result, $key), $signature);
+        // Replay window: 10 minutes
+        $tsMs = (int) $timestamp;
+        if ($tsMs > 0) {
+            $skew = abs((int) (microtime(true) * 1000) - $tsMs);
+            if ($skew > 10 * 60 * 1000) {
+                return false;
+            }
+        }
+
+        $message = $rawBody.'.'.$timestamp;
+        $binary = hash_hmac('sha256', $message, $key, true);
+        $expectedBase64 = base64_encode($binary);
+        $expectedHex = hash_hmac('sha256', $message, $key);
+
+        $provided = $headerSignature;
+        if (str_starts_with(strtolower($provided), 'sha256=')) {
+            $provided = substr($provided, 7);
+        }
+
+        return hash_equals($expectedBase64, $provided)
+            || hash_equals($expectedHex, strtolower($provided))
+            || hash_equals($expectedHex, $provided);
     }
 
     /**
-     * @param  array<string, mixed>  $result
+     * Build Checkout callback HMAC for tests.
      */
-    public function buildSignature(array $result, ?string $signatureKey = null): string
+    public function buildCallbackSignature(string $rawBody, string $timestamp, ?string $signatureKey = null): string
     {
         $key = $signatureKey ?? (string) config('services.maib.signature_key', '');
-        $sorted = $this->sortByKeyRecursive($result);
-        $values = $this->flattenValues($sorted);
-        $values[] = $key;
-        $signString = implode(':', $values);
 
-        return base64_encode(hash('sha256', $signString, true));
+        return base64_encode(hash_hmac('sha256', $rawBody.'.'.$timestamp, $key, true));
     }
 
     public function resolveTopupFromOrderId(?string $orderId): ?WalletTopup
@@ -207,7 +293,9 @@ class MaibPaymentService
 
     private function baseUrl(): string
     {
-        return rtrim((string) config('services.maib.base_url', 'https://api.maibmerchants.md/v1'), '/');
+        $base = rtrim((string) config('services.maib.base_url', 'https://api.maibmerchants.md'), '/');
+
+        return preg_replace('#/v1$#', '', $base) ?: 'https://api.maibmerchants.md';
     }
 
     private function normalizeClientIp(string $clientIp): string
@@ -221,44 +309,6 @@ class MaibPaymentService
             return '127.0.0.1';
         }
 
-        return mb_substr($ip, 0, 15);
-    }
-
-    /**
-     * @param  array<string, mixed>  $array
-     * @return array<string, mixed>
-     */
-    private function sortByKeyRecursive(array $array): array
-    {
-        ksort($array, SORT_STRING);
-
-        foreach ($array as $key => $value) {
-            if (is_array($value)) {
-                $array[$key] = $this->sortByKeyRecursive($value);
-            }
-        }
-
-        return $array;
-    }
-
-    /**
-     * @param  array<mixed>  $array
-     * @return list<string>
-     */
-    private function flattenValues(array $array): array
-    {
-        $values = [];
-
-        foreach ($array as $item) {
-            if (is_array($item)) {
-                foreach ($this->flattenValues($item) as $nested) {
-                    $values[] = $nested;
-                }
-            } else {
-                $values[] = (string) $item;
-            }
-        }
-
-        return $values;
+        return mb_substr($ip, 0, 45);
     }
 }

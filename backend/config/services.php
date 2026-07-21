@@ -42,10 +42,11 @@ return [
     ],
 
     'maib' => [
-        'project_id' => env('MAIB_PROJECT_ID'),
-        'project_secret' => env('MAIB_PROJECT_SECRET'),
-        'signature_key' => env('MAIB_SIGNATURE_KEY'),
-        'base_url' => rtrim(env('MAIB_BASE_URL', 'https://api.maibmerchants.md/v1'), '/'),
+        // Checkout API v2 — clientId/clientSecret (fallback pe PROJECT_* din env vechi)
+        'client_id' => trim((string) (env('MAIB_CLIENT_ID') ?: env('MAIB_PROJECT_ID', '')), " \t\n\r\0\x0B\"'"),
+        'client_secret' => trim((string) (env('MAIB_CLIENT_SECRET') ?: env('MAIB_PROJECT_SECRET', '')), " \t\n\r\0\x0B\"'"),
+        'signature_key' => trim((string) env('MAIB_SIGNATURE_KEY', ''), " \t\n\r\0\x0B\"'"),
+        'base_url' => rtrim((string) env('MAIB_BASE_URL', 'https://api.maibmerchants.md'), '/'),
         'language' => env('MAIB_LANGUAGE', 'ro'),
     ],
 

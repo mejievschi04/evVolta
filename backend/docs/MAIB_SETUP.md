@@ -1,8 +1,10 @@
-# MAIB e-Commerce — alimentare wallet (card)
+# MAIB Checkout API — alimentare wallet (card)
 
-Integrare **Direct Payment** pentru topup prepaid în app.
+Integrare **e-Commerce Checkout API v2** (hosted checkout) pentru topup prepaid în app.
 
-Documentație: [maib e-Commerce API](https://docs.maibmerchants.md/e-commerce/maib-e-commerce-api)
+Documentație: [maib Checkout](https://docs.maibmerchants.md/checkout)
+
+> Nu folosi e-Commerce API v1 (`/v1/generate-token`, `projectId`). Banca activează **Checkout** cu `clientId` / `clientSecret`.
 
 ## Unde pui secretele (tu)
 
@@ -18,14 +20,16 @@ Pe Docker, `.env.docker` e montat ca `/var/www/backend/.env` în container — *
 ```env
 PAYMENT_PROVIDER=maib
 
-MAIB_PROJECT_ID=...
-MAIB_PROJECT_SECRET=...
+MAIB_CLIENT_ID=...
+MAIB_CLIENT_SECRET=...
 MAIB_SIGNATURE_KEY=...
-MAIB_BASE_URL=https://api.maibmerchants.md/v1
+MAIB_BASE_URL=https://api.maibmerchants.md
 MAIB_LANGUAGE=ro
 ```
 
-Valorile vin din proiectul din [maibmerchants](https://maibmerchants.md) după activare (test sau production).
+Aliasuri acceptate (dacă ai deja valori vechi în env): `MAIB_PROJECT_ID` → clientId, `MAIB_PROJECT_SECRET` → clientSecret.
+
+Valorile vin din proiectul din [maibmerchants](https://maibmerchants.md) / de la `ecom@maib.md` pentru **Checkout API**.
 
 ### Pe VPS cu Docker — pași
 
@@ -35,11 +39,21 @@ nano .env.docker          # adaugă / completează blocul MAIB de mai sus
 # dacă lipsește fișierul:
 #   cp deploy/docker.env.example .env.docker && ln -sf .env.docker .env
 
-docker compose --env-file .env.docker up -d app ocpp scheduler
+docker compose --env-file .env.docker up -d --force-recreate app ocpp scheduler
 docker compose --env-file .env.docker exec app php artisan config:clear
 
-# verificare (secretul nu apare în clar dacă grepezi doar cheia):
-docker compose --env-file .env.docker exec app grep '^MAIB_\|^PAYMENT_PROVIDER' /var/www/backend/.env
+# verificare token Checkout:
+docker compose --env-file .env.docker exec app php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$r = Illuminate\Support\Facades\Http::acceptJson()->asJson()->timeout(20)
+  ->post(rtrim(preg_replace("#/v1$#","",config("services.maib.base_url")),"/")."/v2/auth/token", [
+    "clientId" => config("services.maib.client_id"),
+    "clientSecret" => config("services.maib.client_secret"),
+  ]);
+echo $r->status()."\n".$r->body()."\n";
+'
 ```
 
 Opțional (fallback Stripe):
@@ -55,28 +69,24 @@ Opțional (fallback Stripe):
 | Câmp | Valoare producție |
 |------|-------------------|
 | Callback URL | `https://ocpp.volta.md/api/maib/callback` |
-| Ok URL | `https://ocpp.volta.md/payments/maib/success` |
+| Success URL | `https://ocpp.volta.md/payments/maib/success` |
 | Fail URL | `https://ocpp.volta.md/payments/maib/fail` |
 
 App-ul folosește deep link `voltaev://pay/success|cancel?wallet_topup_id=…` după redirect.
 
 ## Firewall
 
-Permite IP-urile MAIB către server (callback POST):
-
-- `91.250.245.70`
-- `91.250.245.71`
-- `91.250.245.142`
+Permite IP-urile MAIB către server (callback POST) — confirmă lista actuală cu banca / docs Checkout.
 
 ## Flux
 
 1. App: `POST /api/wallet/topup-checkout` `{ amount }`
-2. Backend: token MAIB → `POST /v1/pay` → `payUrl` + `payId`
-3. User plătește pe pagina MAIB (card)
-4. MAIB: `POST /api/maib/callback` (signature SHA256) → credit wallet
-5. Redirect ok/fail → deep link → `POST /api/wallet/topups/{id}/verify-payment` (fallback)
+2. Backend: `POST /v2/auth/token` → `POST /v2/checkouts` → `checkoutUrl` + `checkoutId`
+3. User plătește pe pagina hosted Checkout (card)
+4. MAIB: `POST /api/maib/callback` (HMAC `X-Signature` + `X-Signature-Timestamp`) → credit wallet
+5. Redirect success/fail → deep link → `POST /api/wallet/topups/{id}/verify-payment` (fallback via `GET /v2/checkouts/{id}`)
 
-## Card test (mediul de test MAIB)
+## Card test (sandbox / test MAIB)
 
 - Cardholder: `Test Test`
 - Number: `5102180060101124`
@@ -85,11 +95,11 @@ Permite IP-urile MAIB către server (callback POST):
 
 ## Onboarding bancă
 
-1. Cere acces test la `ecom@maib.md` (Project ID / Secret / Signature Key) pentru **e-Commerce API**
-2. Integrează și trimite `payId`-uri de test reușite
+1. Cere acces **Checkout API** la `ecom@maib.md` (`clientId` / `clientSecret` / Signature Key)
+2. Integrează și trimite `checkoutId` / `paymentId` de test reușite
 3. Chestionar + contract
-4. Activare proiect Production în portal
+4. Activare Production în portal
 
 ## Refund
 
-Returnările din backoffice pe topup `payment_provider=maib` apelează `POST /v1/refund`. MAIB permite **o singură** returnare per plată.
+Returnările din backoffice pe topup `payment_provider=maib` rezolvă `paymentId` din checkout și apelează `POST /v2/payments/{payId}/refund`.

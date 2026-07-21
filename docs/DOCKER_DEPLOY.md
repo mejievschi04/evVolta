@@ -165,7 +165,7 @@ nano .env.docker
 
 | Variabilă | Când |
 |-----------|------|
-| `MAIB_PROJECT_ID`, `MAIB_PROJECT_SECRET`, `MAIB_SIGNATURE_KEY` | Plăți wallet (card MAIB) |
+| `MAIB_CLIENT_ID`, `MAIB_CLIENT_SECRET`, `MAIB_SIGNATURE_KEY` | Plăți wallet (MAIB Checkout v2) |
 | `STRIPE_*` | Doar dacă `PAYMENT_PROVIDER=stripe` |
 | `MAIL_*` | Trimitere facturi pe email |
 | `HTTP_PORT` | Dacă 8080 e ocupat (ex. `8081`) |
@@ -348,28 +348,32 @@ Deschide `https://ocpp.volta.md` → login backoffice.
 
 ## 10. Plăți (MAIB), OCPP, mobile
 
-### MAIB (wallet topup — implicit)
+### MAIB Checkout (wallet topup — implicit)
 
 În **`.env.docker`** (nu `backend/.env` pe host):
 
 ```env
 PAYMENT_PROVIDER=maib
-MAIB_PROJECT_ID=...
-MAIB_PROJECT_SECRET=...
+MAIB_CLIENT_ID=...
+MAIB_CLIENT_SECRET=...
 MAIB_SIGNATURE_KEY=...
-MAIB_BASE_URL=https://api.maibmerchants.md/v1
+MAIB_BASE_URL=https://api.maibmerchants.md
 MAIB_LANGUAGE=ro
 MOBILE_APP_SCHEME=voltaev
 ```
 
+(Aliasuri: `MAIB_PROJECT_ID` / `MAIB_PROJECT_SECRET` dacă deja le ai setate.)
+
 Apoi:
 
 ```bash
-docker compose --env-file .env.docker up -d app ocpp scheduler
+docker compose --env-file .env.docker up -d --force-recreate app ocpp scheduler
 docker compose --env-file .env.docker exec app php artisan config:clear
 ```
 
-În portalul MAIB: Callback `https://ocpp.volta.md/api/maib/callback`, Ok/Fail pe `/payments/maib/success` și `/payments/maib/fail`.
+Test token: `POST https://api.maibmerchants.md/v2/auth/token` cu `clientId` / `clientSecret` → `"ok":true`.
+
+În portalul MAIB: Callback `https://ocpp.volta.md/api/maib/callback`, Success/Fail pe `/payments/maib/success` și `/payments/maib/fail`.
 
 Detalii: [`backend/docs/MAIB_SETUP.md`](../backend/docs/MAIB_SETUP.md).
 

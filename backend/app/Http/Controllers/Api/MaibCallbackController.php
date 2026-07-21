@@ -18,39 +18,47 @@ class MaibCallbackController extends Controller
         WalletService $walletService,
     ): JsonResponse {
         $payload = $request->all();
-        $result = $payload['result'] ?? null;
-        $signature = (string) ($payload['signature'] ?? '');
 
-        if (! is_array($result)) {
+        if ($payload === []) {
             Log::warning('maib.callback.invalid_payload', ['payload' => $payload]);
 
             return response()->json(['message' => 'Payload invalid.'], 400);
         }
 
-        if (! $maibPaymentService->verifyCallbackSignature($result, $signature)) {
+        if (! $maibPaymentService->verifyCallbackRequest($request)) {
             Log::warning('maib.callback.invalid_signature', [
-                'payId' => $result['payId'] ?? null,
-                'orderId' => $result['orderId'] ?? null,
+                'checkoutId' => $payload['checkoutId'] ?? null,
+                'orderId' => $payload['orderId'] ?? null,
+                'paymentId' => $payload['paymentId'] ?? null,
             ]);
 
             return response()->json(['message' => 'Semnatura invalida.'], 403);
         }
 
-        $status = (string) ($result['status'] ?? '');
-        $payId = (string) ($result['payId'] ?? '');
-        $orderId = (string) ($result['orderId'] ?? '');
+        $checkoutId = (string) ($payload['checkoutId'] ?? '');
+        $orderId = (string) ($payload['orderId'] ?? '');
+        $paymentId = (string) ($payload['paymentId'] ?? '');
+        $paymentStatus = (string) ($payload['paymentStatus'] ?? '');
+        $processingStatus = (string) ($payload['processingStatus'] ?? '');
 
         $topup = $maibPaymentService->resolveTopupFromOrderId($orderId);
-        if (! $topup && $payId !== '') {
+        if (! $topup && $checkoutId !== '') {
             $topup = WalletTopup::query()
                 ->where('payment_provider', 'maib')
-                ->where('payment_session_id', $payId)
+                ->where('payment_session_id', $checkoutId)
+                ->first();
+        }
+        if (! $topup && $paymentId !== '') {
+            $topup = WalletTopup::query()
+                ->where('payment_provider', 'maib')
+                ->where('payment_session_id', $paymentId)
                 ->first();
         }
 
         if (! $topup) {
             Log::warning('maib.callback.topup_not_found', [
-                'payId' => $payId,
+                'checkoutId' => $checkoutId,
+                'paymentId' => $paymentId,
                 'orderId' => $orderId,
             ]);
 
@@ -58,18 +66,21 @@ class MaibCallbackController extends Controller
             return response()->json(['received' => true, 'matched' => false]);
         }
 
-        if ($status === 'OK') {
+        $paid = strcasecmp($paymentStatus, 'Executed') === 0
+            || strcasecmp($processingStatus, 'OK') === 0;
+
+        if ($paid) {
             $walletService->creditTopup(
                 $topup,
-                $payId !== '' ? $payId : $topup->payment_session_id,
-                $result['rrn'] ?? null,
+                $paymentId !== '' ? $paymentId : ($checkoutId !== '' ? $checkoutId : $topup->payment_session_id),
+                $payload['retrievalReferenceNumber'] ?? $payload['referenceNumber'] ?? null,
             );
         } else {
             Log::info('maib.callback.non_ok_status', [
                 'topup_id' => $topup->id,
-                'status' => $status,
-                'statusCode' => $result['statusCode'] ?? null,
-                'statusMessage' => $result['statusMessage'] ?? null,
+                'paymentStatus' => $paymentStatus,
+                'processingStatus' => $processingStatus,
+                'processingStatusCode' => $payload['processingStatusCode'] ?? null,
             ]);
         }
 
