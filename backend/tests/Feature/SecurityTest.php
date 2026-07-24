@@ -22,12 +22,14 @@ class SecurityTest extends TestCase
             $this->postJson('/api/login', [
                 'email' => 'missing@example.test',
                 'password' => 'wrong-password',
+                'accept_terms' => true,
             ])->assertStatus(401);
         }
 
         $this->postJson('/api/login', [
             'email' => 'missing@example.test',
             'password' => 'wrong-password',
+            'accept_terms' => true,
         ])->assertStatus(429);
     }
 

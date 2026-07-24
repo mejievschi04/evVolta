@@ -27,6 +27,7 @@ class AccessControlTest extends TestCase
         $this->postJson('/api/login', [
             'email' => 'admin@example.test',
             'password' => 'password123',
+            'accept_terms' => true,
         ])
             ->assertStatus(403)
             ->assertJsonPath('message', 'Contul de administrator se foloseste doar in backoffice.');
@@ -42,6 +43,7 @@ class AccessControlTest extends TestCase
         $this->postJson('/api/login', [
             'email' => 'driver@example.test',
             'password' => 'password123',
+            'accept_terms' => true,
         ])
             ->assertOk()
             ->assertJsonPath('user.email', 'driver@example.test');

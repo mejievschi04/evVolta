@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\LegalAcceptanceService;
 use App\Services\UserDeletionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,8 +18,62 @@ class AuthController extends Controller
 {
     public function __construct(
         private readonly AuditLogService $auditLogService,
+        private readonly LegalAcceptanceService $legalAcceptanceService,
         private readonly UserDeletionService $userDeletionService,
     ) {
+    }
+
+    public function register(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'first_name' => 'nullable|string|max:120',
+            'last_name' => 'nullable|string|max:120',
+            'name' => 'nullable|string|max:255',
+            'email' => 'required|email|max:255|unique:users,email',
+            'password' => 'required|string|min:6',
+            'accept_terms' => 'required|accepted',
+        ]);
+
+        $firstName = trim((string) ($data['first_name'] ?? ''));
+        $lastName = trim((string) ($data['last_name'] ?? ''));
+        $fullName = trim($firstName . ' ' . $lastName);
+        $fallbackName = trim((string) ($data['name'] ?? ''));
+
+        $user = User::query()->create([
+            'name' => $fullName !== '' ? $fullName : ($fallbackName !== '' ? $fallbackName : $data['email']),
+            'first_name' => $firstName !== '' ? $firstName : null,
+            'last_name' => $lastName !== '' ? $lastName : null,
+            'email' => strtolower(trim($data['email'])),
+            'password' => $data['password'],
+            'currency' => 'MDL',
+        ]);
+
+        $user->forceFill([
+            'is_admin' => false,
+            'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
+            'wallet_balance' => 0,
+        ])->save();
+
+        $this->legalAcceptanceService->recordAcceptance($user);
+
+        $token = Auth::guard('api')->login($user);
+
+        $this->auditLogService->record(
+            action: 'auth.register',
+            actor: $user,
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'ip' => $request->ip(),
+                'legal_version' => $this->legalAcceptanceService->currentVersion(),
+            ],
+        );
+
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'user' => $user->fresh(),
+        ], 201);
     }
 
     public function login(Request $request): JsonResponse
@@ -26,14 +81,20 @@ class AuthController extends Controller
         $credentials = $request->validate([
             'email' => 'required|email',
             'password' => 'required|string',
+            'accept_terms' => 'required|accepted',
         ]);
 
-        if (! $token = Auth::guard('api')->attempt($credentials)) {
+        $loginCredentials = [
+            'email' => $credentials['email'],
+            'password' => $credentials['password'],
+        ];
+
+        if (! $token = Auth::guard('api')->attempt($loginCredentials)) {
             $this->auditLogService->record(
                 action: 'auth.login_failed',
                 subjectType: User::class,
                 metadata: [
-                    'email' => strtolower(trim($credentials['email'])),
+                    'email' => strtolower(trim($loginCredentials['email'])),
                     'ip' => $request->ip(),
                     'user_agent' => $request->userAgent(),
                 ],
@@ -63,6 +124,10 @@ class AuthController extends Controller
             return response()->json([
                 'message' => 'Contul de administrator se foloseste doar in backoffice.',
             ], 403);
+        }
+
+        if (! $this->legalAcceptanceService->hasCurrentAcceptance($user)) {
+            $this->legalAcceptanceService->recordAcceptance($user);
         }
 
         $this->auditLogService->record(

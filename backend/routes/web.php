@@ -2,11 +2,15 @@
 
 use App\Http\Controllers\Backoffice\AuthController as BackofficeAuthController;
 use App\Http\Controllers\Backoffice\DashboardController;
+use App\Http\Controllers\LegalController;
 use App\Http\Controllers\Payments\MaibRedirectController;
 use App\Http\Controllers\Payments\StripeRedirectController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('backoffice.login'));
+
+Route::get('/legal/terms', [LegalController::class, 'terms'])->name('legal.terms');
+Route::get('/legal/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
 
 Route::prefix('backoffice')->middleware('security.headers')->group(function () {
     Route::get('/', fn () => redirect()->route('backoffice.login'))->name('backoffice.root');

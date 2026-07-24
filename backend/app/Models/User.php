@@ -38,6 +38,7 @@ class User extends Authenticatable implements JWTSubject
     {
         return [
             'email_verified_at' => 'datetime',
+            'legal_accepted_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'account_type' => 'string',
@@ -118,5 +119,11 @@ class User extends Authenticatable implements JWTSubject
     public function getJWTCustomClaims(): array
     {
         return [];
+    }
+
+    public function hasAcceptedCurrentLegal(): bool
+    {
+        return $this->legal_accepted_at !== null
+            && $this->legal_version === (string) config('legal.version');
     }
 }

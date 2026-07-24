@@ -18,6 +18,7 @@ class ApiAuthSecurityTest extends TestCase
         $this->postJson('/api/login', [
             'email' => 'missing@example.test',
             'password' => 'wrong-password',
+            'accept_terms' => true,
         ])->assertUnauthorized();
 
         $this->assertDatabaseHas('audit_logs', [
@@ -35,6 +36,7 @@ class ApiAuthSecurityTest extends TestCase
         $this->postJson('/api/login', [
             'email' => 'driver@example.test',
             'password' => 'password123',
+            'accept_terms' => true,
         ])->assertOk();
 
         $this->assertDatabaseHas('audit_logs', [
@@ -99,6 +101,7 @@ class ApiAuthSecurityTest extends TestCase
         $this->postJson('/api/login', [
             'email' => 'admin@example.test',
             'password' => 'password123',
+            'accept_terms' => true,
         ])->assertForbidden();
 
         $this->assertDatabaseHas('audit_logs', [

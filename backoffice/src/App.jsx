@@ -41,7 +41,7 @@ const sections = [
   { id: 'stations', label: 'Statii', icon: Zap },
   { id: 'sessions', label: 'Sesiuni', icon: BatteryCharging },
   { id: 'reservations', label: 'Rezervari', icon: Calendar },
-  { id: 'clients', label: 'Clienti', icon: Users },
+  { id: 'clients', label: 'Utilizatori', icon: Users },
   { id: 'wallet', label: 'Alimentari', icon: Wallet },
   { id: 'personal', label: 'Personal', icon: FileText },
   { id: 'invoices', label: 'Facturi', icon: Receipt },
@@ -457,6 +457,10 @@ function effectiveStationStatus(station) {
 
 function effectiveOcppConnectionStatus(station) {
   return station.live_status?.connection_status ?? station.ocpp_connection_status;
+}
+
+function accountTypeLabel(accountType) {
+  return accountType === 'personal' ? 'Personal' : 'Utilizator';
 }
 
 function statusLabel(status) {
@@ -1181,7 +1185,7 @@ function DashboardView({ dashboard: initialDashboard, loading: parentLoading, ac
             <div className="detail-metrics-grid dash-side-metrics">
               <DetailMetric label="Total facturat" value={formatCurrency(analytics?.revenue?.invoicedTotal ?? stats?.totalRevenue)} helper={`${formatCurrency(analytics?.revenue?.paidTotal)} incasat`} />
               <DetailMetric label="Alimentari luna" value={formatCurrency(analytics?.wallet?.topupsMonth)} helper={`azi ${formatCurrency(analytics?.wallet?.topupsToday ?? stats?.walletTopupsVolumeToday)}`} />
-              <DetailMetric label="Utilizatori" value={formatNumber(stats?.users)} helper={`${formatNumber(analytics?.users?.customer)} prepay`} />
+              <DetailMetric label="Utilizatori" value={formatNumber(stats?.users)} helper={`${formatNumber(analytics?.users?.customer)} conturi`} />
               <DetailMetric label="kWh luna" value={`${formatKwh(analytics?.energy?.month)} kWh`} helper={`${formatNumber(analytics?.sessions?.month)} sesiuni`} />
               <DetailMetric label="OCPP" value={formatNumber(stats?.connectedStations)} helper={`mod ${ocpp?.mode ?? '-'}`} />
             </div>
@@ -1618,7 +1622,7 @@ function SessionModernCard({ session, onStop, onDelete, onDownloadInvoice, onDeb
   const powerKw = sessionPowerKw(session);
   const stopInfo = formatSessionStopInfo(session);
   const spent = session.billing?.amount_spent;
-  const userLabel = session.user?.name ?? session.user?.email ?? 'Client necunoscut';
+  const userLabel = session.user?.name ?? session.user?.email ?? 'Utilizator necunoscut';
 
   return (
     <article className={`session-card-modern ${isActive ? 'tone-warning' : 'tone-success'}`}>
@@ -2228,8 +2232,8 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
     <div className="panel">
       <div className="panel-header">
         <div>
-          <h2>Wallet prepay</h2>
-          <p>Alimentari Stripe si retururi initiate din backoffice</p>
+          <h2>Alimentari</h2>
+          <p>Plati card si retururi initiate din backoffice</p>
         </div>
         <Wallet size={20} />
       </div>
@@ -2285,7 +2289,7 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
       {loading ? (
         <LoadingState />
       ) : rows.length === 0 ? (
-        <EmptyState title="Nicio alimentare" detail="Cand clientii platesc prin Stripe, tranzactiile apar aici." />
+        <EmptyState title="Nicio alimentare" detail="Cand utilizatorii platesc cu cardul, tranzactiile apar aici." />
       ) : visibleRows.length === 0 ? (
         <EmptyState title="Niciun rezultat" detail="Schimba filtrul sau cautarea." />
       ) : (
@@ -2387,12 +2391,12 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
     <div className="panel">
       <div className="panel-header">
         <div>
-          <h2>Clienti</h2>
-          <p>Conturi prepay cu wallet si plata Stripe</p>
+          <h2>Utilizatori</h2>
+          <p>Conturi cu sold si plata cu cardul</p>
         </div>
         <button className="primary-button" onClick={onCreate} type="button">
           <Plus size={18} />
-          Client nou
+          Utilizator nou
         </button>
       </div>
       <Toolbar value={query} onChange={setQuery} />
@@ -2401,16 +2405,16 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
           <div className="tariff-summary-item">
             <span className="tariff-summary-icon"><Zap size={16} /></span>
             <div>
-              <span>Tarif activ clienti</span>
+              <span>Tarif activ utilizatori</span>
               <strong>{formatTariffPrice(customerTariff)} lei/kWh</strong>
             </div>
           </div>
         </div>
       ) : null}
       {rows.length === 0 ? (
-        <EmptyState title="Nu exista clienti" />
+        <EmptyState title="Nu exista utilizatori" />
       ) : visibleRows.length === 0 ? (
-        <EmptyState title="Niciun client gasit" detail="Schimba termenul de cautare." />
+        <EmptyState title="Niciun utilizator gasit" detail="Schimba termenul de cautare." />
       ) : (
         visibleRows.map((user) => (
           <div className="compact-row user-row client-row" key={user.id}>
@@ -2420,7 +2424,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
               <p>{user.email ?? '-'}</p>
             </div>
             <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
-            <TariffBadge fallback="Tarif clienti" value={customerTariff} />
+            <TariffBadge fallback="Tarif utilizatori" value={customerTariff} />
             <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
             <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
               Detalii
@@ -2449,12 +2453,12 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff })
         <div>
           <h2>Personal</h2>
           <p>
-            {rows.length} angajati · sold total wallet {formatMoney(totalWallet)}
+            {rows.length} conturi · sold total {formatMoney(totalWallet)}
           </p>
         </div>
         <button className="primary-button" onClick={onCreate} type="button">
           <Plus size={18} />
-          Angajat nou
+          Personal nou
         </button>
       </div>
       <Toolbar value={query} onChange={setQuery} />
@@ -2470,9 +2474,9 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff })
         </div>
       ) : null}
       {rows.length === 0 ? (
-        <EmptyState title="Nu exista personal" detail="Adauga angajati cu cont prepay (wallet)." />
+        <EmptyState title="Nu exista personal" detail="Adauga conturi de tip Personal." />
       ) : visibleRows.length === 0 ? (
-        <EmptyState title="Niciun angajat gasit" detail="Schimba termenul de cautare." />
+        <EmptyState title="Niciun cont personal gasit" detail="Schimba termenul de cautare." />
       ) : (
         visibleRows.map((user) => (
           <div className="compact-row user-row personal-row" key={user.id}>
@@ -2572,7 +2576,7 @@ function UserDetailModal({
             <h2>{user.name ?? 'Utilizator'}</h2>
             <p>
               {user.email ?? '-'}
-              {user.account_type === 'customer' ? ' · client prepay' : user.account_type === 'personal' ? ' · personal prepay' : ''}
+              {user.account_type ? ` · ${accountTypeLabel(user.account_type)}` : ''}
             </p>
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
@@ -2639,8 +2643,8 @@ function UserDetailModal({
                       required
                       value={editForm.account_type}
                     >
-                      <option value="customer">Client prepay</option>
-                      <option value="personal">Personal prepay</option>
+                      <option value="customer">Utilizator</option>
+                      <option value="personal">Personal</option>
                     </select>
                   </label>
                   <label>
@@ -3150,13 +3154,13 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
           <Zap size={18} />
           <div>
             <h3>Tarife energie</h3>
-            <p>Pret per kWh pentru clienti si personal</p>
+            <p>Pret per kWh pentru utilizatori si personal</p>
           </div>
         </div>
 
         <div className="tariff-showcase">
           <article className="tariff-card tariff-card-customer">
-            <span className="tariff-card-label">Clienti</span>
+            <span className="tariff-card-label">Utilizatori</span>
             <strong className="tariff-card-value">
               {previewCustomerTariff != null && previewCustomerTariff !== ''
                 ? formatTariffPrice(previewCustomerTariff)
@@ -3181,7 +3185,7 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
             <input className="input-readonly" readOnly value="MDL (Leu moldovenesc)" />
           </label>
           <label>
-            Tarif kWh clienti
+            Tarif kWh utilizatori
             <div className="input-affix">
               <input
                 inputMode="decimal"
@@ -3365,7 +3369,7 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
             <strong>{formatMoney(maxRefund)}</strong>
           </div>
           <div className="billing-stat">
-            <span>Sold client</span>
+            <span>Sold utilizator</span>
             <strong>{formatMoney(walletBalance)}</strong>
           </div>
           {topup.amount_refunded > 0 ? (
@@ -3412,7 +3416,7 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
               ? `Returnezi pe card (provider: ${provider}). Poti returna partial sau total, maxim ${formatMoney(maxRefund)}.`
               : `Debitezi soldul wallet (fara retur pe card). Maxim ${formatMoney(maxRefund)}.`}
             {walletBalance < refundableAmount
-              ? ' Soldul clientului limiteaza suma (a cheltuit o parte din alimentare).'
+              ? ' Soldul utilizatorului limiteaza suma (a cheltuit o parte din alimentare).'
               : ''}
           </p>
         </div>
@@ -3439,8 +3443,8 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
   const title = isStation
     ? (isEdit ? 'Editeaza statia' : 'Statie noua')
     : isPersonalUser
-      ? 'Angajat nou'
-      : 'Client nou';
+      ? 'Personal nou'
+      : 'Utilizator nou';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -3452,8 +3456,8 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               {isStation
                 ? 'Adauga un punct de incarcare'
                 : isPersonalUser
-                  ? 'Cont personal prepay (wallet)'
-                  : 'Cont client prepay (wallet + Stripe)'}
+                  ? 'Cont de tip Personal'
+                  : 'Cont de tip Utilizator'}
             </p>
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
