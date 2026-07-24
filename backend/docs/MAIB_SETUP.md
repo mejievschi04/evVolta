@@ -102,4 +102,7 @@ Permite IP-urile MAIB către server (callback POST) — confirmă lista actuală
 
 ## Refund
 
-Returnările din backoffice pe topup `payment_provider=maib` rezolvă `paymentId` din checkout și apelează `POST /v2/payments/{payId}/refund`.
+Returnările din backoffice pe topup `payment_provider=maib` folosesc `paymentId`
+(`payment_intent_id`) și apelează `POST /v2/payments/{payId}/refund`.
+`payment_session_id` păstrează `checkoutId`. Pentru topup-uri vechi unde `paymentId`
+a fost salvat greșit în `payment_session_id`, returul face fallback pe acel id.

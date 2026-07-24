@@ -218,10 +218,11 @@ class WalletController extends Controller
         $paymentStatus = $paid ? 'paid' : 'unpaid';
 
         if ($paid) {
+            // Keep checkoutId in payment_session_id; store MAIB paymentId in payment_intent_id.
             $walletService->creditTopup(
                 $topup,
-                $maibPaymentService->extractPaymentId($info) ?? $topup->payment_session_id,
-                $maibPaymentService->extractRrn($info),
+                $topup->payment_session_id,
+                $maibPaymentService->extractPaymentId($info),
             );
         }
 

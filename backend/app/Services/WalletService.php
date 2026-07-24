@@ -372,9 +372,13 @@ class WalletService
                     throw new RuntimeException('MAIB nu este configurat.', 422);
                 }
 
-                // Checkout API: o returnare pe plata poate fi partiala sau totala.
-                // Daca banca respinge retururi multiple, mesajul vine din API.
-                $maibRefund = $maibPaymentService->refund((string) $topup->payment_session_id, $slice);
+                // Checkout API refunds by paymentId (not checkoutId).
+                // payment_intent_id stores MAIB paymentId; payment_session_id stores checkoutId.
+                $maibRefund = $maibPaymentService->refund(
+                    (string) $topup->payment_session_id,
+                    $slice,
+                    $topup->payment_intent_id ? (string) $topup->payment_intent_id : null,
+                );
                 $providerRefundId = $maibRefund['id'] ?? $topup->payment_session_id;
             }
 

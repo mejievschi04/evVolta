@@ -70,10 +70,11 @@ class MaibCallbackController extends Controller
             || strcasecmp($processingStatus, 'OK') === 0;
 
         if ($paid) {
+            // Keep checkoutId in payment_session_id; store MAIB paymentId in payment_intent_id.
             $walletService->creditTopup(
                 $topup,
-                $paymentId !== '' ? $paymentId : ($checkoutId !== '' ? $checkoutId : $topup->payment_session_id),
-                $payload['retrievalReferenceNumber'] ?? $payload['referenceNumber'] ?? null,
+                $checkoutId !== '' ? $checkoutId : null,
+                $paymentId !== '' ? $paymentId : null,
             );
         } else {
             Log::info('maib.callback.non_ok_status', [

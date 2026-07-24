@@ -148,13 +148,9 @@ class MaibPaymentService
     /**
      * @return array{id: string, status: string, refund_amount: float}
      */
-    public function refund(string $checkoutId, float $amount): array
+    public function refund(string $checkoutOrPaymentId, float $amount, ?string $knownPaymentId = null): array
     {
-        $checkout = $this->getPaymentInfo($checkoutId);
-        $payId = $this->extractPaymentId($checkout);
-        if (! $payId) {
-            throw new RuntimeException('Nu am gasit paymentId MAIB pentru returnare.', 422);
-        }
+        $payId = $this->resolvePaymentIdForRefund($checkoutOrPaymentId, $knownPaymentId);
 
         $body = $this->authorizedJson('POST', '/v2/payments/'.rawurlencode($payId).'/refund', [
             'amount' => round($amount, 2),
@@ -167,16 +163,59 @@ class MaibPaymentService
         }
 
         $status = (string) ($result['status'] ?? '');
-        if (! in_array($status, ['Created', 'OK', 'REVERSED'], true)) {
+        if (! in_array($status, ['Created', 'OK', 'REVERSED', 'Requested', 'Accepted'], true)) {
             $message = (string) ($result['statusMessage'] ?? 'Returnarea MAIB a esuat.');
             throw new RuntimeException($message, 422);
         }
 
         return [
-            'id' => (string) ($result['refundId'] ?? $payId),
+            'id' => (string) ($result['refundId'] ?? $result['id'] ?? $payId),
             'status' => $status,
             'refund_amount' => round($amount, 2),
         ];
+    }
+
+    /**
+     * Resolve MAIB paymentId for refunds.
+     *
+     * Preferred order:
+     * 1) known paymentId (stored on topup.payment_intent_id)
+     * 2) lookup via checkoutId (topup.payment_session_id)
+     * 3) treat the stored session id as paymentId (legacy rows that overwrote checkoutId)
+     */
+    public function resolvePaymentIdForRefund(string $checkoutOrPaymentId, ?string $knownPaymentId = null): string
+    {
+        $knownPaymentId = is_string($knownPaymentId) ? trim($knownPaymentId) : '';
+        if ($knownPaymentId !== '' && $this->looksLikeMaibUuid($knownPaymentId)) {
+            return $knownPaymentId;
+        }
+
+        $checkoutOrPaymentId = trim($checkoutOrPaymentId);
+        if ($checkoutOrPaymentId === '') {
+            throw new RuntimeException('Lipseste identificatorul platii MAIB pentru returnare.', 422);
+        }
+
+        if ($this->looksLikeMaibUuid($checkoutOrPaymentId)) {
+            try {
+                $checkout = $this->getPaymentInfo($checkoutOrPaymentId);
+                $fromCheckout = $this->extractPaymentId($checkout);
+                if (is_string($fromCheckout) && $fromCheckout !== '') {
+                    return $fromCheckout;
+                }
+            } catch (RuntimeException) {
+                // Legacy topups may already store paymentId in payment_session_id.
+            }
+        }
+
+        return $checkoutOrPaymentId;
+    }
+
+    public function looksLikeMaibUuid(string $value): bool
+    {
+        return (bool) preg_match(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+            trim($value)
+        );
     }
 
     public function verifyCallbackRequest(Request $request): bool

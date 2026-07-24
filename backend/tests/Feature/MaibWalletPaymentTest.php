@@ -93,7 +93,8 @@ class MaibWalletPaymentTest extends TestCase
 
         $this->assertSame(120.0, (float) $user->fresh()->wallet_balance);
         $this->assertSame('paid', $topup->fresh()->status);
-        $this->assertSame('ABC324353245', $topup->fresh()->payment_intent_id);
+        $this->assertSame('5a4d27a4-79f5-426b-9403-cccdeee81747', $topup->fresh()->payment_session_id);
+        $this->assertSame('379b31a3-8283-43d4-8a7b-eef8c0736a32', $topup->fresh()->payment_intent_id);
 
         $this->postSignedMaibCallback($payload)->assertOk();
         $this->assertSame(120.0, (float) $user->fresh()->wallet_balance);
@@ -185,6 +186,8 @@ class MaibWalletPaymentTest extends TestCase
             ->assertJsonPath('wallet_balance', 90);
 
         $this->assertSame('paid', $topup->fresh()->status);
+        $this->assertSame('pay-verify-1', $topup->fresh()->payment_session_id);
+        $this->assertSame('pay-verify-payment-1', $topup->fresh()->payment_intent_id);
     }
 
     public function test_callback_hmac_matches_checkout_algorithm(): void
@@ -197,6 +200,111 @@ class MaibWalletPaymentTest extends TestCase
         $expected = base64_encode(hash_hmac('sha256', $rawBody.'.'.$timestamp, $key, true));
 
         $this->assertSame($expected, $signature);
+    }
+
+    public function test_refund_uses_stored_payment_id_without_checkout_lookup(): void
+    {
+        Http::fake([
+            'https://api.maibmerchants.md/v2/auth/token' => Http::response([
+                'ok' => true,
+                'result' => [
+                    'accessToken' => 'access-token',
+                    'expiresIn' => 300,
+                    'tokenType' => 'Bearer',
+                ],
+            ]),
+            'https://api.maibmerchants.md/v2/payments/*/refund' => Http::response([
+                'ok' => true,
+                'result' => [
+                    'refundId' => 'refund-1',
+                    'status' => 'Created',
+                ],
+            ]),
+        ]);
+
+        $admin = $this->createAdminUser();
+        $user = $this->createAppUser(['wallet_balance' => 100]);
+        $topup = WalletTopup::query()->create([
+            'user_id' => $user->id,
+            'amount' => 100,
+            'currency' => 'MDL',
+            'status' => 'paid',
+            'payment_provider' => 'maib',
+            'payment_session_id' => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+            'payment_intent_id' => 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2',
+            'paid_at' => now(),
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/wallet-topups/'.$topup->id.'/refund', ['amount' => 40])
+            ->assertOk()
+            ->assertJsonPath('topup.amount_refunded', 40)
+            ->assertJsonPath('user_wallet_balance', 60);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/v2/payments/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2/refund');
+        });
+
+        Http::assertNotSent(function ($request) {
+            return str_contains($request->url(), '/v2/checkouts/');
+        });
+    }
+
+    public function test_refund_falls_back_to_session_id_when_legacy_payment_id_was_saved_there(): void
+    {
+        Http::fake([
+            'https://api.maibmerchants.md/v2/auth/token' => Http::response([
+                'ok' => true,
+                'result' => [
+                    'accessToken' => 'access-token',
+                    'expiresIn' => 300,
+                    'tokenType' => 'Bearer',
+                ],
+            ]),
+            'https://api.maibmerchants.md/v2/checkouts/*' => Http::response([
+                'ok' => false,
+                'errors' => [
+                    ['errorMessage' => 'Cannot found Checkout by id'],
+                ],
+            ], 404),
+            'https://api.maibmerchants.md/v2/payments/*/refund' => Http::response([
+                'ok' => true,
+                'result' => [
+                    'refundId' => 'refund-legacy-1',
+                    'status' => 'Created',
+                ],
+            ]),
+        ]);
+
+        $admin = $this->createAdminUser();
+        $user = $this->createAppUser(['wallet_balance' => 80]);
+        $topup = WalletTopup::query()->create([
+            'user_id' => $user->id,
+            'amount' => 80,
+            'currency' => 'MDL',
+            'status' => 'paid',
+            'payment_provider' => 'maib',
+            // Legacy bug: paymentId was saved over checkoutId, RRN in payment_intent_id.
+            'payment_session_id' => '379b31a3-8283-43d4-8a7b-eef8c0736a32',
+            'payment_intent_id' => 'ABC324353245',
+            'paid_at' => now(),
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/wallet-topups/'.$topup->id.'/refund', ['amount' => 80])
+            ->assertOk()
+            ->assertJsonPath('topup.amount_refunded', 80)
+            ->assertJsonPath('user_wallet_balance', 0);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/v2/payments/379b31a3-8283-43d4-8a7b-eef8c0736a32/refund');
+        });
     }
 
     /**

@@ -1074,7 +1074,7 @@ function DashboardView({ dashboard: initialDashboard, loading: parentLoading, ac
   if (parentLoading && !dashboard) return <LoadingState />;
 
   return (
-    <div className="view-stack dashboard-v2">
+    <div className="view-stack dashboard-v2 ops-page">
       <DashboardPeriodBar loading={periodLoading} onChange={setPeriod} period={period} />
       {periodError && <div className="error-banner">{periodError}</div>}
 
@@ -1437,20 +1437,12 @@ function StationsView({
   if (loading && !rows.length) return <LoadingState />;
 
   return (
-    <div className="view-stack stations-page">
-      <div className="panel stations-panel">
-        <div className="panel-header stations-panel-header">
+    <div className="view-stack stations-page ops-page">
+      <div className="panel stations-panel ops-panel">
+        <div className="panel-header stations-panel-header ops-panel-header">
           <div>
             <h2>Statii</h2>
             <p>Administrare retea, status OCPP si actiuni rapide</p>
-            <div className="stations-inline-stats">
-              <span><strong>{formatNumber(summary.total)}</strong> total</span>
-              <span className="tone-success"><strong>{formatNumber(summary.available)}</strong> libere</span>
-              <span className="tone-warning"><strong>{formatNumber(summary.charging)}</strong> ocupate</span>
-              <span className="tone-danger"><strong>{formatNumber(summary.offline)}</strong> offline</span>
-              <span className="tone-live"><strong>{formatNumber(summary.connected)}</strong> OCPP</span>
-              <span><strong>{formatNumber(summary.activeSessions)}</strong> sesiuni active</span>
-            </div>
           </div>
           <div className="panel-header-actions">
             <div className="view-toggle">
@@ -1478,13 +1470,32 @@ function StationsView({
           </div>
         </div>
 
+        <div className="ops-kpi-bar ops-kpi-cols-4">
+          <div className="ops-kpi tone-success">
+            <span>Libere</span>
+            <strong>{formatNumber(summary.available)}</strong>
+          </div>
+          <div className="ops-kpi tone-warning">
+            <span>In incarcare</span>
+            <strong>{formatNumber(summary.charging)}</strong>
+          </div>
+          <div className="ops-kpi tone-danger">
+            <span>Offline</span>
+            <strong>{formatNumber(summary.offline)}</strong>
+          </div>
+          <div className="ops-kpi tone-live">
+            <span>OCPP · {formatNumber(summary.activeSessions)} sesiuni</span>
+            <strong>{formatNumber(summary.connected)}</strong>
+          </div>
+        </div>
+
         {viewMode === 'map' ? (
           <StationsMapPanel onOpenDetail={onOpenDetail} stations={visibleRows.length ? visibleRows : rows} />
         ) : (
           <>
-            <div className="stations-control-bar">
+            <div className="ops-control-bar">
               <Toolbar value={query} onChange={setQuery} />
-              <div className="stations-filter-row">
+              <div className="ops-filter-row">
                 {stationStatusFilters.map((filter) => (
                   <button
                     className={statusFilter === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
@@ -1495,8 +1506,8 @@ function StationsView({
                     {filter.label}
                   </button>
                 ))}
+                <span className="ops-result-count">{formatNumber(visibleRows.length)} afisate</span>
               </div>
-              <span className="stations-result-count">{formatNumber(visibleRows.length)} afisate</span>
             </div>
 
             {rows.length === 0 ? (
@@ -1549,6 +1560,18 @@ function ReservationsView({ rows, loading }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
+  const summary = useMemo(() => {
+    const activeLike = rows.filter((item) => ['pending', 'confirmed', 'active'].includes(item.status));
+    const completed = rows.filter((item) => item.status === 'completed');
+    const cancelled = rows.filter((item) => ['cancelled', 'expired', 'no_show'].includes(item.status));
+
+    return {
+      activeLike: activeLike.length,
+      completed: completed.length,
+      cancelled: cancelled.length
+    };
+  }, [rows]);
+
   const visibleRows = rows.filter((reservation) => {
     if (statusFilter && reservation.status !== statusFilter) return false;
 
@@ -1563,18 +1586,13 @@ function ReservationsView({ rows, loading }) {
 
   return (
     <ListPanel
-      loading={loading}
-      title="Rezervari"
-      subtitle="Sloturi rezervate, taxe si status OCPP"
+      columns={['Utilizator / Statie', 'Interval', 'Status', 'Taxa']}
+      emptyDetail="Rezervarile apar aici dupa ce utilizatorii rezervă un slot."
       emptyTitle="Nu exista rezervari"
-      rows={visibleRows}
-      searchValue={query}
-      onSearchChange={setQuery}
-      noResults={rows.length > 0 && visibleRows.length === 0}
       filters={(
-        <div className="status-filters">
+        <>
           <button
-            className={statusFilter === '' ? 'secondary-button active-filter' : 'secondary-button'}
+            className={statusFilter === '' ? 'filter-chip active-filter' : 'filter-chip'}
             onClick={() => setStatusFilter('')}
             type="button"
           >
@@ -1582,7 +1600,7 @@ function ReservationsView({ rows, loading }) {
           </button>
           {Object.entries(reservationStatusLabels).map(([id, label]) => (
             <button
-              className={statusFilter === id ? 'secondary-button active-filter' : 'secondary-button'}
+              className={statusFilter === id ? 'filter-chip active-filter' : 'filter-chip'}
               key={id}
               onClick={() => setStatusFilter(id)}
               type="button"
@@ -1590,127 +1608,128 @@ function ReservationsView({ rows, loading }) {
               {label}
             </button>
           ))}
-        </div>
+        </>
       )}
+      icon={Calendar}
+      kpis={[
+        { label: 'Active / programate', value: formatNumber(summary.activeLike), tone: 'warning' },
+        { label: 'Finalizate', value: formatNumber(summary.completed), tone: 'success' },
+        { label: 'Anulate / expirate', value: formatNumber(summary.cancelled) }
+      ]}
+      loading={loading}
+      noResults={rows.length > 0 && visibleRows.length === 0}
+      onSearchChange={setQuery}
       render={(reservation) => (
         <>
-          <div>
+          <div className="ops-cell">
             <strong>{reservation.user?.name ?? '-'}</strong>
             <p>
               {reservation.station?.name ?? '-'}
               {reservation.connector_id ? ` · Port ${reservation.connector_id}` : ''}
             </p>
-            <p className="muted-text">
-              {formatDateTime(reservation.starts_at)} → {formatDateTime(reservation.ends_at)}
-            </p>
           </div>
-          <div className="row-actions column-actions">
-            <Badge>{reservationStatusLabels[reservation.status] ?? reservation.status}</Badge>
-            {reservation.fee_amount > 0 && (
-              <span className="station-chip">{formatMoney(reservation.fee_amount)} taxa</span>
+          <div className="ops-cell">
+            <strong>{formatDateTime(reservation.starts_at)}</strong>
+            <span>→ {formatDateTime(reservation.ends_at)}</span>
+          </div>
+          <Badge>{reservationStatusLabels[reservation.status] ?? reservation.status}</Badge>
+          <div className="ops-cell">
+            {reservation.fee_amount > 0 ? (
+              <strong>{formatMoney(reservation.fee_amount)}</strong>
+            ) : (
+              <span className="ops-muted">Gratuit</span>
             )}
           </div>
         </>
       )}
+      resultCount={visibleRows.length}
+      rows={visibleRows}
+      rowClassName="ops-row ops-row-4"
+      searchValue={query}
+      subtitle="Sloturi rezervate, taxe si status"
+      title="Rezervari"
     />
   );
 }
 
-function SessionModernCard({ session, onStop, onDelete, onDownloadInvoice, onDebug }) {
+function SessionOpsRow({ session, onStop, onDelete, onDownloadInvoice, onDebug }) {
   const isActive = !session.end_time;
   const kwh = sessionKwhDelivered(session);
   const powerKw = sessionPowerKw(session);
   const stopInfo = formatSessionStopInfo(session);
   const spent = session.billing?.amount_spent;
   const userLabel = session.user?.name ?? session.user?.email ?? 'Utilizator necunoscut';
+  const stationLabel = [
+    session.station?.name ?? 'Statie necunoscuta',
+    session.ocpp_connector_id ? `C${session.ocpp_connector_id}` : null,
+  ].filter(Boolean).join(' · ');
+  const timeLabel = isActive
+    ? (session.start_time ? formatDateTime(session.start_time) : 'In curs')
+    : formatSessionDuration(session);
+  const metaParts = [
+    session.user?.email && session.user?.name ? session.user.email : null,
+    stationLabel,
+    stopInfo,
+  ].filter(Boolean);
 
   return (
-    <article className={`session-card-modern ${isActive ? 'tone-warning' : 'tone-success'}`}>
-      <div className="station-card-top">
-        <div className="station-card-icon">
-          <BatteryCharging size={18} />
-        </div>
-        <div className="station-card-main">
-          <strong>{userLabel}</strong>
-          {session.user?.email && session.user?.name ? (
-            <p className="station-card-identity">{session.user.email}</p>
-          ) : null}
-          <p className="station-card-location">
-            <Zap size={13} />
-            {session.station?.name ?? 'Statie necunoscuta'}
-            {session.ocpp_connector_id ? ` · Conector C${session.ocpp_connector_id}` : ''}
-          </p>
-          <p className="station-card-identity">
-            <Clock3 size={13} />
-            {session.start_time ? formatDateTime(session.start_time) : '-'}
-            {isActive ? ' · in curs' : ` · ${formatSessionDuration(session)}`}
-          </p>
-        </div>
-        <div className="station-card-badges">
-          <Badge variant={isActive ? 'warning' : 'success'}>{isActive ? 'Activa' : 'Inchisa'}</Badge>
-          {!isActive && spent != null ? (
-            <Badge variant="success">{formatMoney(spent)}</Badge>
-          ) : null}
-        </div>
+    <article className={`session-ops-row ${isActive ? 'is-active' : 'is-closed'}`}>
+      <div className="session-ops-status">
+        <Badge variant={isActive ? 'warning' : 'success'}>{isActive ? 'Activa' : 'Inchisa'}</Badge>
       </div>
 
-      <div className="station-card-metrics session-card-metrics">
-        <div className="station-metric">
-          <span>Consum</span>
-          <strong className={isActive ? 'metric-live' : ''}>{formatKwh(kwh)} kWh</strong>
-        </div>
-        <div className="station-metric">
-          <span>Putere</span>
-          <strong className={isActive && powerKw != null ? 'metric-live' : ''}>
-            {isActive && powerKw != null ? `${formatKwh(powerKw, 2)} kW` : '-'}
-          </strong>
-        </div>
-        <div className="station-metric">
-          <span>Buget</span>
-          <strong>{session.charge_budget > 0 ? formatMoney(session.charge_budget) : '-'}</strong>
-        </div>
-        <div className="station-metric">
-          <span>Limita kWh</span>
-          <strong>{session.target_kwh > 0 ? formatKwh(session.target_kwh) : '-'}</strong>
-        </div>
+      <div className="session-ops-identity">
+        <strong>{userLabel}</strong>
+        <p>{metaParts.join(' · ')}</p>
       </div>
 
-      {(session.ocpp_transaction_id || stopInfo || session.invoice?.id) ? (
-        <div className="station-card-chips">
-          {session.ocpp_transaction_id ? (
-            <span className="station-chip">tx {session.ocpp_transaction_id}</span>
-          ) : null}
-          {stopInfo ? <span className="station-chip">{stopInfo}</span> : null}
-          {session.invoice?.id ? (
-            <span className="station-chip station-chip-live">Factura emisa</span>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="session-ops-energy">
+        <strong className={isActive ? 'metric-live' : ''}>{formatKwh(kwh)} kWh</strong>
+        {isActive && powerKw != null ? (
+          <span className="metric-live">{formatKwh(powerKw, 2)} kW</span>
+        ) : session.charge_budget > 0 ? (
+          <span>Buget {formatMoney(session.charge_budget)}</span>
+        ) : session.target_kwh > 0 ? (
+          <span>Limita {formatKwh(session.target_kwh)} kWh</span>
+        ) : null}
+      </div>
 
-      <div className="station-card-actions">
-        <div className="station-card-actions-main">
-          <button className="secondary-button mini-button" onClick={() => onDebug(session)} type="button">
-            <Bug size={14} />
-            Debug OCPP
+      <div className="session-ops-cost">
+        {!isActive && spent != null ? (
+          <strong>{formatMoney(spent)}</strong>
+        ) : (
+          <span className="session-ops-muted">—</span>
+        )}
+      </div>
+
+      <div className="session-ops-time">
+        <strong>{timeLabel}</strong>
+        {!isActive && session.start_time ? (
+          <span>{formatDateTime(session.start_time)}</span>
+        ) : isActive ? (
+          <span>in curs</span>
+        ) : null}
+      </div>
+
+      <div className="session-ops-actions">
+        {isActive ? (
+          <button className="secondary-button mini-button danger-text" onClick={() => onStop(session)} type="button">
+            <Square size={14} />
+            Opreste
           </button>
-          {session.invoice?.id && onDownloadInvoice ? (
-            <button className="secondary-button mini-button" onClick={() => onDownloadInvoice(session.invoice)} type="button">
-              <Download size={14} />
-              Factura
-            </button>
-          ) : null}
-          {isActive ? (
-            <button className="secondary-button mini-button danger-text" onClick={() => onStop(session)} type="button">
-              <Square size={14} />
-              Opreste
-            </button>
-          ) : null}
-        </div>
-        <div className="station-card-actions-icons">
-          <button className="icon-button danger-icon" onClick={() => onDelete(session)} type="button" title="Sterge sesiunea">
-            <X size={15} />
+        ) : null}
+        {session.invoice?.id && onDownloadInvoice ? (
+          <button className="secondary-button mini-button" onClick={() => onDownloadInvoice(session.invoice)} type="button" title="Descarca factura">
+            <Download size={14} />
+            Factura
           </button>
-        </div>
+        ) : null}
+        <button className="icon-button" onClick={() => onDebug(session)} type="button" title="Debug OCPP">
+          <Bug size={15} />
+        </button>
+        <button className="icon-button danger-icon" onClick={() => onDelete(session)} type="button" title="Sterge sesiunea">
+          <X size={15} />
+        </button>
       </div>
     </article>
   );
@@ -1752,6 +1771,10 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadIn
       ]);
     })
     .sort((left, right) => {
+      const leftActive = !left.end_time;
+      const rightActive = !right.end_time;
+      if (leftActive !== rightActive) return leftActive ? -1 : 1;
+
       const leftTime = left.start_time ? new Date(left.start_time).getTime() : 0;
       const rightTime = right.start_time ? new Date(right.start_time).getTime() : 0;
 
@@ -1761,49 +1784,34 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadIn
   if (loading && !rows.length) return <LoadingState />;
 
   return (
-    <div className="view-stack sessions-page">
-      <div className="panel sessions-panel">
-        <div className="panel-header stations-panel-header">
+    <div className="view-stack sessions-page ops-page">
+      <div className="panel sessions-panel ops-panel">
+        <div className="panel-header sessions-panel-header ops-panel-header">
           <div>
             <h2>Sesiuni</h2>
             <p>Monitorizare incarcare, consum OCPP si actiuni rapide</p>
-            <div className="stations-inline-stats">
-              <span><strong>{formatNumber(summary.total)}</strong> total</span>
-              <span className="tone-warning"><strong>{formatNumber(summary.active)}</strong> active</span>
-              <span className="tone-success"><strong>{formatNumber(summary.closed)}</strong> inchise</span>
-              <span className="tone-live"><strong>{formatKwh(summary.totalKwh, 1)}</strong> kWh total</span>
-              <span><strong>{formatMoney(summary.totalRevenue)}</strong> incasat</span>
-            </div>
           </div>
-          <BatteryCharging size={20} />
+          <span className="ops-header-icon"><BatteryCharging size={20} /></span>
         </div>
 
-        <div className="sessions-summary-bar">
-          <div className="stations-summary-tile">
-            <span>Total sesiuni</span>
-            <strong>{formatNumber(summary.total)}</strong>
-          </div>
-          <div className="stations-summary-tile tone-warning">
+        <div className="sessions-summary-bar ops-kpi-bar">
+          <div className="sessions-kpi ops-kpi tone-warning">
             <span>Active acum</span>
             <strong>{formatNumber(summary.active)}</strong>
           </div>
-          <div className="stations-summary-tile tone-success">
-            <span>Finalizate</span>
-            <strong>{formatNumber(summary.closed)}</strong>
-          </div>
-          <div className="stations-summary-tile tone-live">
+          <div className="sessions-kpi ops-kpi tone-live">
             <span>Energie livrata</span>
-            <strong>{formatKwh(summary.totalKwh, 1)}</strong>
+            <strong>{formatKwh(summary.totalKwh, 1)} <small>kWh</small></strong>
           </div>
-          <div className="stations-summary-tile">
-            <span>Valoare incasata</span>
+          <div className="sessions-kpi ops-kpi">
+            <span>Incasat · {formatNumber(summary.closed)} finalizate</span>
             <strong>{formatMoney(summary.totalRevenue)}</strong>
           </div>
         </div>
 
-        <div className="stations-control-bar sessions-control-bar">
+        <div className="sessions-control-bar ops-control-bar">
           <Toolbar onRefresh={onRefresh} value={query} onChange={setQuery} />
-          <div className="stations-filter-row">
+          <div className="sessions-filter-row ops-filter-row">
             {sessionStatusFilters.map((filter) => (
               <button
                 className={statusFilter === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
@@ -1814,8 +1822,8 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadIn
                 {filter.label}
               </button>
             ))}
+            <span className="sessions-result-count ops-result-count">{formatNumber(visibleRows.length)} afisate</span>
           </div>
-          <span className="stations-result-count">{formatNumber(visibleRows.length)} afisate</span>
         </div>
 
         {rows.length === 0 ? (
@@ -1829,9 +1837,17 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadIn
             title="Niciun rezultat"
           />
         ) : (
-          <div className="stations-card-grid sessions-card-grid">
+          <div className="sessions-ops-list">
+            <div className="sessions-ops-head" aria-hidden="true">
+              <span>Status</span>
+              <span>Utilizator / Statie</span>
+              <span>Energie</span>
+              <span>Cost</span>
+              <span>Timp</span>
+              <span>Actiuni</span>
+            </div>
             {visibleRows.map((session) => (
-              <SessionModernCard
+              <SessionOpsRow
                 key={session.id}
                 onDebug={onDebug}
                 onDelete={onDelete}
@@ -1857,27 +1873,46 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
     (item) => item.status
   ]));
 
+  const summary = useMemo(() => {
+    const paid = rows.filter((invoice) => invoice.status === 'paid');
+    const unpaid = rows.filter((invoice) => invoice.status !== 'paid');
+    const total = unpaid.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
+
+    return {
+      paid: paid.length,
+      unpaid: unpaid.length,
+      outstanding: total
+    };
+  }, [rows]);
+
   return (
     <ListPanel
-      loading={loading}
-      title="Facturi"
-      subtitle="Plati si solduri"
+      columns={['Factura', 'Perioada', 'Status', 'Suma / Actiuni']}
       emptyTitle="Nu exista facturi"
-      rows={visibleRows}
-      searchValue={query}
-      onSearchChange={setQuery}
+      icon={Receipt}
+      kpis={[
+        { label: 'Platite', value: formatNumber(summary.paid), tone: 'success' },
+        { label: 'Neplatite', value: formatNumber(summary.unpaid), tone: 'warning' },
+        { label: 'Restanta', value: formatMoney(summary.outstanding), tone: 'danger' }
+      ]}
+      loading={loading}
       noResults={rows.length > 0 && visibleRows.length === 0}
+      onSearchChange={setQuery}
       render={(invoice) => (
         <>
-          <div>
+          <div className="ops-cell">
             <strong>{invoice.invoice_number ?? `#${invoice.id}`}</strong>
             <p>{invoice.user?.name ?? '-'}</p>
           </div>
-          <span>{invoice.month ?? '-'}</span>
+          <div className="ops-cell">
+            <strong>{invoice.month ?? '-'}</strong>
+            <span>{invoiceTypeLabel(invoice.type)}</span>
+          </div>
           <Badge variant={statusVariant(invoice.status)}>{statusLabel(invoice.status)}</Badge>
-          <div className="row-actions invoice-actions">
+          <div className="ops-actions">
             <strong>{formatMoney(invoice.total_amount)}</strong>
             <button className="secondary-button mini-button" onClick={() => onDownload(invoice)} type="button">
+              <Download size={14} />
               Descarca
             </button>
             <button className="primary-button mini-button" onClick={() => onSend(invoice)} type="button">
@@ -1889,6 +1924,12 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
           </div>
         </>
       )}
+      resultCount={visibleRows.length}
+      rows={visibleRows}
+      rowClassName="ops-row ops-row-4"
+      searchValue={query}
+      subtitle="Plati, solduri si documente fiscale"
+      title="Facturi"
     />
   );
 }
@@ -1915,35 +1956,51 @@ function AuditView({ rows, loading, onOpenDetail }) {
 
   return (
     <ListPanel
-      loading={loading}
-      title="Audit"
-      subtitle="Actiuni backoffice si gateway"
+      columns={['Actiune', 'Context', 'Cand', '']}
       emptyTitle="Nu exista intrari audit"
-      rows={visibleRows}
-      searchValue={query}
-      onSearchChange={setQuery}
+      icon={ShieldCheck}
+      kpis={[
+        { label: 'Intrari', value: formatNumber(rows.length) },
+        { label: 'Afisate', value: formatNumber(visibleRows.length), tone: 'live' },
+        { label: 'Ultima', value: rows[0]?.created_at ? formatDateTime(rows[0].created_at) : '—' }
+      ]}
+      loading={loading}
       noResults={rows.length > 0 && visibleRows.length === 0}
+      onSearchChange={setQuery}
       render={(entry) => (
         <>
-          <div>
+          <div className="ops-cell">
             <button className="station-name-link" onClick={() => onOpenDetail(entry)} type="button">
               <strong>{entry.action}</strong>
             </button>
             <p>{entry.actor?.name ?? 'Sistem'}{entry.actor?.email ? ` · ${entry.actor.email}` : ''}</p>
           </div>
-          <span>{entry.station?.name ?? auditSubjectLabel(entry)}</span>
-          <Badge>{formatDateTime(entry.created_at)}</Badge>
-          <button
-            className="icon-button"
-            onClick={() => onOpenDetail(entry)}
-            type="button"
-            aria-label="Detalii audit"
-            title="Detalii audit"
-          >
-            <Eye size={16} />
-          </button>
+          <div className="ops-cell">
+            <strong>{entry.station?.name ?? auditSubjectLabel(entry)}</strong>
+            <span>{auditSubjectLabel(entry)}</span>
+          </div>
+          <div className="ops-cell">
+            <strong>{formatDateTime(entry.created_at)}</strong>
+          </div>
+          <div className="ops-actions">
+            <button
+              className="secondary-button mini-button"
+              onClick={() => onOpenDetail(entry)}
+              type="button"
+              title="Detalii audit"
+            >
+              <Eye size={14} />
+              Detalii
+            </button>
+          </div>
         </>
       )}
+      resultCount={visibleRows.length}
+      rows={visibleRows}
+      rowClassName="ops-row ops-row-4"
+      searchValue={query}
+      subtitle="Actiuni backoffice si gateway"
+      title="Audit"
     />
   );
 }
@@ -2229,150 +2286,163 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
   ]));
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h2>Alimentari</h2>
-          <p>Plati card si retururi initiate din backoffice</p>
+    <div className="view-stack ops-page">
+      <div className="panel ops-panel">
+        <div className="panel-header ops-panel-header">
+          <div>
+            <h2>Alimentari</h2>
+            <p>Plati card si retururi initiate din backoffice</p>
+          </div>
+          <span className="ops-header-icon"><Wallet size={20} /></span>
         </div>
-        <Wallet size={20} />
-      </div>
 
-      <div className="billing-summary-grid">
-        <div className="billing-stat">
-          <span>Platite</span>
-          <strong>{formatNumber(summary?.count_paid)} · {formatMoney(summary?.volume_paid)}</strong>
+        <div className="ops-kpi-bar">
+          <div className="ops-kpi tone-success">
+            <span>Platite</span>
+            <strong>{formatNumber(summary?.count_paid)} <small>· {formatMoney(summary?.volume_paid)}</small></strong>
+          </div>
+          <div className="ops-kpi tone-warning">
+            <span>In asteptare</span>
+            <strong>{formatNumber(summary?.count_pending)} <small>· {formatMoney(summary?.volume_pending)}</small></strong>
+          </div>
+          <div className="ops-kpi tone-danger">
+            <span>Retururi</span>
+            <strong>{formatNumber(summary?.refunds_count)} <small>· {formatMoney(summary?.volume_refunded)}</small></strong>
+          </div>
         </div>
-        <div className="billing-stat">
-          <span>In asteptare</span>
-          <strong>{formatNumber(summary?.count_pending)} · {formatMoney(summary?.volume_pending)}</strong>
+
+        <div className="ops-control-bar">
+          <Toolbar value={query} onChange={setQuery} />
+          <div className="ops-filter-row">
+            {walletViewFilters.map((filter) => (
+              <button
+                className={viewMode === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
+                key={filter.id}
+                onClick={() => {
+                  setViewMode(filter.id);
+                  setStatusFilter('');
+                }}
+                type="button"
+              >
+                {filter.label}
+              </button>
+            ))}
+            {viewMode === 'topups' ? walletStatusFilters.map((filter) => (
+              <button
+                className={statusFilter === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
+                key={`status-${filter.id || 'all'}`}
+                onClick={() => setStatusFilter(filter.id)}
+                type="button"
+              >
+                {filter.label}
+              </button>
+            )) : null}
+            <span className="ops-result-count">
+              {formatNumber(viewMode === 'topups' ? visibleRows.length : visibleRefunds.length)} afisate
+            </span>
+          </div>
         </div>
-        <div className="billing-stat">
-          <span>Retururi</span>
-          <strong>{formatNumber(summary?.refunds_count)} · {formatMoney(summary?.volume_refunded)}</strong>
-        </div>
-      </div>
 
-      <div className="status-filters">
-        {walletViewFilters.map((filter) => (
-          <button
-            className={viewMode === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
-            key={filter.id}
-            onClick={() => {
-              setViewMode(filter.id);
-              setStatusFilter('');
-            }}
-            type="button"
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
+        {viewMode === 'topups' ? (
+          loading ? (
+            <LoadingState />
+          ) : rows.length === 0 ? (
+            <EmptyState title="Nicio alimentare" detail="Cand utilizatorii platesc cu cardul, tranzactiile apar aici." />
+          ) : visibleRows.length === 0 ? (
+            <EmptyState title="Niciun rezultat" detail="Schimba filtrul sau cautarea." />
+          ) : (
+            <div className="ops-list">
+              <div className="ops-list-head ops-row ops-row-4" aria-hidden="true">
+                <span>Utilizator</span>
+                <span>Suma</span>
+                <span>Status</span>
+                <span>Data / Actiuni</span>
+              </div>
+              {visibleRows.map((topup) => {
+                const refundableAmount = Number(
+                  topup.effective_refundable_amount ?? topup.refundable_amount ?? 0
+                );
+                const canRefund = topup.status === 'paid' && refundableAmount > 0;
 
-      <Toolbar value={query} onChange={setQuery} />
-
-      {viewMode === 'topups' ? (
-        <>
-      <div className="status-filters">
-        {walletStatusFilters.map((filter) => (
-          <button
-            className={statusFilter === filter.id ? 'secondary-button active-filter' : 'secondary-button'}
-            key={filter.id || 'all'}
-            onClick={() => setStatusFilter(filter.id)}
-            type="button"
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <LoadingState />
-      ) : rows.length === 0 ? (
-        <EmptyState title="Nicio alimentare" detail="Cand utilizatorii platesc cu cardul, tranzactiile apar aici." />
-      ) : visibleRows.length === 0 ? (
-        <EmptyState title="Niciun rezultat" detail="Schimba filtrul sau cautarea." />
-      ) : (
-        <div className="table">
-          {visibleRows.map((topup) => {
-            const refundableAmount = Number(
-              topup.effective_refundable_amount ?? topup.refundable_amount ?? 0
-            );
-            const canRefund = topup.status === 'paid' && refundableAmount > 0;
-
-            return (
-              <div className="table-row four" key={topup.id}>
-                <div>
-                  <strong>{topup.user?.name ?? `User #${topup.user_id}`}</strong>
-                  <p>{topup.user?.email ?? '-'}</p>
-                  {topup.user?.wallet_balance != null ? (
-                    <p className="request-meta">Sold {formatMoney(topup.user.wallet_balance)}</p>
-                  ) : null}
-                </div>
-                <div>
-                  <span className="live-kwh">{formatMoney(topup.amount)}</span>
-                  {topup.amount_refunded > 0 ? (
-                    <p className="request-meta">
-                      Returnat {formatMoney(topup.amount_refunded)}
-                      {refundableAmount > 0 ? ` · ramas ${formatMoney(refundableAmount)}` : ''}
-                    </p>
-                  ) : null}
-                </div>
-                <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
-                <div className="row-actions end-actions">
-                  <div>
-                    <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
-                    <p className="request-meta">
-                      {topup.payment_provider ?? '—'}
-                      {topup.payment_session_id ? ` · ${topup.payment_session_id.slice(0, 18)}…` : ''}
-                    </p>
+                return (
+                  <div className="ops-row ops-row-4" key={topup.id}>
+                    <div className="ops-cell">
+                      <strong>{topup.user?.name ?? `User #${topup.user_id}`}</strong>
+                      <p>{topup.user?.email ?? '-'}</p>
+                      {topup.user?.wallet_balance != null ? (
+                        <span>Sold {formatMoney(topup.user.wallet_balance)}</span>
+                      ) : null}
+                    </div>
+                    <div className="ops-cell">
+                      <strong>{formatMoney(topup.amount)}</strong>
+                      {topup.amount_refunded > 0 ? (
+                        <span>
+                          Returnat {formatMoney(topup.amount_refunded)}
+                          {refundableAmount > 0 ? ` · ramas ${formatMoney(refundableAmount)}` : ''}
+                        </span>
+                      ) : null}
+                    </div>
+                    <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+                    <div className="ops-actions">
+                      <div className="ops-cell">
+                        <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
+                        <span>
+                          {topup.payment_provider ?? '—'}
+                          {topup.payment_session_id ? ` · ${topup.payment_session_id.slice(0, 18)}…` : ''}
+                        </span>
+                      </div>
+                      {canRefund ? (
+                        <button
+                          className="secondary-button mini-button danger-text"
+                          onClick={() => onRefund(topup)}
+                          type="button"
+                        >
+                          Retur bani
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                  {canRefund ? (
-                    <button
-                      className="secondary-button mini-button danger-text"
-                      onClick={() => onRefund(topup)}
-                      type="button"
-                    >
-                      Retur bani
-                    </button>
+                );
+              })}
+            </div>
+          )
+        ) : loading ? (
+          <LoadingState />
+        ) : (refunds ?? []).length === 0 ? (
+          <EmptyState title="Niciun retur" detail="Retururile initiate din aceasta pagina apar aici." />
+        ) : visibleRefunds.length === 0 ? (
+          <EmptyState title="Niciun rezultat" detail="Schimba cautarea." />
+        ) : (
+          <div className="ops-list">
+            <div className="ops-list-head ops-row ops-row-4" aria-hidden="true">
+              <span>Utilizator</span>
+              <span>Suma</span>
+              <span>Status</span>
+              <span>Data</span>
+            </div>
+            {visibleRefunds.map((refund) => (
+              <div className="ops-row ops-row-4" key={refund.id}>
+                <div className="ops-cell">
+                  <strong>{refund.user?.name ?? `User #${refund.user_id}`}</strong>
+                  <p>{refund.user?.email ?? '-'}</p>
+                  {refund.topup ? (
+                    <span>Din alimentare {formatMoney(refund.topup.amount)} · #{refund.topup.id}</span>
                   ) : null}
                 </div>
+                <strong>-{formatMoney(refund.amount)}</strong>
+                <Badge variant={statusVariant(refund.status)}>{statusLabel(refund.status)}</Badge>
+                <div className="ops-cell">
+                  <strong>{formatDateTime(refund.created_at)}</strong>
+                  <span>
+                    {refund.payment_provider ?? '—'}
+                    {refund.stripe_refund_id ? ` · ${refund.stripe_refund_id.slice(0, 18)}…` : ''}
+                  </span>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      )}
-        </>
-      ) : loading ? (
-        <LoadingState />
-      ) : (refunds ?? []).length === 0 ? (
-        <EmptyState title="Niciun retur" detail="Retururile initiate din aceasta pagina apar aici." />
-      ) : visibleRefunds.length === 0 ? (
-        <EmptyState title="Niciun rezultat" detail="Schimba cautarea." />
-      ) : (
-        <div className="table">
-          {visibleRefunds.map((refund) => (
-            <div className="table-row four" key={refund.id}>
-              <div>
-                <strong>{refund.user?.name ?? `User #${refund.user_id}`}</strong>
-                <p>{refund.user?.email ?? '-'}</p>
-                {refund.topup ? (
-                  <p className="request-meta">Din alimentare {formatMoney(refund.topup.amount)} · #{refund.topup.id}</p>
-                ) : null}
-              </div>
-              <span className="live-kwh">-{formatMoney(refund.amount)}</span>
-              <Badge variant={statusVariant(refund.status)}>{statusLabel(refund.status)}</Badge>
-              <div>
-                <strong>{formatDateTime(refund.created_at)}</strong>
-                <p className="request-meta">
-                  {refund.payment_provider ?? '—'}
-                  {refund.stripe_refund_id ? ` · ${refund.stripe_refund_id.slice(0, 18)}…` : ''}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2384,54 +2454,96 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
     (item) => item.email,
     (item) => item.currency
   ]));
+  const totalWallet = rows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
+  const totalSessions = rows.reduce((sum, user) => sum + Number(user.sessions_count || 0), 0);
 
   if (loading) return <LoadingState />;
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h2>Utilizatori</h2>
-          <p>Conturi cu sold si plata cu cardul</p>
-        </div>
-        <button className="primary-button" onClick={onCreate} type="button">
-          <Plus size={18} />
-          Utilizator nou
-        </button>
-      </div>
-      <Toolbar value={query} onChange={setQuery} />
-      {customerTariff != null ? (
-        <div className="tariff-summary-strip">
-          <div className="tariff-summary-item">
-            <span className="tariff-summary-icon"><Zap size={16} /></span>
-            <div>
-              <span>Tarif activ utilizatori</span>
-              <strong>{formatTariffPrice(customerTariff)} lei/kWh</strong>
-            </div>
+    <div className="view-stack ops-page">
+      <div className="panel ops-panel">
+        <div className="panel-header ops-panel-header">
+          <div>
+            <h2>Utilizatori</h2>
+            <p>Conturi cu sold si plata cu cardul</p>
           </div>
-        </div>
-      ) : null}
-      {rows.length === 0 ? (
-        <EmptyState title="Nu exista utilizatori" />
-      ) : visibleRows.length === 0 ? (
-        <EmptyState title="Niciun utilizator gasit" detail="Schimba termenul de cautare." />
-      ) : (
-        visibleRows.map((user) => (
-          <div className="compact-row user-row client-row" key={user.id}>
-            <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
-            <div>
-              <strong>{user.name ?? '-'}</strong>
-              <p>{user.email ?? '-'}</p>
-            </div>
-            <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
-            <TariffBadge fallback="Tarif utilizatori" value={customerTariff} />
-            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
-            <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
-              Detalii
+          <div className="panel-header-actions">
+            <button className="primary-button" onClick={onCreate} type="button">
+              <Plus size={18} />
+              Utilizator nou
             </button>
           </div>
-        ))
-      )}
+        </div>
+
+        <div className="ops-kpi-bar">
+          <div className="ops-kpi">
+            <span>Conturi</span>
+            <strong>{formatNumber(rows.length)}</strong>
+          </div>
+          <div className="ops-kpi tone-success">
+            <span>Sold total</span>
+            <strong>{formatMoney(totalWallet)}</strong>
+          </div>
+          <div className="ops-kpi tone-live">
+            <span>Sesiuni</span>
+            <strong>{formatNumber(totalSessions)}</strong>
+          </div>
+        </div>
+
+        <div className="ops-control-bar">
+          <Toolbar value={query} onChange={setQuery} />
+          <div className="ops-filter-row">
+            <span className="ops-result-count">{formatNumber(visibleRows.length)} afisate</span>
+          </div>
+        </div>
+
+        {customerTariff != null ? (
+          <div className="tariff-summary-strip">
+            <div className="tariff-summary-item">
+              <span className="tariff-summary-icon"><Zap size={16} /></span>
+              <div>
+                <span>Tarif activ utilizatori</span>
+                <strong>{formatTariffPrice(customerTariff)} lei/kWh</strong>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {rows.length === 0 ? (
+          <EmptyState title="Nu exista utilizatori" />
+        ) : visibleRows.length === 0 ? (
+          <EmptyState title="Niciun utilizator gasit" detail="Schimba termenul de cautare." />
+        ) : (
+          <div className="ops-list">
+            <div className="ops-list-head ops-row-user" aria-hidden="true">
+              <span />
+              <span>Utilizator</span>
+              <span>Sold</span>
+              <span>Tarif</span>
+              <span>Sesiuni</span>
+              <span>Actiuni</span>
+            </div>
+            {visibleRows.map((user) => (
+              <div className="ops-row ops-row-user" key={user.id}>
+                <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
+                <div className="ops-cell">
+                  <strong>{user.name ?? '-'}</strong>
+                  <p>{user.email ?? '-'}</p>
+                </div>
+                <Badge variant="success">{formatMoney(user.wallet_balance)}</Badge>
+                <TariffBadge fallback="Tarif utilizatori" value={customerTariff} />
+                <strong>{formatNumber(user.sessions_count)}</strong>
+                <div className="ops-actions">
+                  <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
+                    <Eye size={14} />
+                    Detalii
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2444,56 +2556,95 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff })
     (item) => item.currency
   ]));
   const totalWallet = rows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
+  const totalSessions = rows.reduce((sum, user) => sum + Number(user.sessions_count || 0), 0);
 
   if (loading) return <LoadingState />;
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h2>Personal</h2>
-          <p>
-            {rows.length} conturi · sold total {formatMoney(totalWallet)}
-          </p>
-        </div>
-        <button className="primary-button" onClick={onCreate} type="button">
-          <Plus size={18} />
-          Personal nou
-        </button>
-      </div>
-      <Toolbar value={query} onChange={setQuery} />
-      {personalTariff != null ? (
-        <div className="tariff-summary-strip">
-          <div className="tariff-summary-item tariff-summary-item-personal">
-            <span className="tariff-summary-icon"><Zap size={16} /></span>
-            <div>
-              <span>Tarif activ personal</span>
-              <strong>{formatTariffPrice(personalTariff)} lei/kWh</strong>
-            </div>
+    <div className="view-stack ops-page">
+      <div className="panel ops-panel">
+        <div className="panel-header ops-panel-header">
+          <div>
+            <h2>Personal</h2>
+            <p>Conturi interne cu tarif dedicat</p>
           </div>
-        </div>
-      ) : null}
-      {rows.length === 0 ? (
-        <EmptyState title="Nu exista personal" detail="Adauga conturi de tip Personal." />
-      ) : visibleRows.length === 0 ? (
-        <EmptyState title="Niciun cont personal gasit" detail="Schimba termenul de cautare." />
-      ) : (
-        visibleRows.map((user) => (
-          <div className="compact-row user-row personal-row" key={user.id}>
-            <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
-            <div>
-              <strong>{user.name ?? '-'}</strong>
-              <p>{user.email ?? '-'}</p>
-            </div>
-            <Badge variant="success">Sold {formatMoney(user.wallet_balance)}</Badge>
-            <TariffBadge fallback="Tarif personal" value={personalTariff} />
-            <Badge>{formatNumber(user.sessions_count)} sesiuni</Badge>
-            <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
-              Detalii
+          <div className="panel-header-actions">
+            <button className="primary-button" onClick={onCreate} type="button">
+              <Plus size={18} />
+              Personal nou
             </button>
           </div>
-        ))
-      )}
+        </div>
+
+        <div className="ops-kpi-bar">
+          <div className="ops-kpi">
+            <span>Conturi</span>
+            <strong>{formatNumber(rows.length)}</strong>
+          </div>
+          <div className="ops-kpi tone-success">
+            <span>Sold total</span>
+            <strong>{formatMoney(totalWallet)}</strong>
+          </div>
+          <div className="ops-kpi tone-live">
+            <span>Sesiuni</span>
+            <strong>{formatNumber(totalSessions)}</strong>
+          </div>
+        </div>
+
+        <div className="ops-control-bar">
+          <Toolbar value={query} onChange={setQuery} />
+          <div className="ops-filter-row">
+            <span className="ops-result-count">{formatNumber(visibleRows.length)} afisate</span>
+          </div>
+        </div>
+
+        {personalTariff != null ? (
+          <div className="tariff-summary-strip">
+            <div className="tariff-summary-item tariff-summary-item-personal">
+              <span className="tariff-summary-icon"><Zap size={16} /></span>
+              <div>
+                <span>Tarif activ personal</span>
+                <strong>{formatTariffPrice(personalTariff)} lei/kWh</strong>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {rows.length === 0 ? (
+          <EmptyState title="Nu exista personal" detail="Adauga conturi de tip Personal." />
+        ) : visibleRows.length === 0 ? (
+          <EmptyState title="Niciun cont personal gasit" detail="Schimba termenul de cautare." />
+        ) : (
+          <div className="ops-list">
+            <div className="ops-list-head ops-row-user" aria-hidden="true">
+              <span />
+              <span>Persoana</span>
+              <span>Sold</span>
+              <span>Tarif</span>
+              <span>Sesiuni</span>
+              <span>Actiuni</span>
+            </div>
+            {visibleRows.map((user) => (
+              <div className="ops-row ops-row-user" key={user.id}>
+                <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
+                <div className="ops-cell">
+                  <strong>{user.name ?? '-'}</strong>
+                  <p>{user.email ?? '-'}</p>
+                </div>
+                <Badge variant="success">{formatMoney(user.wallet_balance)}</Badge>
+                <TariffBadge fallback="Tarif personal" value={personalTariff} />
+                <strong>{formatNumber(user.sessions_count)}</strong>
+                <div className="ops-actions">
+                  <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
+                    <Eye size={14} />
+                    Detalii
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -3137,16 +3288,14 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
   const previewPersonalTariff = personalPricePerKwh !== '' ? personalPricePerKwh : currentTariff?.personal_price_per_kwh;
 
   return (
-    <form className="panel settings-panel" onSubmit={onSubmit}>
-      <div className="panel-header settings-panel-header">
+    <div className="view-stack ops-page">
+    <form className="panel settings-panel ops-panel" onSubmit={onSubmit}>
+      <div className="panel-header settings-panel-header ops-panel-header">
         <div>
-          <p className="settings-eyebrow">Configurare retea</p>
           <h2>Setari</h2>
           <p>Tarife, profil operator si gateway OCPP</p>
         </div>
-        <div className="settings-header-icon">
-          <Settings size={22} />
-        </div>
+        <span className="ops-header-icon"><Settings size={20} /></span>
       </div>
 
       <section className="settings-section">
@@ -3282,6 +3431,7 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
         </button>
       </div>
     </form>
+    </div>
   );
 }
 
@@ -3302,33 +3452,82 @@ function Toolbar({ value = '', onChange = () => {}, onRefresh }) {
   );
 }
 
-function ListPanel({ title, subtitle, rows, render, loading, emptyTitle, searchValue = '', onSearchChange = () => {}, onRefresh, filters, noResults = false }) {
+function ListPanel({
+  title,
+  subtitle,
+  rows,
+  render,
+  loading,
+  emptyTitle,
+  searchValue = '',
+  onSearchChange = () => {},
+  onRefresh,
+  filters,
+  noResults = false,
+  icon: Icon = FileText,
+  headerActions = null,
+  kpis = null,
+  columns = null,
+  rowClassName = 'ops-row ops-row-4',
+  resultCount = null,
+  emptyDetail = null
+}) {
   if (loading) return <LoadingState />;
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <div>
-          <h2>{title}</h2>
-          <p>{subtitle}</p>
+    <div className="view-stack ops-page">
+      <div className="panel ops-panel">
+        <div className="panel-header ops-panel-header">
+          <div>
+            <h2>{title}</h2>
+            <p>{subtitle}</p>
+          </div>
+          <div className="panel-header-actions">
+            {headerActions}
+            <span className="ops-header-icon"><Icon size={20} /></span>
+          </div>
         </div>
-        <FileText size={20} />
+
+        {kpis?.length ? (
+          <div className={`ops-kpi-bar ops-kpi-cols-${kpis.length}`}>
+            {kpis.map((kpi) => (
+              <div className={`ops-kpi${kpi.tone ? ` tone-${kpi.tone}` : ''}`} key={kpi.label}>
+                <span>{kpi.label}</span>
+                <strong>{kpi.value}</strong>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="ops-control-bar">
+          <Toolbar onRefresh={onRefresh} value={searchValue} onChange={onSearchChange} />
+          {filters ? <div className="ops-filter-row">{filters}</div> : null}
+          {resultCount != null ? (
+            <span className="ops-result-count">{formatNumber(resultCount)} afisate</span>
+          ) : null}
+        </div>
+
+        {noResults ? (
+          <EmptyState title="Niciun rezultat" detail="Schimba filtrul sau termenul de cautare." />
+        ) : rows.length === 0 ? (
+          <EmptyState title={emptyTitle} detail={emptyDetail} />
+        ) : (
+          <div className="ops-list">
+            {columns?.length ? (
+              <div className={`ops-list-head ${rowClassName}`} aria-hidden="true">
+                {columns.map((column) => (
+                  <span key={column}>{column}</span>
+                ))}
+              </div>
+            ) : null}
+            {rows.map((row) => (
+              <div className={rowClassName} key={row.id}>
+                {render(row)}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      {filters}
-      <Toolbar onRefresh={onRefresh} value={searchValue} onChange={onSearchChange} />
-      {noResults ? (
-        <EmptyState title="Niciun rezultat" detail="Schimba termenul de cautare." />
-      ) : rows.length === 0 ? (
-        <EmptyState title={emptyTitle} />
-      ) : (
-        <div className="table">
-          {rows.map((row) => (
-            <div className="table-row four" key={row.id}>
-              {render(row)}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
