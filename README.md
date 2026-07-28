@@ -1,4 +1,4 @@
-# Volta EV Charging
+# V CHARGE
 
 Sistem de management incarcare EV (backend Laravel + backoffice React + gateway OCPP 1.6J).
 

@@ -1,4 +1,4 @@
-# Ghid complet — Deploy Docker pe VPS (Volta EV)
+# Ghid complet — Deploy Docker pe VPS (V CHARGE)
 
 Document pas-cu-pas pentru productie: **PostgreSQL + Laravel + OCPP + Backoffice**, totul in containere Docker.
 
@@ -359,7 +359,7 @@ MAIB_CLIENT_SECRET=...
 MAIB_SIGNATURE_KEY=...
 MAIB_BASE_URL=https://api.maibmerchants.md
 MAIB_LANGUAGE=ro
-MOBILE_APP_SCHEME=voltaev
+MOBILE_APP_SCHEME=vcharge
 ```
 
 (Aliasuri: `MAIB_PROJECT_ID` / `MAIB_PROJECT_SECRET` dacă deja le ai setate.)

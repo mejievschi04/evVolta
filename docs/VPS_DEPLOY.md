@@ -1,4 +1,4 @@
-# Deploy pe VPS (Volta EV)
+# Deploy pe VPS (V CHARGE)
 
 Ghid pentru Ubuntu 24.04 + nginx + PHP 8.3 + PostgreSQL.
 
@@ -33,16 +33,16 @@ nginx (443) ──► PHP-FPM ──► Laravel (PostgreSQL)
 
 ## VPS cu 2 proiecte Laravel existente (cazul tau — proiect #3)
 
-Presupunere: pe VPS ai deja **doua aplicatii Laravel** — una doar API/backend, una **Laravel + React** (acelasi pattern ca Volta: static frontend + rute JSON Laravel).
+Presupunere: pe VPS ai deja **doua aplicatii Laravel** — una doar API/backend, una **Laravel + React** (acelasi pattern ca V CHARGE: static frontend + rute JSON Laravel).
 
-Volta se aliniaza la al doilea model:
+V CHARGE se aliniaza la al doilea model:
 
 ```
 Proiect 1 (Laravel API)     → domeniu A, /api → PHP-FPM
 Proiect 2 (Laravel + React) → domeniu B, / → React dist, /api → PHP-FPM
-Proiect 3 (Volta EV)        → ocpp.volta.md, / → backoffice dist,
+Proiect 3 (V CHARGE)        → ocpp.volta.md, / → backoffice dist,
                               /api + /backoffice + /payments → PHP-FPM,
-                              /ocpp → WebSocket (unic Volta)
+                              /ocpp → WebSocket (unic V CHARGE)
 ```
 
 **Ce e comun (OK sa fie partajat):**
@@ -54,9 +54,9 @@ Proiect 3 (Volta EV)        → ocpp.volta.md, / → backoffice dist,
 | PostgreSQL | Cate o baza + user per proiect |
 | Composer / Node | Aceleasi versiuni ca la celelalte proiecte |
 
-**Ce e doar la Volta (nu exista la celelalte 2):**
+**Ce e doar la V CHARGE (nu exista la celelalte 2):**
 
-| Resursa | Volta |
+| Resursa | V CHARGE |
 |---------|-------|
 | `evvolta-ocpp.service` | Gateway OCPP WebSocket |
 | Port intern `9010` | `ocpp:serve` (nginx proxy `/ocpp/`) |
@@ -70,11 +70,11 @@ Proiect 3 (Volta EV)        → ocpp.volta.md, / → backoffice dist,
 * * * * * cd /var/www/evvolta/backend && php artisan schedule:run >> /dev/null 2>&1 # evvolta-scheduler
 ```
 
-Scriptul `vps-add-project.sh` adauga **doar** linia Volta; nu modifica cronul celorlalte doua.
+Scriptul `vps-add-project.sh` adauga **doar** linia V CHARGE; nu modifica cronul celorlalte doua.
 
-Volta ruleaza **izolat** de celelalte 2 proiecte:
+V CHARGE ruleaza **izolat** de celelalte 2 proiecte:
 
-| Resursa | Volta EV | Note |
+| Resursa | V CHARGE | Note |
 |---------|----------|------|
 | Domeniu | `ocpp.volta.md` | vhost nginx separat |
 | Cod | `/var/www/evvolta` | nu atinge `/var/www/proiect1` etc. |
@@ -127,7 +127,7 @@ free -h
 
 Recomandare path: `/var/www/evvolta` (paralel cu `/var/www/proiect2` etc.).
 
-Daca celalalt proiect Laravel+React foloseste `BACKOFFICE_UI_URL` + proxy `/api`, Volta e configurat la fel — vezi `deploy/nginx/evvolta.conf`.
+Daca celalalt proiect Laravel+React foloseste `BACKOFFICE_UI_URL` + proxy `/api`, V CHARGE e configurat la fel — vezi `deploy/nginx/evvolta.conf`.
 
 ### VPS gol (prima instalare ever)
 

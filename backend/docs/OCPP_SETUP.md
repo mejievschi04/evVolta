@@ -1,4 +1,4 @@
-# Volta EV OCPP setup
+# V CHARGE OCPP setup
 
 Proiectul ruleaza implicit in modul **gateway** pentru statii reale OCPP 1.6J.
 
@@ -99,7 +99,7 @@ In panoul statiei fizice:
 
 ### Obligatii Central System (conform spec)
 
-| Cerinta OCPP | Implementare Volta |
+| Cerinta OCPP | Implementare V CHARGE |
 |--------------|-------------------|
 | `BootNotification.conf` cu `currentTime`, `interval`, `status` | Da |
 | `Heartbeat.conf` cu `currentTime` | Da |

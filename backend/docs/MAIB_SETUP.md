@@ -72,7 +72,7 @@ Opțional (fallback Stripe):
 | Success URL | `https://ocpp.volta.md/payments/maib/success` |
 | Fail URL | `https://ocpp.volta.md/payments/maib/fail` |
 
-App-ul folosește deep link `voltaev://pay/success|cancel?wallet_topup_id=…` după redirect.
+App-ul folosește deep link `vcharge://pay/success|cancel?wallet_topup_id=…` după redirect.
 
 ## Firewall
 
