@@ -24,11 +24,32 @@ class LegalAcceptanceTest extends TestCase
     {
         $this->get('/legal/terms')
             ->assertOk()
-            ->assertSee('Termeni si conditii', false);
+            ->assertSee('Termeni si conditii', false)
+            ->assertSee('V CHARGE', false)
+            ->assertSee('Volta SRL', false)
+            ->assertHeader('Content-Security-Policy');
 
         $this->get('/legal/privacy')
             ->assertOk()
-            ->assertSee('Politica de confidentialitate', false);
+            ->assertSee('Politica de confidentialitate', false)
+            ->assertSee('V CHARGE', false)
+            ->assertSee('Volta SRL', false)
+            ->assertHeader('Content-Security-Policy');
+
+        $this->get('/api/legal/terms?app=1')
+            ->assertOk()
+            ->assertSee('Termeni si conditii', false)
+            ->assertSee('Sold, plati si retururi', false)
+            ->assertSee('V CHARGE', false)
+            ->assertSee('Volta SRL', false)
+            ->assertHeader('Content-Security-Policy');
+
+        $this->get('/api/legal/privacy?app=1')
+            ->assertOk()
+            ->assertSee('Politica de confidentialitate', false)
+            ->assertSee('V CHARGE', false)
+            ->assertSee('Volta SRL', false)
+            ->assertHeader('Content-Security-Policy');
     }
 
     public function test_register_requires_terms_acceptance(): void

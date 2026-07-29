@@ -74,6 +74,31 @@ class Station extends Model
     }
 
     /**
+     * Public mobile payload — never expose ocpp_identity, qr_code, or full OCPP config.
+     *
+     * @return array<string, mixed>
+     */
+    public function toMobileApiArray(?User $user = null, bool $isFavorite = false): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'location' => $this->location,
+            'latitude' => $this->latitude,
+            'longitude' => $this->longitude,
+            'status' => $this->status,
+            'power_kw' => $this->power_kw,
+            'connector_type' => $this->connector_type,
+            'currency' => $this->currency,
+            'is_favorite' => $isFavorite,
+            'ocpp_online' => $this->isOcppOnline(),
+            'live_status' => $this->liveStatus(null, $user),
+            'display_status' => $this->displayStatus(),
+            'reservation_policy' => $this->reservationPolicy(),
+        ];
+    }
+
+    /**
      * Actualizeaza DB cand gateway-ul s-a oprit dar statusul a ramas "connected".
      */
     public static function markStaleOcppConnectionsOffline(): int
@@ -102,6 +127,7 @@ class Station extends Model
         'status',
         'qr_code',
         'ocpp_identity',
+        'ocpp_auth_password',
         'ocpp_version',
         'ocpp_connection_status',
         'last_heartbeat_at',
@@ -118,6 +144,10 @@ class Station extends Model
         'reservation_max_duration_minutes',
         'reservation_advance_days',
         'reservation_grace_minutes',
+    ];
+
+    protected $hidden = [
+        'ocpp_auth_password',
     ];
 
     protected $casts = [
@@ -466,8 +496,16 @@ class Station extends Model
             }
 
             if (count($candidates) > 1) {
+                $pluggedCount = collect($candidates)
+                    ->filter(fn (int $connectorId) => $this->isPluggedConnectorStatus(
+                        $this->connectorOcppStatus($connectorId)
+                    ))
+                    ->count();
+
                 throw new \RuntimeException(
-                    'Mai multe porturi au masina conectata. Alege portul A sau B in aplicatie.',
+                    $pluggedCount > 1
+                        ? 'Mai multe porturi au masina conectata. Alege portul A sau B in aplicatie.'
+                        : 'Alege portul A sau B in aplicatie.',
                     422
                 );
             }
@@ -477,15 +515,22 @@ class Station extends Model
     }
 
     /**
-     * @return list<array{id: int, label: string}>
+     * @return list<array{id: int, label: string, vehicle_connected: bool, status: ?string}>
      */
     public function startConnectorCandidateOptions(?User $user): array
     {
         return collect($this->startConnectorCandidatesForUser($user))
-            ->map(fn (int $connectorId) => [
-                'id' => $connectorId,
-                'label' => self::connectorPortLabel($connectorId),
-            ])
+            ->map(function (int $connectorId) {
+                $status = $this->connectorOcppStatus($connectorId);
+
+                return [
+                    'id' => $connectorId,
+                    'label' => self::connectorPortLabel($connectorId),
+                    'status' => $status,
+                    'vehicle_connected' => $this->isPluggedConnectorStatus($status)
+                        || $this->isVehicleConnectedStatus((string) $status),
+                ];
+            })
             ->values()
             ->all();
     }

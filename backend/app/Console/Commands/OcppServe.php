@@ -16,6 +16,7 @@ use App\Services\SessionEnergyService;
 use App\Services\WalletService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -23,12 +24,15 @@ class OcppServe extends Command
 {
     protected $signature = 'ocpp:serve {--host=} {--port=}';
 
-    protected $description = 'Run the Volta OCPP 1.6J WebSocket gateway.';
+    protected $description = 'Run the V CHARGE OCPP 1.6J WebSocket gateway.';
 
     private array $clients = [];
 
     /** @var array<string, float> */
     private array $lastTelemetryPollAt = [];
+
+    /** @var array<string, list<float>> station identity => handshake timestamps (unix) */
+    private array $handshakeAttempts = [];
 
     public function handle(BillingService $billingService): int
     {
@@ -43,7 +47,7 @@ class OcppServe extends Command
         }
 
         stream_set_blocking($server, false);
-        $this->info("Volta OCPP gateway listening on ws://{$host}:{$port}/ocpp/{ocpp_identity}");
+        $this->info("V CHARGE OCPP gateway listening on ws://{$host}:{$port}/ocpp/{ocpp_identity}");
 
         if (function_exists('pcntl_async_signals')) {
             pcntl_async_signals(true);
@@ -124,7 +128,7 @@ class OcppServe extends Command
             return;
         }
 
-        [$headerBlock] = explode("\r\n\r\n", $buffer, 2);
+        [$headerBlock, $remainder] = array_pad(explode("\r\n\r\n", $buffer, 2), 2, '');
         $lines = explode("\r\n", $headerBlock);
         $requestLine = array_shift($lines) ?: '';
         $headers = [];
@@ -155,6 +159,18 @@ class OcppServe extends Command
             return;
         }
 
+        if (! $this->stationAuthAccepted($station, $headers)) {
+            $this->rejectHandshake($clientId, $requestLine, 'invalid OCPP station credentials', 401);
+
+            return;
+        }
+
+        if (! $this->stationHandshakeRateAccepted($station)) {
+            $this->rejectHandshake($clientId, $requestLine, 'handshake rate limit exceeded for '.$station->ocpp_identity, 429);
+
+            return;
+        }
+
         $accept = base64_encode(sha1($headers['sec-websocket-key'] . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
         $protocol = $this->negotiateSubprotocol($headers['sec-websocket-protocol'] ?? '');
 
@@ -178,7 +194,7 @@ class OcppServe extends Command
 
         $this->clients[$clientId]['handshaken'] = true;
         $this->clients[$clientId]['station'] = $station->fresh();
-        $this->clients[$clientId]['buffer'] = '';
+        $this->clients[$clientId]['buffer'] = $remainder;
         $this->supersedeStationClients($station->id, $clientId);
         $this->info("OCPP station connected: {$station->ocpp_identity} (path {$path})");
     }
@@ -276,11 +292,76 @@ class OcppServe extends Command
         return null;
     }
 
-    private function rejectHandshake(int $clientId, string $requestLine, string $reason): void
+    private function rejectHandshake(int $clientId, string $requestLine, string $reason, int $status = 404): void
     {
         $this->warn("OCPP handshake rejected: {$reason} | {$requestLine}");
-        @fwrite($this->clients[$clientId]['socket'], "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+        $statusLine = match ($status) {
+            401 => 'HTTP/1.1 401 Unauthorized',
+            429 => 'HTTP/1.1 429 Too Many Requests',
+            default => 'HTTP/1.1 404 Not Found',
+        };
+        $extra = $status === 401 ? "WWW-Authenticate: Basic realm=\"ocpp\"\r\n" : '';
+        if ($status === 429) {
+            $extra .= "Retry-After: 60\r\n";
+        }
+        @fwrite(
+            $this->clients[$clientId]['socket'],
+            "{$statusLine}\r\n{$extra}Connection: close\r\n\r\n"
+        );
         $this->disconnectClient($clientId);
+    }
+
+    /**
+     * Optional per-station Basic Auth (OCPP Security Profile 1).
+     * When ocpp_auth_password is empty, connections are accepted by identity only (legacy rollout).
+     */
+    private function stationAuthAccepted(Station $station, array $headers): bool
+    {
+        $hash = (string) ($station->ocpp_auth_password ?? '');
+        if ($hash === '') {
+            return true;
+        }
+
+        $authorization = (string) ($headers['authorization'] ?? '');
+        if (! str_starts_with(strtolower($authorization), 'basic ')) {
+            return false;
+        }
+
+        $decoded = base64_decode(trim(substr($authorization, 6)), true);
+        if ($decoded === false || ! str_contains($decoded, ':')) {
+            return false;
+        }
+
+        [$username, $password] = explode(':', $decoded, 2);
+        $identity = (string) ($station->ocpp_identity ?? '');
+        $usernameOk = $username === '' || ($identity !== '' && strcasecmp($username, $identity) === 0);
+
+        return $usernameOk && Hash::check($password, $hash);
+    }
+
+    private function stationHandshakeRateAccepted(Station $station): bool
+    {
+        $limit = max(1, (int) config('services.ocpp.handshake_rate_limit', 30));
+        $window = max(1, (int) config('services.ocpp.handshake_rate_window_seconds', 60));
+        $key = (string) ($station->ocpp_identity ?: $station->id);
+        $now = microtime(true);
+        $cutoff = $now - $window;
+
+        $attempts = array_values(array_filter(
+            $this->handshakeAttempts[$key] ?? [],
+            static fn (float $ts): bool => $ts >= $cutoff
+        ));
+
+        if (count($attempts) >= $limit) {
+            $this->handshakeAttempts[$key] = $attempts;
+
+            return false;
+        }
+
+        $attempts[] = $now;
+        $this->handshakeAttempts[$key] = $attempts;
+
+        return true;
     }
 
     private function handleOcppMessage(int $clientId, string $rawMessage, BillingService $billingService): void
@@ -609,7 +690,9 @@ class OcppServe extends Command
         Log::info('OCPP DataTransfer', [
             'vendor_id' => $payload['vendorId'] ?? null,
             'message_id' => $payload['messageId'] ?? null,
-            'data' => $payload['data'] ?? null,
+            'data_bytes' => is_string($payload['data'] ?? null)
+                ? strlen((string) $payload['data'])
+                : (is_array($payload['data'] ?? null) ? count($payload['data']) : null),
         ]);
 
         return ['status' => 'Accepted', 'data' => ''];
@@ -1141,7 +1224,9 @@ class OcppServe extends Command
                 continue;
             }
 
-            @fclose($client['socket']);
+            if (is_resource($client['socket'])) {
+                fclose($client['socket']);
+            }
             unset($this->clients[$id]);
             $this->info("OCPP superseded stale socket for {$station->ocpp_identity}");
         }
@@ -1167,7 +1252,9 @@ class OcppServe extends Command
         $station = $this->clients[$clientId]['station'] ?? null;
         $stationId = $station instanceof Station ? $station->id : null;
 
-        @fclose($this->clients[$clientId]['socket']);
+        if (isset($this->clients[$clientId]['socket']) && is_resource($this->clients[$clientId]['socket'])) {
+            fclose($this->clients[$clientId]['socket']);
+        }
         unset($this->clients[$clientId]);
 
         if ($stationId && ! $this->hasActiveClientForStation($stationId)) {
@@ -1239,18 +1326,40 @@ class OcppServe extends Command
 
     private function isAcceptedIdTag(Station $station, string $idTag): bool
     {
-        if ($idTag === '' || $this->userFromIdTag($idTag)) {
-            return $idTag !== '';
+        if ($idTag === '') {
+            return false;
         }
 
-        if ($this->findLinkableAppSession($station)) {
+        if ($this->userFromIdTag($idTag)) {
             return true;
         }
 
         $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
         $tags = is_array($configuration['local_id_tags'] ?? null) ? $configuration['local_id_tags'] : [];
+        $normalizedTags = [];
+        foreach ($tags as $tag) {
+            if (is_string($tag) || is_numeric($tag)) {
+                $normalizedTags[] = strtoupper((string) $tag);
+            }
+        }
 
-        return in_array(strtoupper($idTag), array_map('strtoupper', $tags), true);
+        if (in_array(strtoupper($idTag), $normalizedTags, true)) {
+            return true;
+        }
+
+        $session = $this->findLinkableAppSession($station);
+        if (! $session) {
+            return false;
+        }
+
+        $expected = trim((string) ($session->ocpp_id_tag ?? ''));
+        if ($expected !== '' && strcasecmp($expected, $idTag) === 0) {
+            return true;
+        }
+
+        $user = User::query()->find($session->user_id);
+
+        return $user !== null && strcasecmp(OcppService::idTagForUser($user), $idTag) === 0;
     }
 
     private function findPendingAppSession(Station $station, ?int $connectorId = null): ?ChargingSession

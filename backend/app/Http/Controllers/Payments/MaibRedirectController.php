@@ -22,7 +22,7 @@ class MaibRedirectController extends Controller
     {
         $walletTopupId = (int) $request->query('wallet_topup_id', 0);
         $payId = trim((string) $request->query('payId', ''));
-        $scheme = config('services.mobile.scheme', 'voltaev');
+        $scheme = config('services.mobile.scheme', 'vcharge');
 
         if ($walletTopupId > 0) {
             $deepLink = sprintf(

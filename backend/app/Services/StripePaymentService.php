@@ -92,7 +92,7 @@ class StripePaymentService
                     'currency' => $currency,
                     'unit_amount' => $amountMinor,
                     'product_data' => [
-                        'name' => 'Alimentare cont Volta EV',
+                        'name' => 'Alimentare cont V CHARGE',
                     ],
                 ],
             ]],

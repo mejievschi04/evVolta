@@ -8,7 +8,7 @@ APP_ROOT="${APP_ROOT:-/var/www/evvolta}"
 BACKEND_DIR="${APP_ROOT}/backend"
 BACKOFFICE_DIR="${APP_ROOT}/backoffice"
 
-echo "==> Deploy Volta EV din ${APP_ROOT}"
+echo "==> Deploy V CHARGE din ${APP_ROOT}"
 
 cd "${APP_ROOT}"
 if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then

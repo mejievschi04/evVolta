@@ -394,6 +394,7 @@ class DashboardController extends Controller
                     $station->setAttribute('ocpp_connection_url', $this->ocppService->connectionUrl($station));
                     $station->setAttribute('live_status', $station->liveStatus());
                     $station->setAttribute('display_status', $station->displayStatus());
+                    $station->setAttribute('has_ocpp_auth', filled($station->ocpp_auth_password));
 
                     return $station;
                 }),
@@ -448,6 +449,7 @@ class DashboardController extends Controller
                         'reservation_grace_minutes',
                     ]),
                     'ocpp_connection_url' => $this->ocppService->connectionUrl($station),
+                    'has_ocpp_auth' => filled($station->ocpp_auth_password),
                 ],
                 'live_status' => $station->liveStatus(),
                 'hardware' => [
@@ -638,6 +640,7 @@ class DashboardController extends Controller
             'power_kw' => 'nullable|numeric|min:0',
             'connector_type' => 'nullable|string|max:100',
             'ocpp_identity' => 'nullable|string|max:120|unique:stations,ocpp_identity',
+            'ocpp_auth_password' => 'nullable|string|min:8|max:120',
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
             'reservations_enabled' => 'nullable|boolean',
             'reservation_require_for_start' => 'nullable|boolean',
@@ -662,6 +665,7 @@ class DashboardController extends Controller
             ? Station::OCPP_CONNECTION_DISCONNECTED
             : Station::OCPP_CONNECTION_NOT_CONFIGURED;
         $data['currency'] = 'MDL';
+        $this->applyStationOcppAuthPassword($data, $request);
 
         $station = Station::query()->create($data);
 
@@ -696,6 +700,8 @@ class DashboardController extends Controller
             'power_kw' => 'nullable|numeric|min:0',
             'connector_type' => 'nullable|string|max:100',
             'ocpp_identity' => 'nullable|string|max:120|unique:stations,ocpp_identity,' . $station->id,
+            'ocpp_auth_password' => 'nullable|string|min:8|max:120',
+            'clear_ocpp_auth_password' => 'nullable|boolean',
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
             'reservations_enabled' => 'nullable|boolean',
             'reservation_require_for_start' => 'nullable|boolean',
@@ -732,6 +738,7 @@ class DashboardController extends Controller
             $data['last_ocpp_message_at'] = null;
         }
         $data['currency'] = 'MDL';
+        $this->applyStationOcppAuthPassword($data, $request);
 
         $station->update($data);
 
@@ -1012,6 +1019,26 @@ class DashboardController extends Controller
         }
 
         return 'volta-' . Str::slug($name);
+    }
+
+    private function applyStationOcppAuthPassword(array &$data, Request $request): void
+    {
+        unset($data['clear_ocpp_auth_password']);
+
+        if (filter_var($request->input('clear_ocpp_auth_password'), FILTER_VALIDATE_BOOL)) {
+            $data['ocpp_auth_password'] = null;
+
+            return;
+        }
+
+        $password = trim((string) ($data['ocpp_auth_password'] ?? ''));
+        if ($password === '') {
+            unset($data['ocpp_auth_password']);
+
+            return;
+        }
+
+        $data['ocpp_auth_password'] = Hash::make($password);
     }
 
     public function sessions(Request $request): JsonResponse
@@ -1713,7 +1740,7 @@ class DashboardController extends Controller
 
         $html = $this->invoiceDocumentService->html($invoice);
         $filename = $this->invoiceDocumentService->filename($invoice);
-        $subject = 'Factura ' . ($invoice->invoice_number ?: '#' . $invoice->id) . ' - Volta EV Charging';
+        $subject = 'Factura ' . ($invoice->invoice_number ?: '#' . $invoice->id) . ' - V CHARGE';
         $body = $this->invoiceDocumentService->emailBody($invoice);
 
         Mail::to($invoice->user->email, $invoice->user->name)

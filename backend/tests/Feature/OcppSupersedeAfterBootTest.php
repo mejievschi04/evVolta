@@ -18,7 +18,7 @@ class OcppSupersedeAfterBootTest extends TestCase
     public function test_handshake_does_not_supersede_existing_socket_before_boot_notification(): void
     {
         $station = Station::query()->create([
-            'name' => 'Statia Volta 1',
+            'name' => 'Statia V CHARGE 1',
             'location' => 'Depou',
             'status' => Station::STATUS_AVAILABLE,
             'ocpp_identity' => '5D419400481F59D750010067',
@@ -78,7 +78,7 @@ class OcppSupersedeAfterBootTest extends TestCase
     public function test_finalize_boot_notification_supersedes_other_station_sockets(): void
     {
         $station = Station::query()->create([
-            'name' => 'Statia Volta 1',
+            'name' => 'Statia V CHARGE 1',
             'location' => 'Depou',
             'status' => Station::STATUS_AVAILABLE,
             'ocpp_identity' => '5D419400481F59D750010067',

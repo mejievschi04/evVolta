@@ -66,6 +66,7 @@ class InvoiceController extends Controller
         return response($invoiceDocumentService->html($invoice), 200, [
             'Content-Type' => 'text/html; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="' . $invoiceDocumentService->filename($invoice) . '"',
+            'Content-Security-Policy' => (string) config('security.csp_document'),
         ]);
     }
 

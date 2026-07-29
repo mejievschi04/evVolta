@@ -54,7 +54,7 @@ class OcppPendingSessionStartTest extends TestCase
         $this->assertSame('A5CD0CBD', $session->ocpp_id_tag);
     }
 
-    public function test_authorize_accepts_unknown_tag_when_app_session_is_pending(): void
+    public function test_authorize_rejects_unknown_tag_even_when_app_session_is_pending(): void
     {
         $user = User::factory()->create();
         $station = Station::query()->create([
@@ -69,12 +69,41 @@ class OcppPendingSessionStartTest extends TestCase
             'user_id' => $user->id,
             'station_id' => $station->id,
             'ocpp_connector_id' => 2,
+            'ocpp_id_tag' => OcppService::idTagForUser($user),
             'start_source' => 'app',
             'start_time' => now(),
             'kwh_consumed' => 0,
         ]);
 
         $response = $this->invokeAuthorize($station, ['idTag' => 'A5CD0CBD']);
+
+        $this->assertSame('Invalid', $response['idTagInfo']['status']);
+    }
+
+    public function test_authorize_accepts_pending_session_id_tag(): void
+    {
+        $user = User::factory()->create();
+        $station = Station::query()->create([
+            'name' => 'VOLTA 1',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_identity' => '5D419400481F59D750010067',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+        ]);
+
+        $idTag = OcppService::idTagForUser($user);
+
+        ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 2,
+            'ocpp_id_tag' => $idTag,
+            'start_source' => 'app',
+            'start_time' => now(),
+            'kwh_consumed' => 0,
+        ]);
+
+        $response = $this->invokeAuthorize($station, ['idTag' => $idTag]);
 
         $this->assertSame('Accepted', $response['idTagInfo']['status']);
     }

@@ -18,7 +18,7 @@ class OcppHandshakeBufferTest extends TestCase
     public function test_handshake_preserves_boot_notification_sent_in_same_tcp_packet(): void
     {
         $station = Station::query()->create([
-            'name' => 'Statia Volta 1',
+            'name' => 'Statia V CHARGE 1',
             'location' => 'Depou',
             'status' => Station::STATUS_AVAILABLE,
             'ocpp_identity' => '5D419400481F59D750010067',
@@ -88,10 +88,10 @@ class OcppHandshakeBufferTest extends TestCase
         $decodeFrames = $reflection->getMethod('decodeFrames');
         $decodeFrames->setAccessible(true);
         $buffer = $clients[$clientId]['buffer'];
-        $decoded = $decodeFrames->invokeArgs($command, [&$buffer, $clientId]);
+        $decoded = $decodeFrames->invokeArgs($command, [&$buffer]);
 
-        $this->assertCount(1, $decoded['messages']);
-        $this->assertSame($bootMessage, $decoded['messages'][0]);
+        $this->assertCount(1, $decoded);
+        $this->assertSame($bootMessage, $decoded[0]);
 
         $response = '';
         while (! str_contains($response, "\r\n\r\n")) {

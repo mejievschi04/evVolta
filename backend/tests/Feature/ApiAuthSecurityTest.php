@@ -72,6 +72,24 @@ class ApiAuthSecurityTest extends TestCase
         $this->assertNotSame($token, $response->json('access_token'));
     }
 
+    public function test_register_rejects_short_password(): void
+    {
+        $this->postJson('/api/register', [
+            'email' => 'weak@example.test',
+            'password' => 'short1',
+            'name' => 'Weak User',
+            'accept_terms' => true,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('password');
+    }
+
+    public function test_jwt_ttl_defaults_are_shortened(): void
+    {
+        $this->assertSame(120, (int) config('jwt.ttl'));
+        $this->assertSame(10080, (int) config('jwt.refresh_ttl'));
+    }
+
     public function test_profile_update_writes_audit_log(): void
     {
         $user = $this->createAppUser([

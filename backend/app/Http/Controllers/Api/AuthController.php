@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use RuntimeException;
 
 class AuthController extends Controller
@@ -30,7 +31,7 @@ class AuthController extends Controller
             'last_name' => 'nullable|string|max:120',
             'name' => 'nullable|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
-            'password' => 'required|string|min:6',
+            'password' => ['required', 'string', Password::defaults()],
             'accept_terms' => 'required|accepted',
         ]);
 

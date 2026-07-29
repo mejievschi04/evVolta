@@ -66,13 +66,11 @@ class StationController extends Controller
         $user = $request->user();
 
         $stations = $query->orderBy('name')->get()->map(function (Station $station) use ($favoriteStationIds, $user) {
-            $station->setAttribute('is_favorite', in_array($station->id, $favoriteStationIds, true));
-            $station->setAttribute('live_status', $station->liveStatus(null, $user));
-            $station->setAttribute('display_status', $station->displayStatus());
-            $station->setAttribute('reservation_policy', $station->reservationPolicy());
-
-            return $station;
-        });
+            return $station->toMobileApiArray(
+                $user,
+                in_array($station->id, $favoriteStationIds, true),
+            );
+        })->values();
 
         return response()->json($stations);
     }
@@ -139,25 +137,27 @@ class StationController extends Controller
             ->latest('id')
             ->first();
 
-        if ($activeSession) {
-            $hasPendingStop = OcppCommand::query()
-                ->where('charging_session_id', $activeSession->id)
-                ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])
-                ->whereIn('status', [
-                    OcppCommand::STATUS_PENDING,
-                    OcppCommand::STATUS_SENT,
-                    OcppCommand::STATUS_ACCEPTED,
-                ])
-                ->exists();
+        if (! $activeSession) {
+            return response()->json([
+                'message' => 'Refresh OCPP este disponibil doar pentru sesiunea ta activa pe aceasta statie.',
+            ], 403);
+        }
 
-            if (! $hasPendingStop) {
-                $station = $this->ocppService->refreshSessionTelemetry(
-                    $station,
-                    (int) ($activeSession->ocpp_connector_id ?: 1)
-                );
-            }
-        } else {
-            $station = $this->ocppService->refreshConnectorStatus($station);
+        $hasPendingStop = OcppCommand::query()
+            ->where('charging_session_id', $activeSession->id)
+            ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])
+            ->whereIn('status', [
+                OcppCommand::STATUS_PENDING,
+                OcppCommand::STATUS_SENT,
+                OcppCommand::STATUS_ACCEPTED,
+            ])
+            ->exists();
+
+        if (! $hasPendingStop) {
+            $station = $this->ocppService->refreshSessionTelemetry(
+                $station,
+                (int) ($activeSession->ocpp_connector_id ?: 1)
+            );
         }
 
         $response = [
@@ -165,20 +165,18 @@ class StationController extends Controller
             'live_status' => $station->liveStatus(null, $request->user()),
         ];
 
-        if ($activeSession) {
-            $activeSession = $activeSession->fresh();
-            $station = $station->fresh();
-            $connectorStatus = $station->connectorOcppStatus((int) ($activeSession->ocpp_connector_id ?: 1));
+        $activeSession = $activeSession->fresh();
+        $station = $station->fresh();
+        $connectorStatus = $station->connectorOcppStatus((int) ($activeSession->ocpp_connector_id ?: 1));
 
-            if ($this->chargingStopService->shouldAutoFinalizeOnConnectorRelease($activeSession, $station, $connectorStatus)) {
-                $result = $this->chargingStopService->finalizeStop($activeSession, $station, 'ocpp');
-                $response['session_completed'] = $result['session']->load('station');
-                $response['invoice'] = $result['invoice'] ?? null;
-            } else {
-                app(WalletService::class)->maybeAutoStopForBudget($activeSession, $station);
-                $activeSession = $activeSession->fresh();
-                $response['session'] = $activeSession->load('station');
-            }
+        if ($this->chargingStopService->shouldAutoFinalizeOnConnectorRelease($activeSession, $station, $connectorStatus)) {
+            $result = $this->chargingStopService->finalizeStop($activeSession, $station, 'ocpp');
+            $response['session_completed'] = $result['session']->load('station');
+            $response['invoice'] = $result['invoice'] ?? null;
+        } else {
+            app(WalletService::class)->maybeAutoStopForBudget($activeSession, $station);
+            $activeSession = $activeSession->fresh();
+            $response['session'] = $activeSession->load('station');
         }
 
         return response()->json($response);
@@ -204,7 +202,13 @@ class StationController extends Controller
             ], 404);
         }
 
-        $connectorId = (int) ($payload['connector_id'] ?? $activeSession->ocpp_connector_id ?? 1);
+        $connectorId = (int) ($activeSession->ocpp_connector_id ?: 1);
+        if (isset($payload['connector_id']) && (int) $payload['connector_id'] !== $connectorId) {
+            return response()->json([
+                'message' => 'Poti reseta doar conectorul sesiunii tale active.',
+            ], 403);
+        }
+
         $retryRemoteStart = array_key_exists('retry_remote_start', $payload)
             ? (bool) $payload['retry_remote_start']
             : ! $activeSession->ocpp_transaction_id;
@@ -250,7 +254,12 @@ class StationController extends Controller
             ], 404);
         }
 
-        $connectorId = (int) ($payload['connector_id'] ?? $activeSession->ocpp_connector_id ?? 1);
+        $connectorId = (int) ($activeSession->ocpp_connector_id ?: 1);
+        if (isset($payload['connector_id']) && (int) $payload['connector_id'] !== $connectorId) {
+            return response()->json([
+                'message' => 'Poti debloca doar conectorul sesiunii tale active.',
+            ], 403);
+        }
 
         try {
             $result = $this->ocppService->unlockConnector($station, $connectorId);

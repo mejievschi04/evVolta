@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Route;
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
 Route::get('/legal', [LegalController::class, 'config']);
+Route::get('/legal/terms', [LegalController::class, 'terms']);
+Route::get('/legal/privacy', [LegalController::class, 'privacy']);
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
     ->middleware('throttle:120,1');
 Route::post('/maib/callback', [MaibCallbackController::class, 'handle'])
@@ -24,7 +26,7 @@ Route::post('/maib/callback', [MaibCallbackController::class, 'handle'])
 
 Route::middleware('auth:api')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
-    Route::post('/refresh', [AuthController::class, 'refresh']);
+    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:30,1');
     Route::get('/me', [AuthController::class, 'me']);
     Route::patch('/me', [AuthController::class, 'updateProfile']);
     Route::post('/me/delete', [AuthController::class, 'deleteAccount'])->middleware('throttle:5,1');

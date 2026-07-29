@@ -63,7 +63,7 @@ class StationsApiTest extends TestCase
             'station_id' => $favoriteStation->id,
         ]);
 
-        $this->actingAs($user, 'api')
+        $listResponse = $this->actingAs($user, 'api')
             ->getJson('/api/stations?status=available&connector=CCS2')
             ->assertOk()
             ->assertJsonCount(1)
@@ -73,6 +73,10 @@ class StationsApiTest extends TestCase
             ->assertJsonPath('0.live_status.availability', Station::STATUS_AVAILABLE)
             ->assertJsonPath('0.live_status.can_start', false)
             ->assertJsonPath('0.live_status.connection_status', Station::OCPP_CONNECTION_NOT_CONFIGURED);
+
+        $listResponse->assertJsonMissingPath('0.ocpp_identity')
+            ->assertJsonMissingPath('0.qr_code')
+            ->assertJsonMissingPath('0.ocpp_configuration');
 
         $this->actingAs($user, 'api')
             ->getJson('/api/stations?favorite_only=1')

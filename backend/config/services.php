@@ -56,7 +56,7 @@ return [
     ],
 
     'mobile' => [
-        'scheme' => env('MOBILE_APP_SCHEME', 'voltaev'),
+        'scheme' => env('MOBILE_APP_SCHEME', 'vcharge'),
     ],
 
     'ocpp' => [
@@ -80,6 +80,8 @@ return [
         'suspended_ev_recovery_seconds' => (int) env('OCPP_SUSPENDED_EV_RECOVERY_SECONDS', 12),
         'remote_start_after_recovery_seconds' => (int) env('OCPP_REMOTE_START_AFTER_RECOVERY_SECONDS', 10),
         'diagnostics_ftp_url' => env('OCPP_DIAGNOSTICS_FTP_URL', 'ftp://diagnostics.local/evolta/'),
+        'handshake_rate_limit' => (int) env('OCPP_HANDSHAKE_RATE_LIMIT', 30),
+        'handshake_rate_window_seconds' => (int) env('OCPP_HANDSHAKE_RATE_WINDOW_SECONDS', 60),
     ],
 
 ];

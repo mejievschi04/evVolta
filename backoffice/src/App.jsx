@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BatteryCharging,
@@ -34,7 +34,7 @@ import {
   Wallet,
   Zap
 } from 'lucide-react';
-import voltaLogo from './assets/icons/Volta Logo 2@300x 1.png';
+import brandLogo from './assets/icons/v-charge-logo.png';
 
 const sections = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -141,9 +141,12 @@ function useBackofficeData() {
     error: '',
     authRequired: false
   });
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) {
+    // Dupa primul load reusit, refresh-ul pastreaza layout-ul (fara LoadingState).
+    const keepUi = silent || hasLoadedRef.current;
+    if (!keepUi) {
       setState((current) => ({ ...current, loading: true }));
     }
 
@@ -154,6 +157,7 @@ function useBackofficeData() {
       dashboardPayload = await fetchJson(`${endpoints.dashboard}?days=14`);
     } catch (error) {
       if (error.status === 401) {
+        hasLoadedRef.current = false;
         setState({
           data: emptyData,
           loading: false,
@@ -183,6 +187,7 @@ function useBackofficeData() {
         if (result.status === 'rejected') {
           const reason = result.reason;
           if (reason?.status === 401) {
+            hasLoadedRef.current = false;
             return {
               data: emptyData,
               loading: false,
@@ -207,6 +212,7 @@ function useBackofficeData() {
         nextData[key] = payload.data ?? [];
       }
 
+      hasLoadedRef.current = true;
       return {
         data: nextData,
         loading: false,
@@ -574,10 +580,10 @@ function BrandBlock({ compact = false }) {
   return (
     <div className={`brand ${compact ? 'brand-compact' : ''}`}>
       <span className="brand-logo">
-        <img alt="Volta" src={voltaLogo} />
+        <img alt="V CHARGE" src={brandLogo} />
       </span>
       <div>
-        <strong>Volta EV</strong>
+        <strong>V CHARGE</strong>
         {!compact ? <p className="brand-tagline">Backoffice</p> : null}
       </div>
     </div>
@@ -970,12 +976,66 @@ function EmptyState({
   );
 }
 
-function LoadingState() {
+function SkeletonBone({ className = '' }) {
+  return <span className={`skeleton-bone ${className}`.trim()} aria-hidden="true" />;
+}
+
+function LoadingState({ variant = 'list' }) {
+  if (variant === 'dashboard') {
+    return (
+      <div className="skeleton-page" aria-busy="true" aria-label="Se incarca">
+        <div className="skeleton-kpi-grid">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <SkeletonBone key={`kpi-${index}`} className="skeleton-kpi" />
+          ))}
+        </div>
+        <div className="skeleton-dash-grid">
+          <SkeletonBone className="skeleton-panel skeleton-panel-lg" />
+          <SkeletonBone className="skeleton-panel skeleton-panel-md" />
+        </div>
+        <SkeletonBone className="skeleton-panel skeleton-panel-wide" />
+      </div>
+    );
+  }
+
+  if (variant === 'detail') {
+    return (
+      <div className="skeleton-detail" aria-busy="true" aria-label="Se incarca">
+        <SkeletonBone className="skeleton-line skeleton-line-lg" />
+        <SkeletonBone className="skeleton-line skeleton-line-md" />
+        <SkeletonBone className="skeleton-block" />
+        <SkeletonBone className="skeleton-line skeleton-line-sm" />
+        <SkeletonBone className="skeleton-line skeleton-line-md" />
+      </div>
+    );
+  }
+
   return (
-    <div className="empty-state loading-state">
-      <span className="pulse-ring" />
-      <strong>Incarc date reale</strong>
-      <p>Conectare la endpoint-urile backoffice.</p>
+    <div className="skeleton-page" aria-busy="true" aria-label="Se incarca">
+      <div className="skeleton-panel skeleton-list-shell">
+        <div className="skeleton-list-header">
+          <div className="skeleton-list-titles">
+            <SkeletonBone className="skeleton-line skeleton-line-lg" />
+            <SkeletonBone className="skeleton-line skeleton-line-sm" />
+          </div>
+          <SkeletonBone className="skeleton-chip" />
+        </div>
+        <div className="skeleton-kpi-bar">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <SkeletonBone key={`bar-${index}`} className="skeleton-kpi-mini" />
+          ))}
+        </div>
+        <div className="skeleton-toolbar">
+          <SkeletonBone className="skeleton-search" />
+          <SkeletonBone className="skeleton-chip" />
+          <SkeletonBone className="skeleton-chip" />
+        </div>
+        <div className="skeleton-rows">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <SkeletonBone key={`row-${index}`} className="skeleton-row" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -987,7 +1047,7 @@ function LoginView({ error, loading, onSubmit }) {
         <BrandBlock compact />
         <p className="login-eyebrow">Administrare retea</p>
         <h1>Login admin</h1>
-        <p className="login-copy">Autentifica-te cu un cont existent din backend pentru a administra reteaua Volta.</p>
+        <p className="login-copy">Autentifica-te cu un cont existent din backend pentru a administra reteaua V CHARGE.</p>
         {error && (
           <div className="flash-banner flash-banner-error login-flash">
             <Bell size={18} />
@@ -1071,7 +1131,7 @@ function DashboardView({ dashboard: initialDashboard, loading: parentLoading, ac
       ? '-'
       : `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 2 }).format(value)} ${currency}`;
 
-  if (parentLoading && !dashboard) return <LoadingState />;
+  if (parentLoading && !dashboard) return <LoadingState variant="dashboard" />;
 
   return (
     <div className="view-stack dashboard-v2 ops-page">
@@ -2040,7 +2100,7 @@ function SessionOcppDebugModal({ detail, loading, error, onClose, onReload }) {
         </div>
 
         {error && <div className="error-banner">{error}</div>}
-        {loading && <LoadingState />}
+        {loading && <LoadingState variant="detail" />}
 
         {!loading && (
           <>
@@ -2168,7 +2228,7 @@ function AuditDetailModal({ detail, loading, error, onClose }) {
         </div>
 
         {error && <div className="error-banner">{error}</div>}
-        {loading && <LoadingState />}
+        {loading && <LoadingState variant="detail" />}
 
         {!loading && (
           <>
@@ -2344,7 +2404,7 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
         </div>
 
         {viewMode === 'topups' ? (
-          loading ? (
+          loading && !rows.length ? (
             <LoadingState />
           ) : rows.length === 0 ? (
             <EmptyState title="Nicio alimentare" detail="Cand utilizatorii platesc cu cardul, tranzactiile apar aici." />
@@ -2406,7 +2466,7 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
               })}
             </div>
           )
-        ) : loading ? (
+        ) : loading && !(refunds ?? []).length ? (
           <LoadingState />
         ) : (refunds ?? []).length === 0 ? (
           <EmptyState title="Niciun retur" detail="Retururile initiate din aceasta pagina apar aici." />
@@ -2457,7 +2517,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
   const totalWallet = rows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
   const totalSessions = rows.reduce((sum, user) => sum + Number(user.sessions_count || 0), 0);
 
-  if (loading) return <LoadingState />;
+  if (loading && !rows.length) return <LoadingState />;
 
   return (
     <div className="view-stack ops-page">
@@ -2558,7 +2618,7 @@ function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff })
   const totalWallet = rows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
   const totalSessions = rows.reduce((sum, user) => sum + Number(user.sessions_count || 0), 0);
 
-  if (loading) return <LoadingState />;
+  if (loading && !rows.length) return <LoadingState />;
 
   return (
     <div className="view-stack ops-page">
@@ -2736,7 +2796,7 @@ function UserDetailModal({
         </div>
 
         {error && <div className="error-banner">{error}</div>}
-        {loading && <LoadingState />}
+        {loading && <LoadingState variant="detail" />}
 
         {!loading && (
           <>
@@ -3091,7 +3151,7 @@ function StationDetailModal({
         </div>
 
         {error && <div className="error-banner">{error}</div>}
-        {loading && <LoadingState />}
+        {loading && <LoadingState variant="detail" />}
 
         {!loading && (
           <>
@@ -3472,7 +3532,7 @@ function ListPanel({
   resultCount = null,
   emptyDetail = null
 }) {
-  if (loading) return <LoadingState />;
+  if (loading && !rows.length) return <LoadingState />;
 
   return (
     <div className="view-stack ops-page">
@@ -3704,6 +3764,21 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               OCPP identity
               <input defaultValue={entity?.ocpp_identity ?? ''} name="ocpp_identity" placeholder="volta-station-01" />
             </label>
+            <label>
+              OCPP parola WS (optional)
+              <input
+                name="ocpp_auth_password"
+                type="password"
+                autoComplete="new-password"
+                placeholder={entity?.has_ocpp_auth ? 'Lasă gol pentru a păstra' : 'Minim 8 caractere'}
+              />
+            </label>
+            {entity?.id ? (
+              <label>
+                <input name="clear_ocpp_auth_password" type="checkbox" value="1" />
+                {' '}Șterge parola OCPP (revine la identity-only)
+              </label>
+            ) : null}
             <label>
               OCPP versiune
               <select name="ocpp_version" defaultValue={entity?.ocpp_version ?? '1.6J'}>

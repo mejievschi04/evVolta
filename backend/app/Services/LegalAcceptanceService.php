@@ -49,14 +49,16 @@ class LegalAcceptanceService
         return [
             'version' => $this->currentVersion(),
             'company_name' => config('legal.company_name'),
+            'app_name' => config('legal.app_name', config('legal.company_name')),
             'contact_email' => config('legal.contact_email'),
             'terms' => [
                 'title' => 'Termeni si conditii',
-                'url' => $baseUrl.'/legal/terms',
+                // Servit prin /api ca sa fie public chiar daca nginx ruteaza /legal la SPA.
+                'url' => $baseUrl.'/api/legal/terms?app=1',
             ],
             'privacy' => [
                 'title' => 'Politica de confidentialitate',
-                'url' => $baseUrl.'/legal/privacy',
+                'url' => $baseUrl.'/api/legal/privacy?app=1',
             ],
         ];
     }

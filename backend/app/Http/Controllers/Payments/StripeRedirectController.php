@@ -22,7 +22,7 @@ class StripeRedirectController extends Controller
     {
         $invoiceId = (int) $request->query('invoice_id', 0);
         $walletTopupId = (int) $request->query('wallet_topup_id', 0);
-        $scheme = config('services.mobile.scheme', 'voltaev');
+        $scheme = config('services.mobile.scheme', 'vcharge');
 
         $sessionId = trim((string) $request->query('session_id', ''));
 

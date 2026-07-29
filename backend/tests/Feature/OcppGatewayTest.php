@@ -21,7 +21,7 @@ class OcppGatewayTest extends TestCase
 
         $user = User::factory()->create();
         $station = Station::query()->create([
-            'name' => 'Volta Test 01',
+            'name' => 'V CHARGE Test 01',
             'location' => 'Depot',
             'status' => Station::STATUS_AVAILABLE,
             'qr_code' => 'station:volta-test-01',
