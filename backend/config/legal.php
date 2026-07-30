@@ -5,7 +5,7 @@ return [
     | Versiunea curenta a pachetului Termeni + Politica de confidentialitate.
     | Schimbarea forțeaza o noua acceptare in aplicatia mobila.
     */
-    'version' => env('LEGAL_VERSION', '2026-07-28'),
+    'version' => env('LEGAL_VERSION', '2026-07-29'),
 
     /** Entitatea juridica / operatorul (apare ca parte contractuala). */
     'company_name' => env('LEGAL_COMPANY_NAME', 'Volta SRL'),
@@ -17,5 +17,5 @@ return [
 
     'support_phone' => env('LEGAL_SUPPORT_PHONE', '+373 22 000 000'),
 
-    'effective_date' => env('LEGAL_EFFECTIVE_DATE', '28 iulie 2026'),
+    'effective_date' => env('LEGAL_EFFECTIVE_DATE', '29 iulie 2026'),
 ];

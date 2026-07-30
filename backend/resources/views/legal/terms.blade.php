@@ -234,8 +234,11 @@ un cont sau de a porni o sesiune.
             <li>absenta facturilor neplatite sau a altor blocaje operationale.</li>
         </ul>
         <p>
-            Unele date pot fi pastrate dupa stergere pe perioadele cerute de lege
-            (contabilitate, fiscalitate, solutionarea litigiilor), conform Politicii de confidentialitate.
+            Dupa confirmare, datele de identificare (nume, e-mail, telefon) sunt
+            <strong>anonimizate</strong> si contul nu mai poate fi folosit. Evidentele fiscale
+            pot fi pastrate in forma anonimizata pe perioadele cerute de lege, conform
+            Politicii de confidentialitate. Poti exporta datele tale inainte de stergere
+            din Setari cont → Confidentialitate.
         </p>
     </section>
 

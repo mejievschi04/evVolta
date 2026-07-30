@@ -10,3 +10,8 @@ app(Schedule::class)
 app(Schedule::class)
     ->command('reservations:process')
     ->everyMinute();
+
+app(Schedule::class)
+    ->command('privacy:purge-expired')
+    ->timezone('Europe/Chisinau')
+    ->dailyAt('03:20');

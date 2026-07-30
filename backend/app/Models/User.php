@@ -6,13 +6,14 @@ use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\StationFavorite;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
 class User extends Authenticatable implements JWTSubject
 {
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, SoftDeletes;
 
     public const ACCOUNT_TYPE_PERSONAL = 'personal';
 
@@ -24,6 +25,7 @@ class User extends Authenticatable implements JWTSubject
         'last_name',
         'currency',
         'email',
+        'phone',
         'password',
         'wallet_balance',
     ];
@@ -32,6 +34,8 @@ class User extends Authenticatable implements JWTSubject
         'password',
         'remember_token',
         'is_admin',
+        'legal_accepted_ip',
+        'legal_accepted_user_agent',
     ];
 
     protected function casts(): array
@@ -39,6 +43,7 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'legal_accepted_at' => 'datetime',
+            'anonymized_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'account_type' => 'string',
@@ -69,6 +74,11 @@ class User extends Authenticatable implements JWTSubject
     public function usesMonthlyBilling(): bool
     {
         return false;
+    }
+
+    public function isAnonymized(): bool
+    {
+        return $this->anonymized_at !== null || $this->trashed();
     }
 
     public function sessions()

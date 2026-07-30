@@ -8,7 +8,6 @@ use App\Models\Reservation;
 use App\Models\Station;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class AccountDeletionApiTest extends TestCase
@@ -29,7 +28,7 @@ class AccountDeletionApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('message', 'Contul a fost sters.');
 
-        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+        $this->assertSoftDeleted('users', ['id' => $user->id]);
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'auth.account_deleted',
             'subject_id' => $user->id,
@@ -50,7 +49,7 @@ class AccountDeletionApiTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Parola este incorecta.');
 
-        $this->assertDatabaseHas('users', ['id' => $user->id]);
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'email' => 'delete-me@example.test']);
     }
 
     public function test_account_deletion_is_blocked_with_active_session(): void
@@ -151,7 +150,10 @@ class AccountDeletionApiTest extends TestCase
             ])
             ->assertOk();
 
-        $this->assertDatabaseMissing('users', ['id' => $user->id]);
-        $this->assertDatabaseMissing('reservations', ['id' => $reservationId]);
+        $this->assertSoftDeleted('users', ['id' => $user->id]);
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'status' => Reservation::STATUS_CANCELLED,
+        ]);
     }
 }

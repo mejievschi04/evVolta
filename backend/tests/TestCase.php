@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Models\Station;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Hash;
@@ -35,7 +36,18 @@ abstract class TestCase extends BaseTestCase
         $user->forceFill([
             'is_admin' => false,
             'account_type' => $accountType,
-            'wallet_balance' => $overrides['wallet_balance'] ?? ($prepaidAccount ? 500 : 0),
+            'wallet_balance' => array_key_exists('wallet_balance', $overrides)
+                ? $overrides['wallet_balance']
+                : ($prepaidAccount ? 500 : 0),
+            'legal_accepted_at' => array_key_exists('legal_accepted_at', $overrides)
+                ? $overrides['legal_accepted_at']
+                : now(),
+            'legal_version' => array_key_exists('legal_version', $overrides)
+                ? $overrides['legal_version']
+                : config('legal.version'),
+            'legal_accepted_source' => array_key_exists('legal_accepted_source', $overrides)
+                ? $overrides['legal_accepted_source']
+                : 'test',
         ])->save();
 
         return $user->fresh();

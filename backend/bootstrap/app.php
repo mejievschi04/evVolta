@@ -37,6 +37,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'backoffice.auth' => \App\Http\Middleware\EnsureBackofficeAuth::class,
             'security.headers' => \App\Http\Middleware\AddSecurityHeaders::class,
+            'legal.accepted' => \App\Http\Middleware\EnsureLegalAccepted::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

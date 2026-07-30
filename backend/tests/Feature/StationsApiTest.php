@@ -14,10 +14,11 @@ class StationsApiTest extends TestCase
 
     public function test_stations_api_supports_filters_and_favorites(): void
     {
-        $user = User::query()->create([
+        $user = $this->createAppUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
             'password' => Hash::make('password123'),
+            'wallet_balance' => 0,
         ]);
 
         $favoriteStation = Station::query()->create([

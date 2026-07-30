@@ -104,6 +104,9 @@ class LegalAcceptanceTest extends TestCase
         $user = $this->createAppUser([
             'email' => 'legacy@example.test',
             'password' => Hash::make('password123'),
+            'legal_accepted_at' => null,
+            'legal_version' => null,
+            'legal_accepted_source' => null,
         ]);
 
         $this->assertNull($user->legal_accepted_at);

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\LegalAcceptanceService;
 use App\Services\UserDeletionService;
+use App\Services\UserPrivacyExportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,6 +22,7 @@ class AuthController extends Controller
         private readonly AuditLogService $auditLogService,
         private readonly LegalAcceptanceService $legalAcceptanceService,
         private readonly UserDeletionService $userDeletionService,
+        private readonly UserPrivacyExportService $userPrivacyExportService,
     ) {
     }
 
@@ -31,20 +33,23 @@ class AuthController extends Controller
             'last_name' => 'nullable|string|max:120',
             'name' => 'nullable|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
+            'phone' => 'nullable|string|max:40',
             'password' => ['required', 'string', Password::defaults()],
             'accept_terms' => 'required|accepted',
         ]);
 
         $firstName = trim((string) ($data['first_name'] ?? ''));
         $lastName = trim((string) ($data['last_name'] ?? ''));
-        $fullName = trim($firstName . ' ' . $lastName);
+        $fullName = trim($firstName.' '.$lastName);
         $fallbackName = trim((string) ($data['name'] ?? ''));
+        $phone = trim((string) ($data['phone'] ?? ''));
 
         $user = User::query()->create([
             'name' => $fullName !== '' ? $fullName : ($fallbackName !== '' ? $fallbackName : $data['email']),
             'first_name' => $firstName !== '' ? $firstName : null,
             'last_name' => $lastName !== '' ? $lastName : null,
             'email' => strtolower(trim($data['email'])),
+            'phone' => $phone !== '' ? $phone : null,
             'password' => $data['password'],
             'currency' => 'MDL',
         ]);
@@ -55,7 +60,7 @@ class AuthController extends Controller
             'wallet_balance' => 0,
         ])->save();
 
-        $this->legalAcceptanceService->recordAcceptance($user);
+        $this->legalAcceptanceService->recordAcceptance($user, $request, 'register');
 
         $token = Auth::guard('api')->login($user);
 
@@ -74,6 +79,7 @@ class AuthController extends Controller
             'access_token' => $token,
             'token_type' => 'bearer',
             'user' => $user->fresh(),
+            'legal' => $this->legalAcceptanceService->statusForUser($user->fresh(), $request),
         ], 201);
     }
 
@@ -97,7 +103,6 @@ class AuthController extends Controller
                 metadata: [
                     'email' => strtolower(trim($loginCredentials['email'])),
                     'ip' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
                 ],
             );
 
@@ -127,8 +132,17 @@ class AuthController extends Controller
             ], 403);
         }
 
+        if ($user->isAnonymized()) {
+            Auth::guard('api')->logout();
+
+            return response()->json([
+                'message' => 'Contul a fost sters.',
+            ], 403);
+        }
+
         if (! $this->legalAcceptanceService->hasCurrentAcceptance($user)) {
-            $this->legalAcceptanceService->recordAcceptance($user);
+            $this->legalAcceptanceService->recordAcceptance($user, $request, 'login');
+            $user = $user->fresh();
         }
 
         $this->auditLogService->record(
@@ -145,6 +159,7 @@ class AuthController extends Controller
             'access_token' => $token,
             'token_type' => 'bearer',
             'user' => $user,
+            'legal' => $this->legalAcceptanceService->statusForUser($user, $request),
         ]);
     }
 
@@ -179,7 +194,7 @@ class AuthController extends Controller
         ]);
     }
 
-    public function me(): JsonResponse
+    public function me(Request $request): JsonResponse
     {
         /** @var \App\Models\User $user */
         $user = Auth::guard('api')->user();
@@ -194,6 +209,38 @@ class AuthController extends Controller
 
         return response()->json([
             'user' => $user,
+            'legal' => $this->legalAcceptanceService->statusForUser($user, $request),
+        ]);
+    }
+
+    public function acceptLegal(Request $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::guard('api')->user();
+
+        $request->validate([
+            'accept_terms' => 'required|accepted',
+        ]);
+
+        $this->legalAcceptanceService->recordAcceptance($user, $request, 'in_app');
+
+        $this->auditLogService->record(
+            action: 'privacy.legal_accepted',
+            actor: $user,
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'legal_version' => $this->legalAcceptanceService->currentVersion(),
+                'ip' => $request->ip(),
+            ],
+        );
+
+        $user = $user->fresh();
+
+        return response()->json([
+            'message' => 'Acceptarea legala a fost inregistrata.',
+            'user' => $user,
+            'legal' => $this->legalAcceptanceService->statusForUser($user, $request),
         ]);
     }
 
@@ -206,7 +253,9 @@ class AuthController extends Controller
             'first_name' => 'nullable|string|max:120',
             'last_name' => 'nullable|string|max:120',
             'name' => 'nullable|string|max:255',
+            'phone' => 'nullable|string|max:40',
             'email' => [
+                'sometimes',
                 'required',
                 'email',
                 'max:255',
@@ -214,21 +263,29 @@ class AuthController extends Controller
             ],
         ]);
 
-        $firstName = trim((string) ($data['first_name'] ?? ''));
-        $lastName = trim((string) ($data['last_name'] ?? ''));
-        $fullName = trim($firstName . ' ' . $lastName);
-        $fallbackName = trim((string) ($data['name'] ?? ''));
+        $firstName = array_key_exists('first_name', $data) ? trim((string) $data['first_name']) : (string) $user->first_name;
+        $lastName = array_key_exists('last_name', $data) ? trim((string) $data['last_name']) : (string) $user->last_name;
+        $fullName = trim($firstName.' '.$lastName);
+        $fallbackName = array_key_exists('name', $data) ? trim((string) $data['name']) : (string) $user->name;
+        $phone = array_key_exists('phone', $data) ? trim((string) ($data['phone'] ?? '')) : (string) ($user->phone ?? '');
 
-        $user->forceFill([
+        $payload = [
             'first_name' => $firstName !== '' ? $firstName : null,
             'last_name' => $lastName !== '' ? $lastName : null,
             'name' => $fullName !== '' ? $fullName : ($fallbackName !== '' ? $fallbackName : $user->name),
-            'email' => strtolower($data['email']),
+            'phone' => $phone !== '' ? $phone : null,
             'currency' => 'MDL',
-        ])->save();
+        ];
+
+        if (array_key_exists('email', $data)) {
+            $payload['email'] = strtolower((string) $data['email']);
+        }
+
+        $user->forceFill($payload)->save();
 
         $metadata = [
             'email_changed' => $previousEmail !== $user->email,
+            'phone_updated' => array_key_exists('phone', $data),
         ];
 
         if ($metadata['email_changed']) {
@@ -289,5 +346,27 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Contul a fost sters.',
         ]);
+    }
+
+    public function exportPersonalData(Request $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::guard('api')->user();
+
+        try {
+            $payload = $this->userPrivacyExportService->build($user, $user);
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], $exception->getCode() >= 400 ? $exception->getCode() : 422);
+        }
+
+        return response()->json(
+            $payload,
+            200,
+            [
+                'Content-Disposition' => 'attachment; filename="v-charge-privacy-export-'.$user->id.'.json"',
+            ]
+        );
     }
 }

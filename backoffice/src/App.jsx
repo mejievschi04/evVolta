@@ -3762,7 +3762,7 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
             </label>
             <label>
               OCPP identity
-              <input defaultValue={entity?.ocpp_identity ?? ''} name="ocpp_identity" placeholder="volta-station-01" />
+              <input defaultValue={entity?.ocpp_identity ?? ''} name="ocpp_identity" placeholder="vcharge-station-01" />
             </label>
             <label>
               OCPP parola WS (optional)
@@ -3791,7 +3791,7 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               <input
                 defaultValue={entity?.qr_code ?? ''}
                 name="qr_code"
-                placeholder="Serial hardware (ex: 419400481F59D7) sau station:volta-1"
+                placeholder="Serial hardware (ex: 419400481F59D7) sau station:vcharge-1"
               />
             </label>
             {entity?.ocpp_configuration?.chargePointSerialNumber && (

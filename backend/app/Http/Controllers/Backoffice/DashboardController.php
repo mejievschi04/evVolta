@@ -1018,7 +1018,7 @@ class DashboardController extends Controller
             return $identity;
         }
 
-        return 'volta-' . Str::slug($name);
+        return 'vcharge-' . Str::slug($name);
     }
 
     private function applyStationOcppAuthPassword(array &$data, Request $request): void
