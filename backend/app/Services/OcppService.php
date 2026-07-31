@@ -563,6 +563,45 @@ class OcppService
         ];
     }
 
+    /**
+     * Hard Reset admin pe port: ChangeAvailability pe conector + Reset Hard (OCPP reboot stație).
+     *
+     * @return array{status: string, station_id: int, connector_id: int, reset_type: string, command_ids: list<int>}
+     */
+    public function hardResetConnector(Station|int $station, int $connectorId): array
+    {
+        $station = $this->resolveStation($station)->fresh();
+        $this->assertStationCanReceiveCommands($station);
+
+        if ($connectorId <= 0) {
+            throw new RuntimeException('Conector invalid.', 422);
+        }
+
+        if (! in_array($connectorId, $station->expectedConnectorIds(), true)) {
+            throw new RuntimeException('Conector invalid pentru aceasta statie.', 422);
+        }
+
+        if ($this->hasRecentConnectorRecovery($station->id, $connectorId, 45)) {
+            throw new RuntimeException(
+                'Hard Reset indisponibil momentan. Asteapta cateva secunde dupa ultimul reset.',
+                409
+            );
+        }
+
+        $commandIds = $this->queueConnectorAvailabilityCycle($station, $connectorId);
+        $commandIds[] = $this->queueOutboundCommand($station, 'Reset', [
+            'type' => 'Hard',
+        ], now()->addSeconds(4))->id;
+
+        return [
+            'status' => 'queued',
+            'station_id' => $station->id,
+            'connector_id' => $connectorId,
+            'reset_type' => 'Hard',
+            'command_ids' => $commandIds,
+        ];
+    }
+
     public function hasRecentConnectorRecovery(int $stationId, ?int $connectorId = null, int $withinSeconds = 90): bool
     {
         $since = now()->subSeconds($withinSeconds);

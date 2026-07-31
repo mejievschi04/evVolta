@@ -23,6 +23,7 @@ import {
   Receipt,
   RadioTower,
   RefreshCw,
+  RotateCcw,
   Search,
   Settings,
   Square,
@@ -702,6 +703,7 @@ function StationModernCard({
   onDiagnostics,
   onRefreshStatus,
   onUnlockConnector,
+  onHardResetConnector,
   onStopActiveSession
 }) {
   const status = effectiveStationStatus(station);
@@ -770,6 +772,16 @@ function StationModernCard({
           {isConnected ? (
             <button className="icon-button" onClick={() => onUnlockConnector(station)} type="button" title="UnlockConnector">
               <Unlock size={15} />
+            </button>
+          ) : null}
+          {isConnected ? (
+            <button
+              className="icon-button danger-icon"
+              onClick={() => onHardResetConnector(station)}
+              type="button"
+              title="Hard Reset port"
+            >
+              <RotateCcw size={15} />
             </button>
           ) : null}
           {station.ocpp_connection_url ? (
@@ -1455,6 +1467,7 @@ function StationsView({
   onDiagnostics,
   onRefreshStatus,
   onUnlockConnector,
+  onHardResetConnector,
   onStopActiveSession,
   onOpenDetail
 }) {
@@ -1588,6 +1601,7 @@ function StationsView({
                     onRefreshStatus={onRefreshStatus}
                     onStopActiveSession={onStopActiveSession}
                     onUnlockConnector={onUnlockConnector}
+                    onHardResetConnector={onHardResetConnector}
                     station={station}
                   />
                 ))}
@@ -3105,6 +3119,7 @@ function StationDetailModal({
   onReload,
   onRefreshStatus,
   onUnlockConnector,
+  onHardResetConnector,
   onStopActiveSession,
   onDiagnostics
 }) {
@@ -3180,6 +3195,16 @@ function StationDetailModal({
                           {connector.local_id_tag ? `RFID ${connector.local_id_tag}` : ''}
                           {connector.has_active_session ? ' · incarcare activa' : ''}
                         </p>
+                      )}
+                      {effectiveOcppConnectionStatus(station) === 'connected' && (
+                        <button
+                          className="secondary-button mini-button danger-text"
+                          onClick={() => onHardResetConnector(station, connector.id)}
+                          type="button"
+                        >
+                          <RotateCcw size={14} />
+                          Hard Reset
+                        </button>
                       )}
                     </article>
                   ))}
@@ -3301,6 +3326,10 @@ function StationDetailModal({
               <button className="secondary-button" onClick={() => onUnlockConnector(station)} type="button">
                 <Unlock size={16} />
                 Unlock
+              </button>
+              <button className="secondary-button danger-text" onClick={() => onHardResetConnector(station)} type="button">
+                <RotateCcw size={16} />
+                Hard Reset
               </button>
               {activeSessions.length > 0 && (
                 <button className="secondary-button danger-icon" onClick={() => onStopActiveSession(station)} type="button">
@@ -3899,6 +3928,7 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         onDiagnostics={actions.requestDiagnostics}
         onRefreshStatus={actions.refreshStationStatus}
         onUnlockConnector={actions.unlockStationConnector}
+        onHardResetConnector={actions.hardResetStationConnector}
         onStopActiveSession={actions.stopActiveStationSession}
         onOpenDetail={actions.openStationDetail}
       />
@@ -4318,6 +4348,46 @@ export default function App() {
     );
   }
 
+  async function hardResetStationConnector(station, preferredConnectorId = null) {
+    const connectors = station.live_status?.connectors ?? [];
+    const defaultId = preferredConnectorId
+      ?? station.live_status?.connected_connector_id
+      ?? station.live_status?.connector_id
+      ?? connectors[0]?.id
+      ?? 1;
+
+    let parsed = Number(preferredConnectorId);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      const custom = window.prompt(
+        `Hard Reset pentru ${station.name}.\nAlege portul (1=A, 2=B). Atenție: OCPP Hard Reset repornește stația.`,
+        String(defaultId)
+      );
+
+      if (custom === null) {
+        return;
+      }
+
+      parsed = Number(custom);
+    }
+
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setActionError('Conector invalid.');
+      return;
+    }
+
+    const portLabel = parsed === 2 ? 'B' : parsed === 1 ? 'A' : `C${parsed}`;
+    if (!window.confirm(
+      `Confirmi Hard Reset pe portul ${portLabel} (${station.name})?\n\nSe trimite ChangeAvailability pe port + Reset Hard (reboot stație). Sesiunile active pot fi întrerupte.`
+    )) {
+      return;
+    }
+
+    await runAction(
+      () => mutateJson(`/backoffice/stations/${station.id}/hard-reset-connector`, { connector_id: parsed }),
+      `Hard Reset trimis pentru portul ${portLabel}.`
+    );
+  }
+
   async function stopActiveStationSession(station) {
     if (!window.confirm(`Opresti sesiunea activa pe ${station.name}?`)) {
       return;
@@ -4450,6 +4520,7 @@ export default function App() {
     requestDiagnostics: requestStationDiagnostics,
     refreshStationStatus,
     unlockStationConnector,
+    hardResetStationConnector,
     stopActiveStationSession,
     downloadInvoice,
     sendInvoice,
@@ -4613,6 +4684,12 @@ export default function App() {
         }}
         onUnlockConnector={async (station) => {
           await unlockStationConnector(station);
+          if (stationDetailId) {
+            await loadStationDetail(stationDetailId, true);
+          }
+        }}
+        onHardResetConnector={async (station, connectorId) => {
+          await hardResetStationConnector(station, connectorId);
           if (stationDetailId) {
             await loadStationDetail(stationDetailId, true);
           }

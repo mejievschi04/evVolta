@@ -88,6 +88,60 @@ class BackofficeStationOcppActionsTest extends TestCase
         ]);
     }
 
+    public function test_backoffice_can_hard_reset_station_connector(): void
+    {
+        $admin = $this->createAdminUser();
+        $station = Station::query()->create([
+            'name' => 'VOLTA 1',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_identity' => '5D419400481F59D750010067',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Finishing'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $mock = Mockery::mock(OcppService::class);
+        $mock->shouldReceive('hardResetConnector')
+            ->once()
+            ->with(
+                Mockery::on(fn (Station $item) => $item->id === $station->id),
+                1
+            )
+            ->andReturn([
+                'status' => 'queued',
+                'station_id' => $station->id,
+                'connector_id' => 1,
+                'reset_type' => 'Hard',
+                'command_ids' => [10, 11, 12],
+            ]);
+
+        $this->app->instance(OcppService::class, $mock);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson("/backoffice/stations/{$station->id}/hard-reset-connector", [
+                'connector_id' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.reset_type', 'Hard')
+            ->assertJsonPath('data.connector_id', 1);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'backoffice.station.hard_reset_connector',
+            'station_id' => $station->id,
+        ]);
+    }
+
     public function test_backoffice_can_stop_active_station_session(): void
     {
         $admin = $this->createAdminUser();

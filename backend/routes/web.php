@@ -31,6 +31,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::post('/stations/{station}/diagnostics', [DashboardController::class, 'requestStationDiagnostics'])->name('backoffice.stations.diagnostics');
         Route::post('/stations/{station}/refresh-status', [DashboardController::class, 'refreshStationStatus'])->name('backoffice.stations.refresh_status');
         Route::post('/stations/{station}/unlock-connector', [DashboardController::class, 'unlockStationConnector'])->name('backoffice.stations.unlock_connector');
+        Route::post('/stations/{station}/hard-reset-connector', [DashboardController::class, 'hardResetStationConnector'])->name('backoffice.stations.hard_reset_connector');
         Route::post('/stations/{station}/stop-active-session', [DashboardController::class, 'stopActiveStationSession'])->name('backoffice.stations.stop_active_session');
         Route::get('/stations/{station}/qr-preview', [DashboardController::class, 'previewStationQr'])->name('backoffice.stations.qr.preview');
         Route::get('/stations/{station}/qr', [DashboardController::class, 'downloadStationQr'])->name('backoffice.stations.qr');

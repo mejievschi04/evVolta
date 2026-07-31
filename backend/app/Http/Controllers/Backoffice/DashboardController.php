@@ -906,6 +906,46 @@ class DashboardController extends Controller
         ]);
     }
 
+    public function hardResetStationConnector(Request $request, Station $station): JsonResponse|RedirectResponse
+    {
+        $payload = $request->validate([
+            'connector_id' => 'required|integer|min:1|max:9',
+        ]);
+
+        $connectorId = (int) $payload['connector_id'];
+
+        try {
+            $result = $this->ocppService->hardResetConnector($station, $connectorId);
+        } catch (RuntimeException $exception) {
+            return $this->respondMutationError(
+                $request,
+                $exception->getMessage(),
+                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+            );
+        }
+
+        $this->auditLogService->record(
+            action: 'backoffice.station.hard_reset_connector',
+            actor: $this->backofficeActor(),
+            subjectType: Station::class,
+            subjectId: $station->id,
+            station: $station,
+            metadata: [
+                'connector_id' => $connectorId,
+                'reset_type' => 'Hard',
+                'command_ids' => $result['command_ids'] ?? [],
+            ]
+        );
+
+        $portLabel = Station::connectorPortLabel($connectorId);
+
+        return $this->respondMutation(
+            $request,
+            "Hard Reset trimis pentru portul {$portLabel} (reboot OCPP).",
+            ['data' => $result]
+        );
+    }
+
     public function stopActiveStationSession(Request $request, Station $station): JsonResponse|RedirectResponse
     {
         try {
