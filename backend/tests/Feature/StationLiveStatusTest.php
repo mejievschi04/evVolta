@@ -106,5 +106,29 @@ class StationLiveStatusTest extends TestCase
         $this->assertSame(2, $station->resolveStartConnectorId(null));
         $this->assertSame('preparing', $live['connectors'][1]['availability']);
         $this->assertTrue($live['connectors'][1]['is_stale_finishing']);
+        $this->assertTrue($live['connectors'][1]['can_start']);
+    }
+
+    public function test_stale_finishing_is_start_candidate_for_user_over_available_port(): void
+    {
+        $user = $this->createPersonalUser(['email' => 'finishing-candidate@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Finishing'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($station->connectorIsStartCandidateForUser(1, $user));
+        $this->assertSame([1], $station->startConnectorCandidatesForUser($user));
+        $this->assertSame(1, $station->resolveStartConnectorIdForUser($user, null));
     }
 }

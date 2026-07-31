@@ -10,10 +10,10 @@ class Station extends Model
     public const VEHICLE_CONNECTED_STATUSES = ['Preparing', 'SuspendedEV', 'SuspendedEVSE', 'Charging'];
 
     /** Cablu conectat, pregatit pentru pornire (fara sesiune activa pe acel port). */
-    public const PLUGGED_CONNECTOR_STATUSES = ['Preparing', 'SuspendedEV', 'SuspendedEVSE'];
+    public const PLUGGED_CONNECTOR_STATUSES = ['Preparing', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'];
 
     /** Conector disponibil pentru RemoteStart. */
-    public const STARTABLE_CONNECTOR_STATUSES = ['Available', 'Preparing', 'SuspendedEV', 'SuspendedEVSE'];
+    public const STARTABLE_CONNECTOR_STATUSES = ['Available', 'Preparing', 'SuspendedEV', 'SuspendedEVSE', 'Finishing'];
 
     public const BLOCKED_START_STATUSES = ['Charging', 'Faulted', 'Unavailable', 'Reserved'];
 
@@ -198,7 +198,15 @@ class Station extends Model
 
         return [
             'availability' => $availability,
-            'can_start' => count($startCandidates) > 0
+            'can_start' => (
+                    count($startCandidates) > 0
+                    || (
+                        $user === null
+                        && collect($connectorSummaries)->contains(
+                            static fn (array $connector): bool => ($connector['can_start'] ?? false) === true
+                        )
+                    )
+                )
                 && (! $isGatewayMode || ($isOnline && ! $isStale)),
             'requires_connector_selection' => count($startCandidates) > 1,
             'auto_start_connector_id' => count($startCandidates) === 1 ? $startCandidates[0] : null,
@@ -378,8 +386,13 @@ class Station extends Model
             return false;
         }
 
-        // EU1060: Finishing stale fara sesiune activa — permitem RemoteStart.
+        // EU1060: Finishing — permitem RemoteStart fortat pe acelasi port.
+        // Blocam doar daca alt utilizator are sesiune deschisa pe conector.
         if ($status === 'Finishing' && $this->hasActiveSessionOnConnector((int) $connectorId)) {
+            if ($user && $this->userHasActiveSessionOnConnector((int) $connectorId, (int) $user->id)) {
+                return true;
+            }
+
             return false;
         }
 
@@ -449,17 +462,19 @@ class Station extends Model
             return false;
         }
 
-        if ($this->userHasActiveSessionOnConnector($connectorId, (int) $user->id)) {
-            return false;
-        }
-
-        if ($this->hasActiveSessionOnConnector($connectorId)) {
-            return false;
-        }
-
         $status = $this->connectorOcppStatus($connectorId);
 
         if ($status === null || $status === '') {
+            return false;
+        }
+
+        // Sesiune proprie: doar pe Finishing permitem repornire fortata pe acelasi port
+        // (altfel portul e ocupat de sesiunea curenta — reuse-ul se face pe conectorul rezolvat).
+        if ($this->userHasActiveSessionOnConnector($connectorId, (int) $user->id)) {
+            return $status === 'Finishing';
+        }
+
+        if ($this->hasActiveSessionOnConnector($connectorId)) {
             return false;
         }
 
@@ -471,7 +486,7 @@ class Station extends Model
             return false;
         }
 
-        if ($this->isPluggedConnectorStatus($status)) {
+        if ($this->isPluggedConnectorStatus($status) || $status === 'Finishing') {
             return true;
         }
 

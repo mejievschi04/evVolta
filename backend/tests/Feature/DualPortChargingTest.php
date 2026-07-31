@@ -435,4 +435,97 @@ class DualPortChargingTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('connector_id', 1);
     }
+
+    public function test_stale_finishing_prefers_same_port_over_available_b(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'dual-finishing-prefer-a@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_identity' => 'dual-finishing-01',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Finishing'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $live = $station->liveStatus(null, $user);
+        $this->assertFalse($live['requires_connector_selection']);
+        $this->assertSame(1, $live['auto_start_connector_id']);
+        $this->assertTrue($station->connectorIsStartCandidateForUser(1, $user));
+        $this->assertTrue($station->canAcceptRemoteStart(1, $user));
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('connector_id', 1);
+    }
+
+    public function test_force_restart_on_finishing_closes_old_session_same_port(): void
+    {
+        Config::set('services.ocpp.mode', 'simulator');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'dual-finishing-restart@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_identity' => 'dual-finishing-02',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'Finishing'],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+
+        $oldSession = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'ocpp_id_tag' => 'VOLTA00000099',
+            'ocpp_transaction_id' => '909',
+            'start_source' => 'app',
+            'start_time' => now()->subMinutes(20),
+            'kwh_consumed' => 3.2,
+        ]);
+
+        $response = $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('connector_id', 1);
+
+        $newSessionId = (int) $response->json('session.id');
+        $this->assertNotSame((int) $oldSession->id, $newSessionId);
+
+        $this->assertNotNull($oldSession->fresh()->end_time);
+        $this->assertDatabaseHas('charging_sessions', [
+            'id' => $newSessionId,
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'end_time' => null,
+        ]);
+    }
 }

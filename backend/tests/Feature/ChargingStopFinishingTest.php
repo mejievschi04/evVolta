@@ -4,9 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\ChargingSession;
 use App\Models\Station;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class ChargingStopFinishingTest extends TestCase
@@ -22,10 +20,9 @@ class ChargingStopFinishingTest extends TestCase
 
     public function test_stop_finalizes_immediately_when_connector_is_finishing(): void
     {
-        $user = User::query()->create([
+        $user = $this->createPersonalUser([
             'name' => 'Driver One',
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
         ]);
 
         $station = Station::query()->create([

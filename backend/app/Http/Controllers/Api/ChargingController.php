@@ -143,17 +143,35 @@ class ChargingController extends Controller
                         ];
                     }
 
-                    $this->ocppService->ensureReadyForRemoteCommands($station);
+                    $connectorStatus = $station->connectorOcppStatus($connectorId);
 
-                    $userSessionOnConnector->update([
-                        'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
-                    ]);
-                    $station->update(['status' => Station::STATUS_CHARGING]);
+                    // EU1060: Finishing + cablu inca in priza — inchide sesiunea veche
+                    // si continua cu o pornire noua pe acelasi port (nu pe B).
+                    if ($connectorStatus === 'Finishing') {
+                        $this->chargingStopService->finalizeStop(
+                            $userSessionOnConnector,
+                            $station,
+                            'system',
+                            null,
+                            null,
+                            'ForceRestartFinishing',
+                            ['trigger' => 'force_restart_finishing']
+                        );
+                        $station = $station->fresh();
+                    } else {
+                        $this->ocppService->ensureReadyForRemoteCommands($station);
 
-                    return [
-                        'session' => $userSessionOnConnector->fresh(),
-                        'station' => $station->fresh(),
-                    ];
+                        $userSessionOnConnector->update([
+                            'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
+                        ]);
+                        $station->update(['status' => Station::STATUS_CHARGING]);
+
+                        return [
+                            'session' => $userSessionOnConnector->fresh(),
+                            'station' => $station->fresh(),
+                            'force_finishing_recovery' => false,
+                        ];
+                    }
                 }
 
                 $pendingWithoutConnector = ChargingSession::query()
@@ -177,6 +195,38 @@ class ChargingController extends Controller
                     return [
                         'session' => $pendingWithoutConnector->fresh(),
                         'station' => $station->fresh(),
+                        'force_finishing_recovery' => $station->connectorOcppStatus($connectorId) === 'Finishing',
+                    ];
+                }
+
+                // Sesiune proprie fara tranzactie pe alt conector (ex. detectare gresita) —
+                // remapeaza pe portul rezolvat in loc sa creeze o sesiune noua.
+                $pendingWrongConnector = ChargingSession::query()
+                    ->where('station_id', $station->id)
+                    ->where('user_id', $user->id)
+                    ->whereNull('end_time')
+                    ->whereNull('ocpp_transaction_id')
+                    ->where('ocpp_connector_id', '!=', $connectorId)
+                    ->lockForUpdate()
+                    ->latest('id')
+                    ->first();
+
+                if (
+                    $pendingWrongConnector
+                    && ! $this->chargingStopService->sessionIsCurrentlyCharging($pendingWrongConnector, $station)
+                ) {
+                    $this->ocppService->ensureReadyForRemoteCommands($station);
+
+                    $pendingWrongConnector->update([
+                        'ocpp_connector_id' => $connectorId,
+                        'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
+                    ]);
+                    $station->update(['status' => Station::STATUS_CHARGING]);
+
+                    return [
+                        'session' => $pendingWrongConnector->fresh(),
+                        'station' => $station->fresh(),
+                        'force_finishing_recovery' => $station->connectorOcppStatus($connectorId) === 'Finishing',
                     ];
                 }
 
@@ -246,6 +296,7 @@ class ChargingController extends Controller
                 return [
                     'session' => $session->fresh(),
                     'station' => $station->fresh(),
+                    'force_finishing_recovery' => $station->connectorOcppStatus($connectorId) === 'Finishing',
                 ];
             });
         } catch (RuntimeException $exception) {
@@ -264,7 +315,43 @@ class ChargingController extends Controller
             ], $exception->getCode() ?: 500);
         }
 
-        $ocppResponse = $this->ocppService->queueRemoteStart($session['station'], $session['session'], $request->user());
+        $connectorId = (int) ($session['session']->ocpp_connector_id ?: 1);
+        $needsFinishingRecovery = (bool) ($session['force_finishing_recovery'] ?? false)
+            || $session['station']->connectorOcppStatus($connectorId) === 'Finishing';
+
+        if ($needsFinishingRecovery) {
+            $recoveryIds = $this->ocppService->recoverConnectorForRemoteStart(
+                $session['station'],
+                $connectorId,
+                $session['session'],
+                'finishing_restart',
+                true
+            );
+
+            if ($recoveryIds === []) {
+                $ocppResponse = $this->ocppService->queueRemoteStart(
+                    $session['station'],
+                    $session['session'],
+                    $request->user()
+                );
+                $ocppResponse['finishing_recovery'] = false;
+            } else {
+                $ocppResponse = [
+                    'station_id' => $session['station']->id,
+                    'mode' => config('services.ocpp.mode'),
+                    'status' => 'queued',
+                    'message' => 'Repornire fortata din Finishing: reset conector + RemoteStart.',
+                    'command_ids' => $recoveryIds,
+                    'finishing_recovery' => true,
+                ];
+            }
+        } else {
+            $ocppResponse = $this->ocppService->queueRemoteStart(
+                $session['station'],
+                $session['session'],
+                $request->user()
+            );
+        }
 
         return response()->json([
             'message' => 'Incarcarea a pornit.',
