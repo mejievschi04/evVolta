@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
+use App\Services\ChargingResumeService;
 use App\Services\ChargingStopService;
 use App\Services\SessionPresentationService;
 use App\Services\WalletService;
@@ -122,6 +123,8 @@ class SessionController extends Controller
                     'stream_version' => $session->updated_at?->toIso8601String(),
                     'session' => $session->load('station'),
                     'live_status' => $liveStatus,
+                    'can_resume' => false,
+                    'connector_status' => $station?->connectorOcppStatus($connectorId),
                     'session_completed' => [
                         'session' => $session,
                         'invoice' => $result['invoice'] ?? null,
@@ -137,6 +140,10 @@ class SessionController extends Controller
             'stream_version' => $session->updated_at?->toIso8601String(),
             'session' => $session->load('station'),
             'live_status' => $liveStatus,
+            'can_resume' => $station
+                && ! $session->end_time
+                && app(ChargingResumeService::class)->connectorCanResume($station, $connectorId),
+            'connector_status' => $station?->connectorOcppStatus($connectorId),
         ];
     }
 

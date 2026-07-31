@@ -7,6 +7,7 @@ use App\Models\ChargingSession;
 use App\Models\Reservation;
 use App\Models\Station;
 use App\Services\AuditLogService;
+use App\Services\ChargingResumeService;
 use App\Services\ChargingStopService;
 use App\Services\OcppService;
 use App\Services\ReservationService;
@@ -23,6 +24,7 @@ class ChargingController extends Controller
         private readonly OcppService $ocppService,
         private readonly AuditLogService $auditLogService,
         private readonly ChargingStopService $chargingStopService,
+        private readonly ChargingResumeService $chargingResumeService,
         private readonly WalletService $walletService,
         private readonly SessionPresentationService $sessionPresentationService,
         private readonly ReservationService $reservationService,
@@ -358,6 +360,42 @@ class ChargingController extends Controller
             'session' => $session['session'],
             'ocpp' => $ocppResponse,
             'connector_id' => $session['session']->ocpp_connector_id,
+        ], 201);
+    }
+
+    public function resume(Request $request): JsonResponse
+    {
+        $payload = $request->validate([
+            'station_id' => 'required|exists:stations,id',
+            'session_id' => 'nullable|integer|exists:charging_sessions,id',
+            'connector_id' => 'nullable|integer|min:1|max:8',
+        ]);
+
+        $station = Station::query()->find($payload['station_id']);
+
+        if (! $station) {
+            return response()->json(['message' => 'Statia nu a fost gasita.'], 404);
+        }
+
+        try {
+            $result = $this->chargingResumeService->resume(
+                $request->user(),
+                $station,
+                isset($payload['session_id']) ? (int) $payload['session_id'] : null,
+                isset($payload['connector_id']) ? (int) $payload['connector_id'] : null,
+            );
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422);
+        }
+
+        return response()->json([
+            'message' => 'Incarcarea continua pe acelasi port.',
+            'session' => $this->sessionPresentationService->presentForUser($result['session']),
+            'previous_session_id' => $result['previous_session']?->id,
+            'ocpp' => $result['ocpp'],
+            'connector_id' => $result['connector_id'],
         ], 201);
     }
 

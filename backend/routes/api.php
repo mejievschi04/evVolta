@@ -49,6 +49,7 @@ Route::middleware('auth:api')->group(function () {
         Route::post('/reservations/{reservation}/verify-plug', [ReservationController::class, 'verifyPlug']);
         Route::get('/tariff/current', [TariffController::class, 'current']);
         Route::post('/charging/start', [ChargingController::class, 'start']);
+        Route::post('/charging/resume', [ChargingController::class, 'resume']);
         Route::post('/charging/stop', [ChargingController::class, 'stop']);
         Route::get('/sessions', [SessionController::class, 'index']);
         Route::get('/sessions/{session}/live', [SessionController::class, 'live']);

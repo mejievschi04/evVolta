@@ -963,6 +963,9 @@ class Station extends Model
                         : false,
                     'can_reserve' => $canReserve,
                     'is_stale_finishing' => $status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id),
+                    'can_resume' => $user
+                        && in_array($status, ['SuspendedEV', 'SuspendedEVSE', 'Finishing'], true)
+                        && ! $this->connectorOccupiedByOtherUser($id, (int) $user->id),
                     'has_active_session' => $this->hasActiveSessionOnConnector($id),
                     ...$this->connectorTelemetryFields(is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : []),
                 ];
