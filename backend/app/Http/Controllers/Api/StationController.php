@@ -26,10 +26,10 @@ class StationController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $favoriteStationIds = $request->user()
-            ->stationFavorites()
-            ->pluck('station_id')
-            ->all();
+        $user = $request->user();
+        $favoriteStationIds = $user
+            ? $user->stationFavorites()->pluck('station_id')->all()
+            : [];
 
         $query = Station::query();
 
@@ -58,12 +58,14 @@ class StationController extends Controller
         }
 
         if ($request->boolean('favorite_only')) {
+            if (! $user) {
+                return response()->json([]);
+            }
+
             $query->whereIn('id', $favoriteStationIds);
         }
 
         Station::markStaleOcppConnectionsOffline();
-
-        $user = $request->user();
 
         $stations = $query->orderBy('name')->get()->map(function (Station $station) use ($favoriteStationIds, $user) {
             return $station->toMobileApiArray(

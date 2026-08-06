@@ -17,7 +17,7 @@ class TariffController extends Controller
             'price_per_kwh' => $tariffService->pricePerKwhForUser($user),
             'customer_price_per_kwh' => $tariffService->globalPricePerKwh(),
             'personal_price_per_kwh' => $tariffService->personalPricePerKwh(),
-            'account_type' => $user->account_type,
+            'account_type' => $user?->account_type,
             'currency' => 'MDL',
         ]);
     }

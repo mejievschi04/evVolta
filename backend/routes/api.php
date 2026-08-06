@@ -24,6 +24,12 @@ Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
 Route::post('/maib/callback', [MaibCallbackController::class, 'handle'])
     ->middleware('throttle:120,1');
 
+// Acces guest: harta + lista statiilor + tarif public (fara actiuni de sesiune).
+Route::middleware('throttle:60,1')->group(function () {
+    Route::get('/stations', [StationController::class, 'index']);
+    Route::get('/tariff/current', [TariffController::class, 'current']);
+});
+
 Route::middleware('auth:api')->group(function () {
     // Account / privacy rights — available even when a new legal version must be accepted.
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -35,7 +41,6 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/me/delete', [AuthController::class, 'deleteAccount'])->middleware('throttle:5,1');
 
     Route::middleware('legal.accepted')->group(function () {
-        Route::get('/stations', [StationController::class, 'index']);
         Route::post('/stations/resolve-qr', [StationController::class, 'resolveQr']);
         Route::post('/stations/{station}/refresh-status', [StationController::class, 'refreshStatus']);
         Route::post('/stations/{station}/reset-connector', [StationController::class, 'resetConnector']);
@@ -47,7 +52,6 @@ Route::middleware('auth:api')->group(function () {
         Route::post('/reservations', [ReservationController::class, 'store']);
         Route::post('/reservations/{reservation}/cancel', [ReservationController::class, 'cancel']);
         Route::post('/reservations/{reservation}/verify-plug', [ReservationController::class, 'verifyPlug']);
-        Route::get('/tariff/current', [TariffController::class, 'current']);
         Route::post('/charging/start', [ChargingController::class, 'start']);
         Route::post('/charging/resume', [ChargingController::class, 'resume']);
         Route::post('/charging/stop', [ChargingController::class, 'stop']);

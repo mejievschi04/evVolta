@@ -129,6 +129,15 @@ class StationLiveStatusTest extends TestCase
 
         $this->assertTrue($station->connectorIsStartCandidateForUser(1, $user));
         $this->assertSame([1], $station->startConnectorCandidatesForUser($user));
-        $this->assertSame(1, $station->resolveStartConnectorIdForUser($user, null));
+
+        try {
+            $station->resolveStartConnectorIdForUser($user, null);
+            $this->fail('Expected dual-port start without connector_id to require selection.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame(422, $e->getCode());
+            $this->assertStringContainsString('Alege portul', $e->getMessage());
+        }
+
+        $this->assertSame(1, $station->resolveStartConnectorIdForUser($user, 1));
     }
 }

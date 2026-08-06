@@ -309,10 +309,13 @@ class ChargingController extends Controller
                 ? $stationModel->startConnectorCandidateOptions($request->user())
                 : [];
 
+            $needsPortChoice = $stationModel
+                && count($stationModel->expectedConnectorIds()) > 1
+                && str_contains($exception->getMessage(), 'Alege portul');
+
             return response()->json([
                 'message' => $exception->getMessage(),
-                'requires_connector_selection' => count($candidates) > 1
-                    && str_contains($exception->getMessage(), 'Alege portul'),
+                'requires_connector_selection' => $needsPortChoice,
                 'connectors' => $candidates,
             ], $exception->getCode() ?: 500);
         }

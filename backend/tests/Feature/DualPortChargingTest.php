@@ -357,7 +357,14 @@ class DualPortChargingTest extends TestCase
             'kwh_consumed' => 0,
         ]);
 
-        $this->assertSame(2, $station->resolveStartConnectorIdForUser($user, null));
+        try {
+            $station->resolveStartConnectorIdForUser($user, null);
+            $this->fail('Expected dual-port start without connector_id to require selection.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame(422, $e->getCode());
+        }
+
+        $this->assertSame(2, $station->resolveStartConnectorIdForUser($user, 2));
     }
 
     public function test_both_ports_preparing_requires_explicit_connector_selection(): void
@@ -402,7 +409,7 @@ class DualPortChargingTest extends TestCase
             ->assertJsonPath('connector_id', 2);
     }
 
-    public function test_single_port_preparing_auto_detects_connector(): void
+    public function test_dual_port_requires_explicit_connector_even_when_one_is_plugged(): void
     {
         Config::set('services.ocpp.mode', 'simulator');
         Config::set('billing.prepaid_wallet_enabled', false);
@@ -425,18 +432,26 @@ class DualPortChargingTest extends TestCase
         ]);
 
         $live = $station->liveStatus(null, $user);
-        $this->assertFalse($live['requires_connector_selection']);
-        $this->assertSame(1, $live['auto_start_connector_id']);
+        $this->assertTrue($live['requires_connector_selection']);
+        $this->assertNull($live['auto_start_connector_id']);
 
         $this->actingAs($user, 'api')
             ->postJson('/api/charging/start', [
                 'station_id' => $station->id,
             ])
+            ->assertStatus(422)
+            ->assertJsonPath('requires_connector_selection', true);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+                'connector_id' => 1,
+            ])
             ->assertCreated()
             ->assertJsonPath('connector_id', 1);
     }
 
-    public function test_stale_finishing_prefers_same_port_over_available_b(): void
+    public function test_stale_finishing_still_requires_explicit_port_choice(): void
     {
         Config::set('services.ocpp.mode', 'simulator');
         Config::set('billing.prepaid_wallet_enabled', false);
@@ -461,14 +476,15 @@ class DualPortChargingTest extends TestCase
         ]);
 
         $live = $station->liveStatus(null, $user);
-        $this->assertFalse($live['requires_connector_selection']);
-        $this->assertSame(1, $live['auto_start_connector_id']);
+        $this->assertTrue($live['requires_connector_selection']);
+        $this->assertNull($live['auto_start_connector_id']);
         $this->assertTrue($station->connectorIsStartCandidateForUser(1, $user));
         $this->assertTrue($station->canAcceptRemoteStart(1, $user));
 
         $this->actingAs($user, 'api')
             ->postJson('/api/charging/start', [
                 'station_id' => $station->id,
+                'connector_id' => 1,
             ])
             ->assertCreated()
             ->assertJsonPath('connector_id', 1);
@@ -512,6 +528,7 @@ class DualPortChargingTest extends TestCase
         $response = $this->actingAs($user, 'api')
             ->postJson('/api/charging/start', [
                 'station_id' => $station->id,
+                'connector_id' => 1,
             ])
             ->assertCreated()
             ->assertJsonPath('connector_id', 1);

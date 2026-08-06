@@ -55,8 +55,12 @@ si cum ne poti contacta. Se citeste impreuna cu Termenii si conditiile.
             <li><strong>Date de cont:</strong> nume, e-mail, telefon (optional), parola (hash), tip de cont, sold.</li>
             <li><strong>Date de utilizare:</strong> sesiuni de incarcare, consum kWh, putere, statii
                 si conectori folositi, rezervari, bugete de incarcare, favorite.</li>
+            <li><strong>Date de locatie (GPS):</strong> coordonatele dispozitivului, doar cand folosesti
+                harta din aplicatie, pentru afisarea statiilor apropiate. Locatia nu este folosita
+                pentru publicitate.</li>
             <li><strong>Date de plata:</strong> tranzactii de alimentare sold, status plati, facturi,
-                retururi. Nu stocam numarul complet al cardului.</li>
+                retururi. Nu stocam numarul complet al cardului. Platile cu cardul sunt procesate de
+                <strong>MAIB</strong>.</li>
             <li><strong>Date tehnice:</strong> jurnale de autentificare, erori, identificatori de sesiune,
                 date necesare functionarii OCPP si a suportului.</li>
             <li><strong>Acceptari legale:</strong> data, versiunea Termenilor/Politicii, IP si user-agent

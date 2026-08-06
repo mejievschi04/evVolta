@@ -96,4 +96,39 @@ class StationsApiTest extends TestCase
             'station_id' => $favoriteStation->id,
         ]);
     }
+
+    public function test_guest_can_list_stations_and_tariff_without_auth(): void
+    {
+        Station::query()->create([
+            'name' => 'Public Station',
+            'location' => 'City Center',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'station:public-1',
+            'power_kw' => 22,
+            'connector_type' => 'Type 2',
+            'currency' => 'MDL',
+            'latitude' => 47.01,
+            'longitude' => 28.86,
+        ]);
+
+        $this->getJson('/api/stations')
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.name', 'Public Station')
+            ->assertJsonPath('0.is_favorite', false)
+            ->assertJsonMissingPath('0.ocpp_identity')
+            ->assertJsonMissingPath('0.qr_code');
+
+        $this->getJson('/api/stations?favorite_only=1')
+            ->assertOk()
+            ->assertJsonCount(0);
+
+        $this->getJson('/api/tariff/current')
+            ->assertOk()
+            ->assertJsonStructure(['price_per_kwh', 'currency'])
+            ->assertJsonPath('account_type', null);
+
+        $this->postJson('/api/charging/start', ['station_id' => 1])
+            ->assertUnauthorized();
+    }
 }

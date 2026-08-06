@@ -84,10 +84,10 @@ class ApiAuthSecurityTest extends TestCase
             ->assertJsonValidationErrors('password');
     }
 
-    public function test_jwt_ttl_defaults_are_shortened(): void
+    public function test_jwt_ttl_defaults_are_thirty_days(): void
     {
-        $this->assertSame(120, (int) config('jwt.ttl'));
-        $this->assertSame(10080, (int) config('jwt.refresh_ttl'));
+        $this->assertSame(43200, (int) config('jwt.ttl'));
+        $this->assertSame(43200, (int) config('jwt.refresh_ttl'));
     }
 
     public function test_profile_update_writes_audit_log(): void

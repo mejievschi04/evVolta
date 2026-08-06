@@ -15,7 +15,7 @@ return [
 
     'contact_email' => env('LEGAL_CONTACT_EMAIL', 'support@volta.md'),
 
-    'support_phone' => env('LEGAL_SUPPORT_PHONE', '+373 22 000 000'),
+    'support_phone' => env('LEGAL_SUPPORT_PHONE', '+373 60 535 353'),
 
     'effective_date' => env('LEGAL_EFFECTIVE_DATE', '29 iulie 2026'),
 ];

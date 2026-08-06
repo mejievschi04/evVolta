@@ -208,8 +208,11 @@ class Station extends Model
                     )
                 )
                 && (! $isGatewayMode || ($isOnline && ! $isStale)),
-            'requires_connector_selection' => count($startCandidates) > 1,
-            'auto_start_connector_id' => count($startCandidates) === 1 ? $startCandidates[0] : null,
+            // Dual-port: clientul alege mereu portul — nu sugeram auto_start.
+            'requires_connector_selection' => count($this->expectedConnectorIds()) > 1,
+            'auto_start_connector_id' => count($this->expectedConnectorIds()) === 1 && count($startCandidates) === 1
+                ? $startCandidates[0]
+                : null,
             'start_connector_candidates' => $this->startConnectorCandidateOptions($user),
             'plugged_connector_ids' => $this->pluggedConnectorIds($connectors),
             'connection_status' => $isGatewayMode
@@ -495,6 +498,13 @@ class Station extends Model
 
     public function resolveStartConnectorIdForUser(?User $user, ?int $requested = null): int
     {
+        $expected = $this->expectedConnectorIds();
+
+        // Dual-port: fara connector_id explicit — nu autodetectam portul cu masina.
+        if (($requested === null || $requested <= 0) && count($expected) > 1) {
+            throw new \RuntimeException('Alege portul A sau B in aplicatie.', 422);
+        }
+
         if ($requested !== null && $requested > 0) {
             if (! $user || ! $this->connectorIsStartCandidateForUser($requested, $user)) {
                 throw new \RuntimeException('Conectorul selectat nu este disponibil pentru tine.', 422);
@@ -511,18 +521,7 @@ class Station extends Model
             }
 
             if (count($candidates) > 1) {
-                $pluggedCount = collect($candidates)
-                    ->filter(fn (int $connectorId) => $this->isPluggedConnectorStatus(
-                        $this->connectorOcppStatus($connectorId)
-                    ))
-                    ->count();
-
-                throw new \RuntimeException(
-                    $pluggedCount > 1
-                        ? 'Mai multe porturi au masina conectata. Alege portul A sau B in aplicatie.'
-                        : 'Alege portul A sau B in aplicatie.',
-                    422
-                );
+                throw new \RuntimeException('Alege portul A sau B in aplicatie.', 422);
             }
         }
 

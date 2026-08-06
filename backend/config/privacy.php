@@ -30,14 +30,14 @@ return [
             'location' => 'EEA / Republica Moldova (conform contractului de hosting)',
         ],
         [
-            'name' => 'Procesator de plati (MAIB / Stripe, dupa configurare)',
-            'purpose' => 'Alimentare sold, confirmare plata, retururi',
-            'location' => 'Republica Moldova / EEA',
+            'name' => 'MAIB',
+            'purpose' => 'Alimentare sold cu card, confirmare plata, retururi',
+            'location' => 'Republica Moldova',
         ],
     ],
 
     'device_permissions' => [
-        'location' => 'Afisarea statiilor apropiate pe harta (doar la cerere / cand folosesti harta).',
+        'location' => 'Locatie GPS a dispozitivului, doar cand folosesti harta, pentru afisarea statiilor de incarcare apropiate. Nu folosim locatia pentru publicitate; poti refuza sau revoca permisiunea din setarile telefonului.',
         'camera' => 'Scanarea codului QR al statiei.',
     ],
 ];

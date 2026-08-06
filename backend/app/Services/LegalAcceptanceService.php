@@ -51,8 +51,6 @@ class LegalAcceptanceService
      */
     public function publicConfig(Request $request): array
     {
-        $baseUrl = $request->getSchemeAndHttpHost();
-
         return [
             'version' => $this->currentVersion(),
             'company_name' => config('legal.company_name'),
@@ -64,12 +62,11 @@ class LegalAcceptanceService
             'supervisory_authority' => config('privacy.supervisory_authority'),
             'terms' => [
                 'title' => 'Termeni si conditii',
-                // Servit prin /api ca sa fie public chiar daca nginx ruteaza /legal la SPA.
-                'url' => $baseUrl.'/api/legal/terms?app=1',
+                'url' => 'https://v-charge.volta.md/termeni.html',
             ],
             'privacy' => [
                 'title' => 'Politica de confidentialitate',
-                'url' => $baseUrl.'/api/legal/privacy?app=1',
+                'url' => 'https://v-charge.volta.md/confidentialitate.html',
             ],
         ];
     }

@@ -121,10 +121,10 @@ un cont sau de a porni o sesiune.
             consumul estimat sau bugetul ales in aplicatie.
         </p>
         <ul>
-            <li>Alimentarea soldului se face prin metode de plata aprobate (de exemplu card bancar
-                prin procesatorul de plati integrat).</li>
+            <li>Alimentarea soldului se face prin card bancar, procesat de
+                <strong>MAIB</strong> (procesatorul de plati integrat).</li>
             <li>Datele complete ale cardului nu sunt stocate de {{ $companyName }}; plata este
-                procesata de furnizorul de plati conform politicii acestuia.</li>
+                procesata de MAIB conform politicii acestuia.</li>
             <li>Tranzactiile apar in istoricul din aplicatie; statusul „platit” / „in asteptare”
                 reflecta starea confirmata de procesator.</li>
             <li>Retururile (partiale sau totale) pot fi initiate conform politicilor noastre si
