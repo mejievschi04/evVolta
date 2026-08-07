@@ -134,7 +134,7 @@ class ChargingResumeService
                 'user_id' => $user->id,
                 'station_id' => $station->id,
                 'ocpp_connector_id' => $resolvedConnectorId,
-                'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $resolvedConnectorId, $user),
+                'ocpp_id_tag' => OcppService::idTagForUser($user),
                 'start_source' => 'app_resume',
                 'start_time' => now(),
                 'kwh_consumed' => 0,

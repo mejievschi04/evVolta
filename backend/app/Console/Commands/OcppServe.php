@@ -710,11 +710,30 @@ class OcppServe extends Command
         $meterStart = $this->normalizeMeterStartFromOcpp($payload['meterStart'] ?? null);
         $startedAt = $this->parseOcppTime($payload['timestamp'] ?? null);
         $user = $this->userFromIdTag($idTag);
-        $session = null;
+        // Prefer the app session that queued RemoteStart — local charger idTags have no user identity
+        // and must not attach to another user's still-open Finishing row on the same connector.
+        $session = $this->findSessionFromRecentRemoteStart($station, $connectorId);
 
-        if (! $user) {
-            $session = $this->findLinkableAppSession($station, $connectorId);
+        if ($session && $this->isProtectedFinishingSession($station, $session)) {
+            $session = null;
+        }
+
+        if ($session && $user && (int) $session->user_id !== (int) $user->id) {
+            // Never reassign a session to a different user — keep the starter.
+            $user = User::query()->find($session->user_id);
+        }
+
+        if (! $session && ! $user) {
+            $session = $this->findPendingAppSession($station, $connectorId)
+                ?? $this->findMeterPreassignedAppSession($station, $connectorId);
+            if ($session && $this->isProtectedFinishingSession($station, $session)) {
+                $session = null;
+            }
             $user = $session ? User::query()->find($session->user_id) : null;
+        }
+
+        if (! $user && $session) {
+            $user = User::query()->find($session->user_id);
         }
 
         if (! $user) {
@@ -725,7 +744,11 @@ class OcppServe extends Command
             $query = ChargingSession::query()
                 ->where('station_id', $station->id)
                 ->where('user_id', $user->id)
-                ->whereNull('end_time');
+                ->whereNull('end_time')
+                ->where(function ($query): void {
+                    $query->whereNull('ocpp_transaction_id')
+                        ->orWhereColumn('ocpp_transaction_id', 'id');
+                });
 
             if ($station->expectedConnectorCount() > 1) {
                 $query->where('ocpp_connector_id', $connectorId);
@@ -739,6 +762,10 @@ class OcppServe extends Command
             $session = $query
                 ->latest('id')
                 ->first();
+
+            if ($session && $this->isProtectedFinishingSession($station, $session)) {
+                $session = null;
+            }
         }
 
         if (! $session) {
@@ -748,20 +775,36 @@ class OcppServe extends Command
                 'ocpp_connector_id' => $connectorId,
                 'start_time' => $startedAt,
                 'start_source' => 'ocpp',
-                'ocpp_id_tag' => $idTag,
+                'ocpp_id_tag' => OcppService::idTagForUser($user),
                 'meter_start_kwh' => $meterStart,
                 'kwh_consumed' => 0,
             ]);
         }
 
+        // Keep the owner idTag (VOLTA…) when the charger echoes a local RFID tag.
+        $ownerTag = trim((string) ($session->ocpp_id_tag ?? ''));
+        $preserveOwnerTag = $ownerTag !== '' && (
+            $this->userFromIdTag($ownerTag) !== null
+            || strcasecmp($ownerTag, OcppService::idTagForUser($user)) === 0
+        );
+
+        $previousLive = is_array($session->live_metrics) ? $session->live_metrics : [];
+        unset(
+            $previousLive['energy_kwh'],
+            $previousLive['previous_energy_kwh'],
+            $previousLive['energy_integrated_kwh'],
+            $previousLive['power_samples']
+        );
+
         $session->update([
             'ocpp_transaction_id' => (string) $session->id,
             'ocpp_connector_id' => $connectorId,
-            'ocpp_id_tag' => $idTag,
+            'ocpp_id_tag' => $preserveOwnerTag ? $ownerTag : OcppService::idTagForUser($user),
             'meter_start_kwh' => $this->resolveMeterStartForSession($session, $meterStart),
+            'kwh_consumed' => 0,
             'start_time' => $session->start_time ?: $startedAt,
             'live_metrics' => array_merge(
-                is_array($session->live_metrics) ? $session->live_metrics : [],
+                $previousLive,
                 [
                     'energy_integrated_kwh' => 0,
                     'assigned_transaction_id' => (int) $session->id,
@@ -770,6 +813,7 @@ class OcppServe extends Command
         ]);
 
         $station->rememberLocalIdTag($connectorId, $idTag);
+        $this->clearConnectorLiveMeterEnergy($station, $connectorId);
 
         $station->update([
             'status' => Station::STATUS_CHARGING,
@@ -792,6 +836,24 @@ class OcppServe extends Command
         $metrics = app(OcppMeterValuesParser::class)->parse($payload['meterValue'] ?? []);
         $meterKwh = $metrics['energy_kwh'];
 
+        $session = $this->findSessionForTransaction($station, $transactionId, $connectorId);
+
+        // Finishing rows that already charged must only be closed via Stop / auto-finalize —
+        // never absorb orphan MeterValues from a new start on the same connector.
+        if (
+            $session
+            && $this->isProtectedFinishingSession($station, $session)
+            && ($transactionId === '' || $transactionId === '0')
+        ) {
+            $session = null;
+        }
+
+        $energyService = app(SessionEnergyService::class);
+        $isEnergyFlash = $session
+            && $meterKwh !== null
+            && SessionEnergyService::usesSessionRelativeRegister($session)
+            && $energyService->looksLikeLifetimeRegisterFlash($session, $meterKwh);
+
         $configuration = $station->ocpp_configuration ?? [];
         $liveMeter = array_filter([
             'power_kw' => $metrics['power_kw'],
@@ -799,7 +861,7 @@ class OcppServe extends Command
             'voltage_v' => $metrics['voltage_v'],
             'soc_percent' => $metrics['soc_percent'],
             'temperature_c' => $metrics['temperature_c'],
-            'energy_kwh' => $meterKwh,
+            'energy_kwh' => $isEnergyFlash ? null : $meterKwh,
             'sampled_at' => $metrics['sampled_at'] ?? now()->toIso8601String(),
         ], static fn ($value) => $value !== null && $value !== '');
 
@@ -817,12 +879,9 @@ class OcppServe extends Command
             'ocpp_configuration' => $configuration,
         ]);
 
-        $session = $this->findSessionForTransaction($station, $transactionId, $connectorId);
-
         if ($session) {
             $session->rememberReportedTransactionId($transactionId);
 
-            $energyService = app(SessionEnergyService::class);
             $previousLive = is_array($session->live_metrics) ? $session->live_metrics : [];
             $sessionUpdate = [
                 'live_metrics' => array_filter([
@@ -831,8 +890,10 @@ class OcppServe extends Command
                     'voltage_v' => $metrics['voltage_v'],
                     'soc_percent' => $metrics['soc_percent'],
                     'temperature_c' => $metrics['temperature_c'],
-                    'previous_energy_kwh' => $previousLive['energy_kwh'] ?? null,
-                    'energy_kwh' => $meterKwh,
+                    'previous_energy_kwh' => $isEnergyFlash
+                        ? ($previousLive['previous_energy_kwh'] ?? null)
+                        : ($previousLive['energy_kwh'] ?? null),
+                    'energy_kwh' => $isEnergyFlash ? null : $meterKwh,
                     'sampled_at' => $metrics['sampled_at'] ?? now()->toIso8601String(),
                     'measurands' => $metrics['measurands'],
                 ], static fn ($value) => $value !== null && $value !== '' && $value !== []),
@@ -870,7 +931,7 @@ class OcppServe extends Command
             if ($session) {
                 $freshSession = $session->fresh();
                 $delivered = SessionEnergyService::usesSessionRelativeRegister($freshSession)
-                    ? (string) ($metrics['energy_kwh'] ?? $freshSession->kwh_consumed ?? '—')
+                    ? (string) (($isEnergyFlash ? null : $metrics['energy_kwh']) ?? $freshSession->kwh_consumed ?? '—')
                     : (string) ($freshSession->kwh_consumed ?? '—');
             }
 
@@ -1388,35 +1449,155 @@ class OcppServe extends Command
     }
 
     /**
+     * Finishing + already delivered energy: leave untouched by StartTransaction / orphan meters.
+     * Auto-finalize / StopTransaction remain the only writers for these rows.
+     * A brand-new pending start on a still-Finishing connector must NOT be protected.
+     */
+    private function isProtectedFinishingSession(Station $station, ChargingSession $session): bool
+    {
+        $connectorId = (int) ($session->ocpp_connector_id ?? 0);
+        if ($connectorId <= 0) {
+            return false;
+        }
+
+        if ($station->connectorOcppStatus($connectorId) !== 'Finishing') {
+            return false;
+        }
+
+        // New app start waiting for StartTransaction while the port is still Finishing.
+        if ($session->ocpp_transaction_id === null) {
+            return false;
+        }
+
+        if ((float) $session->kwh_consumed > 0.01) {
+            return true;
+        }
+
+        $live = is_array($session->live_metrics) ? $session->live_metrics : [];
+
+        if ((float) ($live['energy_integrated_kwh'] ?? 0) >= 0.01) {
+            return true;
+        }
+
+        return $session->start_time
+            && $session->start_time->diffInMinutes(now()) >= 2;
+    }
+
+    /**
      * App session waiting for StartTransaction.conf, including when MeterValues arrived first
      * and pre-assigned ocpp_transaction_id to the session primary key.
      */
     private function findLinkableAppSession(Station $station, ?int $connectorId = null): ?ChargingSession
     {
+        $session = $this->findSessionFromRecentRemoteStart($station, (int) ($connectorId ?? 0))
+            ?? $this->findPendingAppSession($station, $connectorId)
+            ?? $this->findMeterPreassignedAppSession($station, $connectorId);
+
+        if ($session && $this->isProtectedFinishingSession($station, $session)) {
+            return null;
+        }
+
+        return $session;
+    }
+
+    /**
+     * Session targeted by a recent RemoteStart / RequestStart for this connector.
+     */
+    private function findSessionFromRecentRemoteStart(Station $station, int $connectorId = 0): ?ChargingSession
+    {
+        $commands = OcppCommand::query()
+            ->where('station_id', $station->id)
+            ->whereIn('action', ['RemoteStartTransaction', 'RequestStartTransaction'])
+            ->whereIn('status', [
+                OcppCommand::STATUS_PENDING,
+                OcppCommand::STATUS_SENT,
+                OcppCommand::STATUS_ACCEPTED,
+            ])
+            ->whereNotNull('charging_session_id')
+            ->where('created_at', '>=', now()->subMinutes(15))
+            ->latest('id')
+            ->limit(30)
+            ->get();
+
+        foreach ($commands as $command) {
+            $payload = is_array($command->payload) ? $command->payload : [];
+            $payloadConnector = (int) ($payload['connectorId'] ?? $payload['evseId'] ?? 0);
+
+            $session = ChargingSession::query()
+                ->where('id', $command->charging_session_id)
+                ->where('station_id', $station->id)
+                ->whereNull('end_time')
+                ->first();
+
+            if (! $session) {
+                continue;
+            }
+
+            $sessionConnector = (int) ($session->ocpp_connector_id ?? 0);
+
+            if ($connectorId > 0) {
+                if ($payloadConnector > 0 && $payloadConnector !== $connectorId) {
+                    continue;
+                }
+                if ($sessionConnector > 0 && $sessionConnector !== $connectorId) {
+                    continue;
+                }
+            }
+
+            $transactionId = (string) ($session->ocpp_transaction_id ?? '');
+            if ($transactionId !== '' && $transactionId !== (string) $session->id) {
+                continue;
+            }
+
+            if ($this->isProtectedFinishingSession($station, $session)) {
+                continue;
+            }
+
+            return $session;
+        }
+
+        return null;
+    }
+
+    /**
+     * Pending session that already received early MeterValues and stored ocpp_transaction_id = id.
+     * Never picks a real in-progress / Finishing charge.
+     */
+    private function findMeterPreassignedAppSession(Station $station, ?int $connectorId = null): ?ChargingSession
+    {
         $query = ChargingSession::query()
             ->where('station_id', $station->id)
             ->whereNull('end_time')
-            ->where(function ($query): void {
-                $query->whereNull('ocpp_transaction_id')
-                    ->orWhereColumn('ocpp_transaction_id', 'id');
-            });
+            ->whereColumn('ocpp_transaction_id', 'id')
+            ->where('start_source', 'app')
+            ->where('created_at', '>=', now()->subMinutes(15));
 
         if ($connectorId && $connectorId > 0) {
-            return (clone $query)
+            $session = (clone $query)
                 ->where('ocpp_connector_id', $connectorId)
                 ->latest('id')
                 ->first();
+
+            return ($session && ! $this->isProtectedFinishingSession($station, $session))
+                ? $session
+                : null;
         }
 
         if ($station->expectedConnectorCount() > 1) {
             $matches = (clone $query)
                 ->limit(2)
-                ->get();
+                ->get()
+                ->filter(fn (ChargingSession $session) => ! $this->isProtectedFinishingSession($station, $session))
+                ->values();
 
             return $matches->count() === 1 ? $matches->first() : null;
         }
 
-        return $query->latest('id')->first();
+        $session = $query->latest('id')->first();
+
+        return ($session && ! $this->isProtectedFinishingSession($station, $session))
+            ? $session
+            : null;
     }
 
     private function normalizeMeterStartFromOcpp(mixed $meterStart): ?float
@@ -1427,9 +1608,37 @@ class OcppServe extends Command
     private function resolveMeterStartForSession(ChargingSession $session, ?float $meterStartFromOcpp): ?float
     {
         $fromOcpp = SessionEnergyService::effectiveMeterStart($meterStartFromOcpp);
-        $existing = SessionEnergyService::effectiveMeterStart($session->meter_start_kwh);
+        if ($fromOcpp !== null) {
+            return $fromOcpp;
+        }
 
-        return $fromOcpp ?? $existing;
+        $existing = SessionEnergyService::effectiveMeterStart($session->meter_start_kwh);
+        if (
+            $existing !== null
+            && ! app(SessionEnergyService::class)->looksLikeLifetimeRegisterFlash($session, $existing)
+        ) {
+            return $existing;
+        }
+
+        return null;
+    }
+
+    private function clearConnectorLiveMeterEnergy(Station $station, int $connectorId): void
+    {
+        $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
+        $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+        $meter = is_array($connectors[$connectorId]['live_meter'] ?? null)
+            ? $connectors[$connectorId]['live_meter']
+            : null;
+
+        if ($meter === null || ! array_key_exists('energy_kwh', $meter)) {
+            return;
+        }
+
+        unset($meter['energy_kwh']);
+        $connectors[$connectorId]['live_meter'] = $meter;
+        $configuration['connectors'] = $connectors;
+        $station->update(['ocpp_configuration' => $configuration]);
     }
 
     private function activatePendingSessionForConnector(Station $station, int $connectorId): void
@@ -1475,29 +1684,13 @@ class OcppServe extends Command
     private function findSessionForTransaction(Station $station, string $transactionId, int $connectorId = 0): ?ChargingSession
     {
         if ($transactionId === '' || $transactionId === '0') {
-            if ($connectorId > 0) {
-                $byConnector = ChargingSession::query()
-                    ->where('station_id', $station->id)
-                    ->whereNull('end_time')
-                    ->where('ocpp_connector_id', $connectorId)
-                    ->latest('id')
-                    ->first();
-
-                if ($byConnector) {
-                    return $byConnector;
-                }
-            }
-
-            $pending = $this->findLinkableAppSession(
-                $station,
-                $connectorId > 0 ? $connectorId : null
-            );
-
-            if ($pending) {
-                return $pending;
-            }
-
-            return null;
+            // Do not attach orphan MeterValues to any open row on the connector —
+            // that hijacks another user's Finishing / active session.
+            return $this->findSessionFromRecentRemoteStart($station, $connectorId)
+                ?? $this->findPendingAppSession(
+                    $station,
+                    $connectorId > 0 ? $connectorId : null
+                );
         }
 
         $query = ChargingSession::query()

@@ -209,4 +209,42 @@ class SessionEnergyServiceTest extends TestCase
             ]);
         }
     }
+
+    public function test_lifetime_register_flash_from_previous_session_is_ignored(): void
+    {
+        $user = User::factory()->create();
+        $station = Station::query()->create([
+            'name' => 'VOLTA 1',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+        ]);
+
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'start_source' => 'app',
+            'start_time' => now()->subSeconds(5),
+            'kwh_consumed' => 0,
+            'meter_start_kwh' => null,
+        ]);
+
+        $service = new SessionEnergyService();
+        $result = $service->resolveDeliveredKwh($session, 34.941, [
+            'power_kw' => 3.5,
+            'current_a' => 14.0,
+            'sampled_at' => now()->toIso8601String(),
+        ]);
+
+        $this->assertSame(0.0, $result['kwh_consumed']);
+        $this->assertTrue($service->looksLikeLifetimeRegisterFlash($session, 34.941));
+        $this->assertFalse($service->looksLikeLifetimeRegisterFlash($session, 0.068));
+
+        $session->update([
+            'kwh_consumed' => 34.941,
+            'live_metrics' => ['energy_kwh' => 34.941, 'power_kw' => 3.5],
+        ]);
+
+        $this->assertSame(0.0, $service->telemetryKwhDelivered($session->fresh()));
+    }
 }

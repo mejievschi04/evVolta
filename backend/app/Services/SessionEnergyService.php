@@ -65,6 +65,19 @@ class SessionEnergyService
         $integrated = $this->integrateFromPower($session, $metrics);
 
         if ($meterKwh !== null && self::usesSessionRelativeRegister($session)) {
+            // EU1060 often keeps sending the previous charge's lifetime register for a few
+            // seconds before the session-relative Wh counter resets — never show that as delivered.
+            if ($this->looksLikeLifetimeRegisterFlash($session, $meterKwh)) {
+                $stored = (float) ($session->kwh_consumed ?? 0);
+
+                return [
+                    'kwh_consumed' => $this->looksLikeLifetimeRegisterFlash($session, $stored)
+                        ? 0.0
+                        : round(max(0, $stored), 3),
+                    'energy_integrated_kwh' => $integrated,
+                ];
+            }
+
             return [
                 'kwh_consumed' => round($meterKwh, 3),
                 'energy_integrated_kwh' => $integrated,
@@ -103,6 +116,16 @@ class SessionEnergyService
         $meterTotal = isset($live['energy_kwh']) ? (float) $live['energy_kwh'] : null;
 
         if ($meterTotal !== null && self::usesSessionRelativeRegister($session)) {
+            if ($this->looksLikeLifetimeRegisterFlash($session, $meterTotal)) {
+                $stored = (float) ($session->kwh_consumed ?? 0);
+                $integrated = (float) ($live['energy_integrated_kwh'] ?? 0);
+                if ($this->looksLikeLifetimeRegisterFlash($session, $stored)) {
+                    $stored = 0.0;
+                }
+
+                return round(max(0, $stored, $integrated), 3);
+            }
+
             return round($meterTotal, 3);
         }
 
@@ -120,6 +143,23 @@ class SessionEnergyService
         $meterStuck = $this->isMeterRegisterStuck($session, $meterTotal, $energyFlowing);
 
         return $this->chooseDeliveredKwh($meterDelta, $integrated, $stored, $meterStuck);
+    }
+
+    /**
+     * Absolute / lifetime Wh from the previous charge, before the charger resets the session counter.
+     */
+    public function looksLikeLifetimeRegisterFlash(ChargingSession $session, float $meterKwh): bool
+    {
+        if ($meterKwh <= 0.35) {
+            return false;
+        }
+
+        $start = $session->start_time ?? now();
+        $ageSeconds = max(0, now()->getTimestamp() - $start->getTimestamp());
+        // Allow continuous ~50 kW from start, plus a small sampling buffer.
+        $maxPlausible = max(0.35, (50.0 * $ageSeconds / 3600) + 0.2);
+
+        return $meterKwh > $maxPlausible;
     }
 
     private function chooseDeliveredKwh(

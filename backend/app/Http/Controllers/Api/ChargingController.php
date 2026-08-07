@@ -164,7 +164,7 @@ class ChargingController extends Controller
                         $this->ocppService->ensureReadyForRemoteCommands($station);
 
                         $userSessionOnConnector->update([
-                            'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
+                            'ocpp_id_tag' => OcppService::idTagForUser($user),
                         ]);
                         $station->update(['status' => Station::STATUS_CHARGING]);
 
@@ -190,7 +190,7 @@ class ChargingController extends Controller
 
                     $pendingWithoutConnector->update([
                         'ocpp_connector_id' => $connectorId,
-                        'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
+                        'ocpp_id_tag' => OcppService::idTagForUser($user),
                     ]);
                     $station->update(['status' => Station::STATUS_CHARGING]);
 
@@ -221,7 +221,7 @@ class ChargingController extends Controller
 
                     $pendingWrongConnector->update([
                         'ocpp_connector_id' => $connectorId,
-                        'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $user),
+                        'ocpp_id_tag' => OcppService::idTagForUser($user),
                     ]);
                     $station->update(['status' => Station::STATUS_CHARGING]);
 
@@ -250,7 +250,7 @@ class ChargingController extends Controller
                     'user_id' => $request->user()->id,
                     'station_id' => $station->id,
                     'ocpp_connector_id' => $connectorId,
-                    'ocpp_id_tag' => $this->ocppService->remoteStartIdTag($station, $connectorId, $request->user()),
+                    'ocpp_id_tag' => OcppService::idTagForUser($request->user()),
                     'start_source' => 'app',
                     'start_time' => now(),
                     'kwh_consumed' => 0,
