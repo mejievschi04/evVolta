@@ -57,6 +57,8 @@ class LegalAcceptanceService
             'app_name' => config('legal.app_name', config('legal.company_name')),
             'contact_email' => config('legal.contact_email'),
             'support_phone' => config('legal.support_phone'),
+            'company_idno' => (string) config('legal.company_idno', ''),
+            'company_address' => (string) config('legal.company_address', ''),
             'effective_date' => config('legal.effective_date'),
             'rights_sla_days' => (int) config('privacy.rights_sla_days', 30),
             'supervisory_authority' => config('privacy.supervisory_authority'),

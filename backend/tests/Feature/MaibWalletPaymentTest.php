@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Mail\WalletTopupConfirmationMail;
 use App\Models\WalletTopup;
 use App\Services\MaibPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class MaibWalletPaymentTest extends TestCase
@@ -65,6 +67,8 @@ class MaibWalletPaymentTest extends TestCase
 
     public function test_callback_with_valid_signature_credits_wallet_once(): void
     {
+        Mail::fake();
+
         $user = $this->createAppUser(['wallet_balance' => 20]);
         $topup = WalletTopup::query()->create([
             'user_id' => $user->id,
@@ -95,9 +99,11 @@ class MaibWalletPaymentTest extends TestCase
         $this->assertSame('paid', $topup->fresh()->status);
         $this->assertSame('5a4d27a4-79f5-426b-9403-cccdeee81747', $topup->fresh()->payment_session_id);
         $this->assertSame('379b31a3-8283-43d4-8a7b-eef8c0736a32', $topup->fresh()->payment_intent_id);
+        Mail::assertSent(WalletTopupConfirmationMail::class, 1);
 
         $this->postSignedMaibCallback($payload)->assertOk();
         $this->assertSame(120.0, (float) $user->fresh()->wallet_balance);
+        Mail::assertSent(WalletTopupConfirmationMail::class, 1);
     }
 
     public function test_callback_with_invalid_signature_is_rejected(): void
@@ -305,6 +311,29 @@ class MaibWalletPaymentTest extends TestCase
         Http::assertSent(function ($request) {
             return str_contains($request->url(), '/v2/payments/379b31a3-8283-43d4-8a7b-eef8c0736a32/refund');
         });
+    }
+
+    public function test_maib_success_return_page_shows_payment_details(): void
+    {
+        $user = $this->createAppUser();
+        $topup = WalletTopup::query()->create([
+            'user_id' => $user->id,
+            'amount' => 150,
+            'currency' => 'MDL',
+            'status' => 'paid',
+            'payment_provider' => 'maib',
+            'payment_session_id' => 'pay-return-1',
+            'paid_at' => now(),
+        ]);
+
+        $this->get('/payments/maib/success?wallet_topup_id='.$topup->id)
+            ->assertOk()
+            ->assertSee('wallet-topup-'.$topup->id, false)
+            ->assertSee('Alimentare sold V CHARGE', false)
+            ->assertSee('150.00', false)
+            ->assertSee('MDL', false)
+            ->assertSee('Volta SRL', false)
+            ->assertSee('Data platii', false);
     }
 
     /**

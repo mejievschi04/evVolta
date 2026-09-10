@@ -15,7 +15,8 @@
             font-family: Inter, Arial, sans-serif;
         }
         .wrap {
-            max-width: 420px;
+            max-width: 440px;
+            width: calc(100% - 32px);
             padding: 32px;
             text-align: center;
             border: 1px solid #2a3244;
@@ -32,6 +33,25 @@
             color: #9ca8c3;
             line-height: 1.5;
         }
+        .details {
+            margin: 0 0 22px;
+            text-align: left;
+            border: 1px solid #2a3244;
+            border-radius: 14px;
+            overflow: hidden;
+            background: #0c111c;
+        }
+        .details-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid #2a3244;
+            font-size: 14px;
+        }
+        .details-row:last-child { border-bottom: 0; }
+        .details-row span { color: #9ca8c3; }
+        .details-row strong { color: #eaf0ff; text-align: right; }
         a {
             display: inline-block;
             padding: 12px 18px;
@@ -51,6 +71,20 @@
     @else
         <p>Plata nu a fost finalizata. Poti reveni in aplicatie si incerca din nou.</p>
     @endif
+
+    @if(!empty($payment))
+        <div class="details" aria-label="Detalii plata">
+            <div class="details-row"><span>Numar comanda</span><strong>{{ $payment['order_number'] }}</strong></div>
+            <div class="details-row"><span>Descriere</span><strong>{{ $payment['description'] }}</strong></div>
+            <div class="details-row"><span>Suma</span><strong>{{ number_format((float) $payment['amount'], 2, '.', ' ') }} {{ $payment['currency'] }}</strong></div>
+            @if(!empty($payment['paid_at']))
+                <div class="details-row"><span>Data platii</span><strong>{{ $payment['paid_at'] }}</strong></div>
+            @endif
+            <div class="details-row"><span>Comerciant</span><strong>{{ $payment['company_name'] }}</strong></div>
+            <div class="details-row"><span>Aplicatie</span><strong>{{ $payment['app_name'] }}</strong></div>
+        </div>
+    @endif
+
     <a id="open-app" href="{{ $deepLink }}">Deschide aplicatia</a>
 </main>
 <script>

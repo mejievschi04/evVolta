@@ -173,7 +173,13 @@ si cum ne poti contacta. Se citeste impreuna cu Termenii si conditiile.
                 · {{ $supportPhone }}
             @endif
             · Operator: <strong>{{ $companyName }}</strong>
-            · Aplicatie: <strong>{{ $appName }}</strong>.
+            · Aplicatie: <strong>{{ $appName }}</strong>
+            @if(!empty($companyIdno))
+                · IDNO {{ $companyIdno }}
+            @endif
+            @if(!empty($companyAddress))
+                · {{ $companyAddress }}
+            @endif.
         </p>
     </section>
 @endsection

@@ -45,6 +45,7 @@ class StripeRedirectController extends Controller
             'status' => $status,
             'invoiceId' => $invoiceId,
             'deepLink' => $deepLink,
+            'payment' => null,
         ]);
     }
 }

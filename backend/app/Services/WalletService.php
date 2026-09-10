@@ -2,12 +2,15 @@
 
 namespace App\Services;
 
+use App\Mail\WalletTopupConfirmationMail;
 use App\Models\ChargingSession;
 use App\Models\Station;
 use App\Models\User;
 use App\Models\WalletRefund;
 use App\Models\WalletTopup;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use RuntimeException;
 
 class WalletService
@@ -200,7 +203,21 @@ class WalletService
 
         $topup->user()->increment('wallet_balance', (float) $topup->amount);
 
-        app(InvoiceIssuanceService::class)->createWalletTopupInvoice($topup->fresh());
+        $paidTopup = $topup->fresh(['user']);
+        $invoice = app(InvoiceIssuanceService::class)->createWalletTopupInvoice($paidTopup);
+
+        if ($paidTopup->user?->email) {
+            try {
+                Mail::to($paidTopup->user->email, $paidTopup->user->name)
+                    ->send(new WalletTopupConfirmationMail($paidTopup, $invoice));
+            } catch (\Throwable $exception) {
+                Log::error('wallet.topup_confirmation_email_failed', [
+                    'topup_id' => $paidTopup->id,
+                    'invoice_id' => $invoice?->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**

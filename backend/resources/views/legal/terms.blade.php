@@ -16,7 +16,7 @@ un cont sau de a porni o sesiune.
         <li><a href="#s3"><span class="n">3.</span>Contul utilizatorului</a></li>
         <li><a href="#s4"><span class="n">4.</span>Serviciul de incarcare</a></li>
         <li><a href="#s5"><span class="n">5.</span>Tarife si preturi</a></li>
-        <li><a href="#s6"><span class="n">6.</span>Sold, plati si retururi</a></li>
+        <li><a href="#s6"><span class="n">6.</span>Sold, plati, prestarea serviciului si retururi</a></li>
         <li><a href="#s7"><span class="n">7.</span>Facturare</a></li>
         <li><a href="#s8"><span class="n">8.</span>Rezervari</a></li>
         <li><a href="#s9"><span class="n">9.</span>Utilizare acceptabila</a></li>
@@ -114,7 +114,7 @@ un cont sau de a porni o sesiune.
     </section>
 
     <section class="legal-section" id="s6">
-        <h2><span class="n">6.</span> Sold, plati si retururi</h2>
+        <h2><span class="n">6.</span> Sold, plati, prestarea serviciului si retururi</h2>
         <p>
             Pentru conturile care folosesc plata cu cardul, Serviciul poate functiona pe baza unui
             <strong>sold preplatit</strong> (wallet). Inainte de incarcare, soldul trebuie sa acopere
@@ -127,8 +127,24 @@ un cont sau de a porni o sesiune.
                 procesata de MAIB conform politicii acestuia.</li>
             <li>Tranzactiile apar in istoricul din aplicatie; statusul „platit” / „in asteptare”
                 reflecta starea confirmata de procesator.</li>
-            <li>Retururile (partiale sau totale) pot fi initiate conform politicilor noastre si
-                ale procesatorului, in limitele sumelor eligibile si ale soldului disponibil.</li>
+            <li>Serviciul este prestat electronic si la statia de incarcare selectata. Prestarea
+                incepe cand confirmi pornirea sesiunii in aplicatie si statia incepe sa livreze
+                energie. Nu exista livrare fizica de produse.</li>
+            <li>Suma si tariful aplicabil sunt afisate in aplicatie inainte de confirmarea
+                alimentarii soldului sau a pornirii sesiunii, dupa caz.</li>
+            <li>Poti solicita restituirea unei plati duplicate, efectuate eronat, a unei sume
+                neutilizate din sold sau a unei sume aferente unui serviciu care nu a fost prestat
+                dintr-o cauza imputabila operatorului.</li>
+            <li>Serviciile de incarcare deja prestate si energia efectiv consumata nu sunt
+                rambursabile, cu exceptia erorilor de tarifare, defectiunilor confirmate sau a
+                cazurilor in care legea aplicabila prevede altfel.</li>
+            <li>Cererea de retur se transmite la
+                <a href="mailto:{{ $contactEmail }}">{{ $contactEmail }}</a>
+                si trebuie sa indice contul utilizatorului, data, suma si motivul solicitarii.
+                Cererea va fi verificata pe baza istoricului tranzactiei si al sesiunii.</li>
+            <li>Daca returul este aprobat, suma eligibila se restituie prin aceeasi metoda de plata
+                folosita initial. Termenul in care suma devine vizibila depinde de banca emitenta
+                si de procesatorul de plata. Drepturile obligatorii ale consumatorului raman neafectate.</li>
             <li>Taxele bancare sau ale procesatorului, daca apar, pot fi in afara controlului nostru.</li>
         </ul>
     </section>
@@ -278,6 +294,12 @@ un cont sau de a porni o sesiune.
                 <li>Telefon: {{ $supportPhone }}</li>
             @endif
             <li>Operator: <strong>{{ $companyName }}</strong> (aplicatia <strong>{{ $appName }}</strong>)</li>
+            @if(!empty($companyIdno))
+                <li>IDNO: {{ $companyIdno }}</li>
+            @endif
+            @if(!empty($companyAddress))
+                <li>Adresa legala: {{ $companyAddress }}</li>
+            @endif
         </ul>
     </section>
 @endsection

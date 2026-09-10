@@ -17,16 +17,25 @@ class LegalAcceptanceTest extends TestCase
             ->assertOk()
             ->assertJsonPath('version', config('legal.version'))
             ->assertJsonPath('terms.title', 'Termeni si conditii')
-            ->assertJsonPath('privacy.title', 'Politica de confidentialitate');
+            ->assertJsonPath('privacy.title', 'Politica de confidentialitate')
+            ->assertJsonStructure(['company_idno', 'company_address', 'company_name']);
     }
 
     public function test_terms_and_privacy_pages_render(): void
     {
+        config([
+            'legal.company_idno' => '1002600000000',
+            'legal.company_address' => 'str. Exemplu 1, Chisinau',
+        ]);
+
         $this->get('/legal/terms')
             ->assertOk()
             ->assertSee('Termeni si conditii', false)
             ->assertSee('V CHARGE', false)
             ->assertSee('Volta SRL', false)
+            ->assertSee('IDNO: 1002600000000', false)
+            ->assertSee('str. Exemplu 1, Chisinau', false)
+            ->assertSee('Nu exista livrare fizica de produse', false)
             ->assertHeader('Content-Security-Policy');
 
         $this->get('/legal/privacy')
@@ -39,7 +48,7 @@ class LegalAcceptanceTest extends TestCase
         $this->get('/api/legal/terms?app=1')
             ->assertOk()
             ->assertSee('Termeni si conditii', false)
-            ->assertSee('Sold, plati si retururi', false)
+            ->assertSee('Sold, plati, prestarea serviciului si retururi', false)
             ->assertSee('V CHARGE', false)
             ->assertSee('Volta SRL', false)
             ->assertHeader('Content-Security-Policy');

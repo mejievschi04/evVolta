@@ -15,7 +15,13 @@ return [
 
     'contact_email' => env('LEGAL_CONTACT_EMAIL', 'support@volta.md'),
 
-    'support_phone' => env('LEGAL_SUPPORT_PHONE', '+373 60 535 353'),
+    'company_idno' => env('LEGAL_COMPANY_IDNO', env('INVOICE_SELLER_IDNO', '1003600028059')),
 
+    'company_address' => env(
+        'LEGAL_COMPANY_ADDRESS',
+        env('INVOICE_SELLER_ADDRESS', 'mun. Chișinău, str. Pădurii 19, MD-2002')
+    ),
+
+    'support_phone' => env('LEGAL_SUPPORT_PHONE', '+373 60 535 353'),
     'effective_date' => env('LEGAL_EFFECTIVE_DATE', '29 iulie 2026'),
 ];

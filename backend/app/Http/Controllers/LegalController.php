@@ -48,6 +48,8 @@ class LegalController extends Controller
             'appName' => config('legal.app_name', config('legal.company_name')),
             'contactEmail' => config('legal.contact_email'),
             'supportPhone' => config('legal.support_phone'),
+            'companyIdno' => (string) config('legal.company_idno', ''),
+            'companyAddress' => (string) config('legal.company_address', ''),
             'legalVersion' => $this->legalAcceptanceService->currentVersion(),
             'effectiveDate' => (string) config('legal.effective_date', '29 iulie 2026'),
             'rightsSlaDays' => (int) config('privacy.rights_sla_days', 30),

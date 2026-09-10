@@ -311,6 +311,12 @@
             @if(!empty($supportPhone))
                 · {{ $supportPhone }}
             @endif
+            @if(!empty($companyIdno))
+                · IDNO {{ $companyIdno }}
+            @endif
+            @if(!empty($companyAddress))
+                · {{ $companyAddress }}
+            @endif
             <br>
             Documentul poate fi actualizat; versiunea afisata in aplicatie este cea aplicabila.
         </footer>
