@@ -187,8 +187,6 @@ class ReservationService
         }
 
         $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
-        $feeAmount = round((float) $station->reservation_fee, 2);
-        $noShowFee = round((float) $station->reservation_no_show_fee, 2);
 
         $reservation = DB::transaction(function () use (
             $user,
@@ -196,8 +194,6 @@ class ReservationService
             $connectorId,
             $startsAt,
             $endsAt,
-            $feeAmount,
-            $noShowFee,
         ) {
             $station = Station::query()->whereKey($station->id)->lockForUpdate()->firstOrFail();
 
@@ -213,8 +209,6 @@ class ReservationService
                 throw new RuntimeException('Conectorul are deja o rezervare activa.', 422);
             }
 
-            $this->walletService->assertCanChargeReservationFee($user, $feeAmount);
-
             $reservation = Reservation::query()->create([
                 'user_id' => $user->id,
                 'station_id' => $station->id,
@@ -224,13 +218,9 @@ class ReservationService
                 'starts_at' => $startsAt,
                 'ends_at' => $endsAt,
                 'status' => Reservation::STATUS_PENDING,
-                'fee_amount' => $feeAmount,
-                'no_show_fee_amount' => $noShowFee,
+                'fee_amount' => 0,
+                'no_show_fee_amount' => 0,
             ]);
-
-            if ($feeAmount > 0) {
-                $this->walletService->chargeReservationFee($user->fresh(), $reservation, $feeAmount);
-            }
 
             return $reservation->fresh(['station']);
         });
@@ -285,7 +275,8 @@ class ReservationService
                 throw new RuntimeException('Rezervarea nu mai poate fi anulata.', 422);
             }
 
-            if ($reservation->fee_charged && $this->shouldRefundFee($reservation)) {
+            // Legacy: refund any previously charged reservation fee (fees are no longer collected).
+            if ($reservation->fee_charged) {
                 $this->walletService->refundReservationFee($reservation->user, $reservation);
             }
 
@@ -448,14 +439,10 @@ class ReservationService
                 return;
             }
 
-            $noShowFee = round((float) $reservation->no_show_fee_amount, 2);
-            if ($noShowFee > 0 && ! $reservation->no_show_charged) {
-                $this->walletService->chargeNoShowFee($reservation->user, $reservation, $noShowFee);
-            }
-
             $reservation->update([
                 'status' => Reservation::STATUS_NO_SHOW,
                 'completed_at' => now(),
+                'no_show_charged' => false,
             ]);
         });
 
@@ -472,13 +459,6 @@ class ReservationService
     {
         return in_array($reservation->status, [Reservation::STATUS_PENDING, Reservation::STATUS_CONFIRMED], true)
             && $reservation->starts_at->greaterThan(now());
-    }
-
-    private function shouldRefundFee(Reservation $reservation): bool
-    {
-        $refundMinutes = max(0, (int) config('reservations.cancel_refund_minutes', 60));
-
-        return $reservation->starts_at->greaterThan(now()->addMinutes($refundMinutes));
     }
 
     private function nextOcppReservationId(Station $station): int

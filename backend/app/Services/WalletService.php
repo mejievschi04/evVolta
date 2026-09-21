@@ -476,28 +476,10 @@ class WalletService
         app(ChargingStopService::class)->requestStop($session, $station->fresh(), 'budget');
     }
 
-    public function assertCanChargeReservationFee(User $user, float $feeAmount): void
-    {
-        if ($feeAmount <= 0 || ! $this->enabled() || ! $user->usesCardPayment()) {
-            return;
-        }
-
-        if ($this->balance($user) < $feeAmount) {
-            throw new RuntimeException('Sold insuficient pentru taxa de rezervare.', 422);
-        }
-    }
-
-    public function chargeReservationFee(User $user, \App\Models\Reservation $reservation, float $amount): void
-    {
-        if ($amount <= 0 || ! $this->enabled() || ! $user->usesCardPayment()) {
-            return;
-        }
-
-        $this->assertCanChargeReservationFee($user, $amount);
-        $user->decrement('wallet_balance', $amount);
-        $reservation->update(['fee_charged' => true]);
-    }
-
+    /**
+     * Legacy helper: reservation and no-show fees are no longer charged.
+     * Kept only to refund any fee collected before fees were removed.
+     */
     public function refundReservationFee(User $user, \App\Models\Reservation $reservation): void
     {
         if (! $reservation->fee_charged || ! $this->enabled() || ! $user->usesCardPayment()) {
@@ -506,26 +488,12 @@ class WalletService
 
         $amount = round((float) $reservation->fee_amount, 2);
         if ($amount <= 0) {
+            $reservation->update(['fee_charged' => false]);
+
             return;
         }
 
         $user->increment('wallet_balance', $amount);
         $reservation->update(['fee_charged' => false]);
-    }
-
-    public function chargeNoShowFee(User $user, \App\Models\Reservation $reservation, float $amount): void
-    {
-        if ($amount <= 0 || ! $this->enabled() || ! $user->usesCardPayment()) {
-            $reservation->update(['no_show_charged' => true]);
-
-            return;
-        }
-
-        $charge = round(min($amount, $this->balance($user)), 2);
-        if ($charge > 0) {
-            $user->decrement('wallet_balance', $charge);
-        }
-
-        $reservation->update(['no_show_charged' => true]);
     }
 }

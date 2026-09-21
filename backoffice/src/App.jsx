@@ -1708,11 +1708,7 @@ function ReservationsView({ rows, loading }) {
           </div>
           <Badge>{reservationStatusLabels[reservation.status] ?? reservation.status}</Badge>
           <div className="ops-cell">
-            {reservation.fee_amount > 0 ? (
-              <strong>{formatMoney(reservation.fee_amount)}</strong>
-            ) : (
-              <span className="ops-muted">Gratuit</span>
-            )}
+            <span className="ops-muted">Gratuit</span>
           </div>
         </>
       )}
@@ -1720,7 +1716,7 @@ function ReservationsView({ rows, loading }) {
       rows={visibleRows}
       rowClassName="ops-row ops-row-4"
       searchValue={query}
-      subtitle="Sloturi rezervate, taxe si status"
+      subtitle="Sloturi rezervate si status"
       title="Rezervari"
     />
   );
@@ -3219,9 +3215,9 @@ function StationDetailModal({
                   label="Status"
                   value={reservationPolicy.enabled ? 'Activate' : 'Dezactivate'}
                 />
-                <DetailMetric label="Taxa" value={`${formatMoney(reservationPolicy.fee ?? 0)} MDL`} />
-                <DetailMetric label="No-show" value={`${formatMoney(reservationPolicy.no_show_fee ?? 0)} MDL`} />
                 <DetailMetric label="Durata max" value={`${reservationPolicy.max_duration_minutes ?? 0} min`} />
+                <DetailMetric label="Avans" value={`${reservationPolicy.advance_days ?? 0} zile`} />
+                <DetailMetric label="Grace" value={`${reservationPolicy.grace_minutes ?? 0} min`} />
               </div>
               {upcomingReservations.length === 0 ? (
                 <p className="detail-empty">Nicio rezervare viitoare.</p>
@@ -3847,14 +3843,6 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
                 <option value="0">Nu</option>
                 <option value="1">Da</option>
               </select>
-            </label>
-            <label>
-              Taxa rezervare (MDL)
-              <input defaultValue={entity?.reservation_fee ?? 0} name="reservation_fee" inputMode="decimal" />
-            </label>
-            <label>
-              Taxa no-show (MDL)
-              <input defaultValue={entity?.reservation_no_show_fee ?? 0} name="reservation_no_show_fee" inputMode="decimal" />
             </label>
             <label>
               Durata max (minute)

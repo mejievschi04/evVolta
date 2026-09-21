@@ -602,8 +602,8 @@ class Station extends Model
         return [
             'enabled' => $this->reservationsEnabled(),
             'require_for_start' => (bool) $this->reservation_require_for_start,
-            'fee' => round((float) $this->reservation_fee, 2),
-            'no_show_fee' => round((float) $this->reservation_no_show_fee, 2),
+            'fee' => 0.0,
+            'no_show_fee' => 0.0,
             'max_duration_minutes' => (int) $this->reservation_max_duration_minutes,
             'advance_days' => (int) $this->reservation_advance_days,
             'grace_minutes' => (int) $this->reservation_grace_minutes,

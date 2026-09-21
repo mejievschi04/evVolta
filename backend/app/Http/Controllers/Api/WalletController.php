@@ -87,7 +87,7 @@ class WalletController extends Controller
         }
 
         $data = $request->validate([
-            'amount' => 'required|numeric|min:10|max:50000',
+            'amount' => 'required|numeric|min:50|max:50000',
         ]);
 
         $provider = $this->resolvePaymentProvider($stripePaymentService, $maibPaymentService);

@@ -16,7 +16,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
     Route::get('/', fn () => redirect()->route('backoffice.login'))->name('backoffice.root');
     Route::get('/csrf', fn () => response()->json(['token' => csrf_token()]))->name('backoffice.csrf');
     Route::get('/login', [BackofficeAuthController::class, 'showLogin'])->name('backoffice.login');
-    Route::post('/login', [BackofficeAuthController::class, 'login'])->middleware('throttle:5,1')->name('backoffice.login.post');
+    Route::post('/login', [BackofficeAuthController::class, 'login'])->middleware('throttle:auth')->name('backoffice.login.post');
 
     Route::middleware('backoffice.auth')->group(function () {
         Route::post('/logout', [BackofficeAuthController::class, 'logout'])->name('backoffice.logout');

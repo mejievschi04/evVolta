@@ -14,8 +14,8 @@ use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\StationController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
-Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth');
 Route::get('/legal', [LegalController::class, 'config']);
 Route::get('/legal/terms', [LegalController::class, 'terms']);
 Route::get('/legal/privacy', [LegalController::class, 'privacy']);
@@ -33,9 +33,9 @@ Route::middleware('throttle:60,1')->group(function () {
 Route::middleware('auth:api')->group(function () {
     // Account / privacy rights — available even when a new legal version must be accepted.
     Route::post('/logout', [AuthController::class, 'logout']);
-    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:30,1');
+    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:auth');
     Route::get('/me', [AuthController::class, 'me']);
-    Route::post('/me/accept-legal', [AuthController::class, 'acceptLegal'])->middleware('throttle:10,1');
+    Route::post('/me/accept-legal', [AuthController::class, 'acceptLegal'])->middleware('throttle:auth');
     Route::get('/me/privacy-export', [AuthController::class, 'exportPersonalData'])->middleware('throttle:2,1');
     Route::patch('/me', [AuthController::class, 'updateProfile']);
     Route::post('/me/delete', [AuthController::class, 'deleteAccount'])->middleware('throttle:5,1');

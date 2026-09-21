@@ -236,7 +236,7 @@ class ReservationTest extends TestCase
         ]);
     }
 
-    public function test_user_can_cancel_future_reservation_with_refund(): void
+    public function test_user_can_cancel_future_reservation(): void
     {
         Config::set('services.ocpp.mode', 'simulator');
         Config::set('billing.prepaid_wallet_enabled', true);
@@ -253,11 +253,9 @@ class ReservationTest extends TestCase
             'starts_at' => now()->addDay(),
             'ends_at' => now()->addDay()->addHour(),
             'status' => Reservation::STATUS_CONFIRMED,
-            'fee_amount' => 15,
-            'fee_charged' => true,
+            'fee_amount' => 0,
+            'fee_charged' => false,
         ]);
-
-        $user->decrement('wallet_balance', 15);
 
         $this->actingAs($user, 'api')
             ->postJson("/api/reservations/{$reservation->id}/cancel")
@@ -291,7 +289,7 @@ class ReservationTest extends TestCase
             ->assertJsonPath('message', 'Ai nevoie de o rezervare activa pentru a porni incarcarea.');
     }
 
-    public function test_no_show_processing_charges_fee(): void
+    public function test_no_show_processing_does_not_charge_fee(): void
     {
         Config::set('services.ocpp.mode', 'simulator');
         Config::set('billing.prepaid_wallet_enabled', true);
@@ -308,8 +306,8 @@ class ReservationTest extends TestCase
             'starts_at' => now()->subHours(2),
             'ends_at' => now()->subHour(),
             'status' => Reservation::STATUS_CONFIRMED,
-            'fee_amount' => 15,
-            'fee_charged' => true,
+            'fee_amount' => 0,
+            'fee_charged' => false,
             'no_show_fee_amount' => 30,
         ]);
 
@@ -318,9 +316,10 @@ class ReservationTest extends TestCase
         $this->assertDatabaseHas('reservations', [
             'user_id' => $user->id,
             'status' => Reservation::STATUS_NO_SHOW,
+            'no_show_charged' => false,
         ]);
 
-        $this->assertSame(70.0, (float) $user->fresh()->wallet_balance);
+        $this->assertSame(100.0, (float) $user->fresh()->wallet_balance);
     }
 
     public function test_require_for_start_allows_start_within_grace_after_end(): void

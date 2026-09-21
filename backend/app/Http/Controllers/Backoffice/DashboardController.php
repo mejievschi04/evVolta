@@ -644,8 +644,6 @@ class DashboardController extends Controller
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
             'reservations_enabled' => 'nullable|boolean',
             'reservation_require_for_start' => 'nullable|boolean',
-            'reservation_fee' => 'nullable|numeric|min:0|max:10000',
-            'reservation_no_show_fee' => 'nullable|numeric|min:0|max:10000',
             'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:30',
             'reservation_advance_days' => 'nullable|integer|min:1|max:30',
             'reservation_grace_minutes' => 'nullable|integer|min:0|max:120',
@@ -656,8 +654,8 @@ class DashboardController extends Controller
         $data['ocpp_version'] = $data['ocpp_version'] ?? '1.6J';
         $data['reservations_enabled'] = filter_var($data['reservations_enabled'] ?? false, FILTER_VALIDATE_BOOL);
         $data['reservation_require_for_start'] = filter_var($data['reservation_require_for_start'] ?? false, FILTER_VALIDATE_BOOL);
-        $data['reservation_fee'] = round((float) ($data['reservation_fee'] ?? 0), 2);
-        $data['reservation_no_show_fee'] = round((float) ($data['reservation_no_show_fee'] ?? 0), 2);
+        $data['reservation_fee'] = 0;
+        $data['reservation_no_show_fee'] = 0;
         $data['reservation_max_duration_minutes'] = (int) ($data['reservation_max_duration_minutes'] ?? 30);
         $data['reservation_advance_days'] = (int) ($data['reservation_advance_days'] ?? 14);
         $data['reservation_grace_minutes'] = (int) ($data['reservation_grace_minutes'] ?? 20);
@@ -705,8 +703,6 @@ class DashboardController extends Controller
             'ocpp_version' => 'nullable|string|in:1.6J,2.0.1',
             'reservations_enabled' => 'nullable|boolean',
             'reservation_require_for_start' => 'nullable|boolean',
-            'reservation_fee' => 'nullable|numeric|min:0|max:10000',
-            'reservation_no_show_fee' => 'nullable|numeric|min:0|max:10000',
             'reservation_max_duration_minutes' => 'nullable|integer|min:15|max:30',
             'reservation_advance_days' => 'nullable|integer|min:1|max:30',
             'reservation_grace_minutes' => 'nullable|integer|min:0|max:120',
@@ -721,12 +717,8 @@ class DashboardController extends Controller
         if (array_key_exists('reservation_require_for_start', $data)) {
             $data['reservation_require_for_start'] = filter_var($data['reservation_require_for_start'], FILTER_VALIDATE_BOOL);
         }
-        if (array_key_exists('reservation_fee', $data)) {
-            $data['reservation_fee'] = round((float) $data['reservation_fee'], 2);
-        }
-        if (array_key_exists('reservation_no_show_fee', $data)) {
-            $data['reservation_no_show_fee'] = round((float) $data['reservation_no_show_fee'], 2);
-        }
+        $data['reservation_fee'] = 0;
+        $data['reservation_no_show_fee'] = 0;
         if (array_key_exists('reservation_max_duration_minutes', $data)) {
             $data['reservation_max_duration_minutes'] = min(30, max(15, (int) $data['reservation_max_duration_minutes']));
         }

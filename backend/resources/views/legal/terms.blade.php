@@ -170,8 +170,8 @@ un cont sau de a porni o sesiune.
         <ul>
             <li>Rezervarea iti pastreaza conectorul pe intervalul confirmat, in limitele tehnice
                 ale statiei.</li>
-            <li>Neprezentarea, intarzierea peste perioada de gratie sau incalcarea regulilor
-                poate duce la anularea automata a rezervarii.</li>
+            <li>Daca nu te prezinti sau depasesti perioada de gratie, rezervarea se anuleaza
+                automat si conectorul este eliberat. Nu se percepe nicio taxa.</li>
             <li>Poti anula o rezervare din aplicatie, daca statusul permite.</li>
             <li>Rezervarea nu garanteaza pornirea incarcarii daca exista defectiuni, ocupare
                 neasteptata sau nerespectarea procedurii de conectare.</li>
