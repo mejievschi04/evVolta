@@ -25,7 +25,7 @@ class BackofficeWalletTopupsTest extends TestCase
             'amount' => 150,
             'currency' => 'MDL',
             'status' => 'paid',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'payment_session_id' => 'cs_test_paid_1',
             'paid_at' => now(),
         ]);
@@ -35,7 +35,7 @@ class BackofficeWalletTopupsTest extends TestCase
             'amount' => 100,
             'currency' => 'MDL',
             'status' => 'pending',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'payment_session_id' => 'cs_test_pending_1',
         ]);
 
@@ -67,7 +67,7 @@ class BackofficeWalletTopupsTest extends TestCase
             'amount' => 200,
             'currency' => 'MDL',
             'status' => 'paid',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'paid_at' => now(),
         ]);
 

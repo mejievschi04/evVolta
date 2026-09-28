@@ -82,4 +82,63 @@ class BackofficeSessionsTest extends TestCase
             'subject_id' => $session->id,
         ]);
     }
+
+    public function test_backoffice_delete_keeps_paid_invoices_and_settles_open_hold(): void
+    {
+        config(['billing.prepaid_wallet_enabled' => true]);
+
+        $admin = $this->createAdminUser(['email' => 'admin-del@example.test']);
+        $user = $this->createAppUser([
+            'email' => 'driver-hold@example.test',
+            'wallet_balance' => 80,
+        ]);
+
+        $station = Station::query()->create([
+            'name' => 'VOLTA Hold',
+            'location' => 'Chisinau',
+            'status' => Station::STATUS_CHARGING,
+            'qr_code' => 'station:hold-del',
+        ]);
+
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'start_time' => now()->subMinutes(15),
+            'end_time' => null,
+            'kwh_consumed' => 2,
+            'charge_budget' => 20,
+        ]);
+
+        $paidInvoice = Invoice::query()->create([
+            'user_id' => $user->id,
+            'month' => now()->format('Y-m'),
+            'currency' => 'MDL',
+            'invoice_type' => 'session',
+            'invoice_number' => '0000099',
+            'source_session_id' => $session->id,
+            'period_start' => now()->toDateString(),
+            'period_end' => now()->toDateString(),
+            'total_kwh' => 2,
+            'total_amount' => 1,
+            'sessions_count' => 1,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/sessions/' . $session->id . '/delete')
+            ->assertOk();
+
+        $this->assertDatabaseMissing('charging_sessions', ['id' => $session->id]);
+        $this->assertDatabaseHas('invoices', [
+            'id' => $paidInvoice->id,
+            'source_session_id' => null,
+            'status' => 'paid',
+        ]);
+        // Open hold must be settled/released (not abandoned with the deleted session).
+        $this->assertGreaterThanOrEqual(80.0, (float) $user->fresh()->wallet_balance);
+    }
 }

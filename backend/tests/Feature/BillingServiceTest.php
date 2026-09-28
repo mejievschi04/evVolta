@@ -137,7 +137,7 @@ class BillingServiceTest extends TestCase
             'amount' => 250,
             'currency' => 'MDL',
             'status' => 'pending',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'payment_session_id' => 'cs_test_topup_invoice',
         ]);
 

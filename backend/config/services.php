@@ -35,12 +35,6 @@ return [
         ],
     ],
 
-    'stripe' => [
-        'secret' => env('STRIPE_SECRET'),
-        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
-        'public' => env('STRIPE_PUBLIC'),
-    ],
-
     'maib' => [
         // Checkout API v2 — clientId/clientSecret (fallback pe PROJECT_* din env vechi)
         'client_id' => trim((string) (env('MAIB_CLIENT_ID') ?: env('MAIB_PROJECT_ID', '')), " \t\n\r\0\x0B\"'"),
@@ -51,7 +45,7 @@ return [
     ],
 
     'payment' => [
-        // maib | stripe — provider for wallet topup checkout
+        // Wallet topup checkout provider (MAIB only).
         'provider' => env('PAYMENT_PROVIDER', 'maib'),
     ],
 

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <title>Exemplu — Raport lunar pe stații</title>
+  <style>
+    body { margin: 0; padding: 24px; font-family: DejaVu Sans, Arial, Helvetica, sans-serif; color: #111; font-size: 12px; background: #e5e7eb; }
+    .sheet { background: #fff; max-width: 1100px; margin: 0 auto; padding: 28px 32px; box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+    .badge { display: inline-block; background: #111; color: #fff; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 4px 8px; margin-bottom: 12px; }
+    h1 { margin: 0 0 4px; font-size: 18px; }
+    .meta { color: #555; margin-bottom: 16px; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #111; padding: 6px 5px; vertical-align: top; }
+    th { background: #f3f4f6; text-align: left; font-size: 9px; text-transform: uppercase; }
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    tr.grand td { background: #f9fafb; }
+    .note { margin-top: 18px; color: #6b7280; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="badge">Exemplu PDF · preview</div>
+    <h1>Raport lunar pe stații</h1>
+    <p class="meta">Perioada: septembrie 2026 · Generat: 28.09.2026 11:18 · V CHARGE</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Stație</th>
+          <th class="num">Sesiuni</th>
+          <th class="num">kWh</th>
+          <th class="num">Venit facturat (MDL)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>02.09.2026</td>
+          <td>Malldova AC</td>
+          <td class="num">3</td>
+          <td class="num">18.400</td>
+          <td class="num">92.00</td>
+        </tr>
+        <tr>
+          <td>02.09.2026</td>
+          <td>Studentilor DC</td>
+          <td class="num">1</td>
+          <td class="num">22.150</td>
+          <td class="num">154.00</td>
+        </tr>
+        <tr>
+          <td>05.09.2026</td>
+          <td>Malldova AC</td>
+          <td class="num">2</td>
+          <td class="num">9.750</td>
+          <td class="num">48.75</td>
+        </tr>
+        <tr>
+          <td>12.09.2026</td>
+          <td>Botanica Hub</td>
+          <td class="num">4</td>
+          <td class="num">31.200</td>
+          <td class="num">187.20</td>
+        </tr>
+        <tr>
+          <td>12.09.2026</td>
+          <td>Malldova AC</td>
+          <td class="num">1</td>
+          <td class="num">4.100</td>
+          <td class="num">20.50</td>
+        </tr>
+        <tr>
+          <td>12.09.2026</td>
+          <td>Studentilor DC</td>
+          <td class="num">2</td>
+          <td class="num">41.800</td>
+          <td class="num">292.60</td>
+        </tr>
+        <tr>
+          <td>21.09.2026</td>
+          <td>Botanica Hub</td>
+          <td class="num">1</td>
+          <td class="num">7.650</td>
+          <td class="num">45.90</td>
+        </tr>
+        <tr>
+          <td>27.09.2026</td>
+          <td>Malldova AC</td>
+          <td class="num">5</td>
+          <td class="num">26.300</td>
+          <td class="num">131.50</td>
+        </tr>
+        <tr>
+          <td>27.09.2026</td>
+          <td>Studentilor DC</td>
+          <td class="num">3</td>
+          <td class="num">55.400</td>
+          <td class="num">387.80</td>
+        </tr>
+        <tr class="grand">
+          <td colspan="2"><strong>Total lună</strong></td>
+          <td class="num"><strong>22</strong></td>
+          <td class="num"><strong>216.750</strong></td>
+          <td class="num"><strong>1 360.25</strong></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note">Layout identic cu PDF-ul din backoffice. Se afișează doar zilele cu sesiuni închise; pe aceeași zi apar mai multe rânduri dacă au lucrat mai multe stații.</p>
+  </div>
+</body>
+</html>

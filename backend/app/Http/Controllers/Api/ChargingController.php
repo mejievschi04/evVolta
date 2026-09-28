@@ -83,6 +83,22 @@ class ChargingController extends Controller
                         if ($occupant && $occupant->user_id !== $user->id) {
                             throw new RuntimeException('Conectorul este deja folosit de alt utilizator.', 422);
                         }
+
+                        // Own live charging session: do not reject as "unavailable" and do not
+                        // queue another RemoteStart.
+                        if (
+                            $occupant
+                            && $occupant->user_id === $user->id
+                            && $occupant->ocpp_transaction_id
+                            && $this->chargingStopService->sessionIsCurrentlyCharging($occupant, $station)
+                        ) {
+                            return [
+                                'session' => $occupant->fresh(),
+                                'station' => $station->fresh(),
+                                'already_active' => true,
+                                'skip_remote_start' => true,
+                            ];
+                        }
                     }
 
                     if (! $station->connectorCanStart($requestedConnector, $user)) {
@@ -150,6 +166,8 @@ class ChargingController extends Controller
                         return [
                             'session' => $userSessionOnConnector->fresh(),
                             'station' => $station->fresh(),
+                            'already_active' => true,
+                            'skip_remote_start' => true,
                         ];
                     }
 
@@ -361,46 +379,75 @@ class ChargingController extends Controller
         }
 
         $connectorId = (int) ($session['session']->ocpp_connector_id ?: 1);
+
+        if (! empty($session['skip_remote_start']) || ! empty($session['already_active'])) {
+            return response()->json([
+                'message' => 'Incarcarea este deja activa.',
+                'session' => $session['session']->fresh(),
+                'already_active' => true,
+                'connector_id' => $connectorId,
+            ]);
+        }
+
         $needsFinishingRecovery = (bool) ($session['force_finishing_recovery'] ?? false)
             || $session['station']->connectorOcppStatus($connectorId) === 'Finishing';
 
-        if ($needsFinishingRecovery) {
-            $recoveryIds = $this->ocppService->recoverConnectorForRemoteStart(
-                $session['station'],
-                $connectorId,
-                $session['session'],
-                'finishing_restart',
-                true
-            );
+        try {
+            if ($needsFinishingRecovery) {
+                $recoveryIds = $this->ocppService->recoverConnectorForRemoteStart(
+                    $session['station'],
+                    $connectorId,
+                    $session['session'],
+                    'finishing_restart',
+                    true
+                );
 
-            if ($recoveryIds === []) {
+                if ($recoveryIds === []) {
+                    $ocppResponse = $this->ocppService->queueRemoteStart(
+                        $session['station'],
+                        $session['session'],
+                        $request->user()
+                    );
+                    $ocppResponse['finishing_recovery'] = false;
+                } else {
+                    $ocppResponse = [
+                        'station_id' => $session['station']->id,
+                        'mode' => config('services.ocpp.mode'),
+                        'status' => 'queued',
+                        'message' => 'Repornire fortata din Finishing: reset conector + RemoteStart.',
+                        'command_ids' => $recoveryIds,
+                        'finishing_recovery' => true,
+                    ];
+                }
+            } else {
                 $ocppResponse = $this->ocppService->queueRemoteStart(
                     $session['station'],
                     $session['session'],
                     $request->user()
                 );
-                $ocppResponse['finishing_recovery'] = false;
-            } else {
-                $ocppResponse = [
-                    'station_id' => $session['station']->id,
-                    'mode' => config('services.ocpp.mode'),
-                    'status' => 'queued',
-                    'message' => 'Repornire fortata din Finishing: reset conector + RemoteStart.',
-                    'command_ids' => $recoveryIds,
-                    'finishing_recovery' => true,
-                ];
             }
-        } else {
-            $ocppResponse = $this->ocppService->queueRemoteStart(
-                $session['station'],
-                $session['session'],
-                $request->user()
+        } catch (\Throwable $exception) {
+            $this->chargingStopService->finalizeStop(
+                $session['session']->fresh(),
+                $session['station']->fresh(),
+                'app',
+                null,
+                null,
+                'RemoteStartFailed',
+                [
+                    'trigger' => 'charging.start.ocpp_failed',
+                    'error' => $exception->getMessage(),
+                ]
             );
+
+            return response()->json([
+                'message' => 'Nu s-a putut trimite comanda de pornire catre statie. Soldul a fost eliberat.',
+            ], 422);
         }
 
         return response()->json([
             'message' => 'Incarcarea a pornit.',
-            'session' => $session['session'],
+            'session' => $session['session']->fresh(),
             'ocpp' => $ocppResponse,
             'connector_id' => $session['session']->ocpp_connector_id,
         ], 201);

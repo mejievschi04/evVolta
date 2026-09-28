@@ -15,19 +15,6 @@ class ReportController extends Controller
     ) {
     }
 
-    public function stationsDaily(Request $request): Response
-    {
-        $data = $request->validate([
-            'date' => 'required|date_format:Y-m-d',
-        ]);
-
-        $report = $this->reportDocumentService->stationsDaily(
-            Carbon::createFromFormat('Y-m-d', $data['date'])->startOfDay()
-        );
-
-        return $this->pdfResponse($report['pdf'], $report['filename']);
-    }
-
     public function stationsMonthly(Request $request): Response
     {
         $data = $request->validate([

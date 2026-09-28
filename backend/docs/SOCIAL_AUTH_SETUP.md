@@ -32,8 +32,15 @@ EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME=com.googleusercontent.apps....
 1. App ID `com.mjsky.voltaev` → capability **Sign In with Apple**.
 2. În Xcode (sau EAS), entitlement-ul e deja în `VCHARGE.entitlements`.
 3. Audience pe backend = bundle id.
+4. La **primul** login Apple trebuie partajat email-ul. Backend-ul **nu** creează conturi cu email sintetic (`@users.volta.local`). Relogin-urile ulterioare (fără email în token) funcționează doar dacă `apple_id` e deja legat.
 
 ## API
 
 - `POST /api/auth/google` `{ id_token, accept_terms: true }`
 - `POST /api/auth/apple` `{ identity_token, full_name?, accept_terms: true }`
+
+## Contract mobil (tarif / wallet)
+
+- Tarif: folosește `price_per_kwh` din răspunsurile API (nu câmpuri legacy).
+- `remember_me` default `false` la login; trimite explicit `true` doar dacă userul bifează.
+- Wallet / start: `budget_amount` min 10 MDL; resume poartă restul din settle, nu din estimare live.

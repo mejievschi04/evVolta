@@ -2,15 +2,13 @@
 
 namespace App\Services;
 
-use App\Mail\WalletTopupConfirmationMail;
+use App\Jobs\SendWalletTopupConfirmationJob;
 use App\Models\ChargingSession;
 use App\Models\Station;
 use App\Models\User;
 use App\Models\WalletRefund;
 use App\Models\WalletTopup;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use RuntimeException;
 
 class WalletService
@@ -126,6 +124,13 @@ class WalletService
             return;
         }
 
+        if ($this->hasPendingRefund($user)) {
+            throw new RuntimeException(
+                'Ai un retur in curs. Asteapta finalizarea inainte de a porni incarcarea.',
+                422
+            );
+        }
+
         if ($budgetAmount <= 0) {
             throw new RuntimeException('Selecteaza suma pentru incarcare.', 422);
         }
@@ -133,6 +138,14 @@ class WalletService
         if ($this->balance($user) < $budgetAmount) {
             throw new RuntimeException('Sold insuficient. Alimenteaza contul inainte de pornire.', 422);
         }
+    }
+
+    public function hasPendingRefund(User $user): bool
+    {
+        return WalletRefund::query()
+            ->where('user_id', $user->id)
+            ->whereIn('status', ['pending', 'needs_review'])
+            ->exists();
     }
 
     public function holdBudgetForSession(User $user, ChargingSession $session, float $budgetAmount, ?float $targetKwh = null): void
@@ -184,11 +197,11 @@ class WalletService
                 return 0.0;
             }
 
-            $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
-
-            if (! $user || ! $user->usesPrepaidWallet() || ! $this->enabled()) {
-                return $user?->usesPrepaidWallet() ? $actualCost : 0.0;
+            if (! $user) {
+                return 0.0;
             }
+
+            $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
 
             $user = User::query()
                 ->whereKey($user->id)
@@ -196,6 +209,8 @@ class WalletService
                 ->firstOrFail();
 
             if ($budget > 0) {
+                // Always resolve leftover holds — including when prepaid was disabled
+                // mid-session — so balance is never stuck in charge_budget.
                 $charged = round(min($actualCost, $budget), 2);
                 $refund = round(max(0, $budget - $charged), 2);
 
@@ -203,11 +218,13 @@ class WalletService
                     $user->increment('wallet_balance', $refund);
                 }
 
-                // Mark the hold as settled by shrinking the remaining budget to the
-                // charged amount. Re-running settlement then computes a zero refund.
                 $session->update(['charge_budget' => $charged]);
 
-                return $charged;
+                return $user->usesPrepaidWallet() ? $charged : 0.0;
+            }
+
+            if (! $user->usesPrepaidWallet() || ! $this->enabled()) {
+                return $user->usesPrepaidWallet() ? $actualCost : 0.0;
             }
 
             // Prepaid session without a prior hold (e.g. started as service, then
@@ -246,7 +263,7 @@ class WalletService
             $locked->update([
                 'status' => 'paid',
                 'paid_at' => now(),
-                'payment_provider' => $locked->payment_provider ?: 'stripe',
+                'payment_provider' => $locked->payment_provider ?: 'maib',
                 'payment_session_id' => $paymentSessionId ?: $locked->payment_session_id,
                 'payment_intent_id' => $paymentIntentId ?: $locked->payment_intent_id,
             ]);
@@ -266,16 +283,8 @@ class WalletService
             return;
         }
 
-        try {
-            Mail::to($paidTopup->user->email, $paidTopup->user->name)
-                ->send(new WalletTopupConfirmationMail($paidTopup, $invoice));
-        } catch (\Throwable $exception) {
-            Log::error('wallet.topup_confirmation_email_failed', [
-                'topup_id' => $paidTopup->id,
-                'invoice_id' => $invoice?->id,
-                'exception' => $exception->getMessage(),
-            ]);
-        }
+        SendWalletTopupConfirmationJob::dispatch($paidTopup->id, $invoice?->id)
+            ->afterCommit();
     }
 
     /**
@@ -359,7 +368,6 @@ class WalletService
      */
     public function refundTopup(
         WalletTopup $topup,
-        StripePaymentService $stripePaymentService,
         ?float $amount = null,
         ?MaibPaymentService $maibPaymentService = null,
     ): array {
@@ -376,6 +384,14 @@ class WalletService
 
         if ($topup->status !== 'paid') {
             throw new RuntimeException('Doar alimentarile platite pot fi returnate.', 422);
+        }
+
+        $provider = strtolower((string) ($topup->payment_provider ?: 'local'));
+        if (! in_array($provider, ['maib', 'local'], true)) {
+            throw new RuntimeException(
+                'Providerul acestei alimentari nu mai este suportat pentru retur automat.',
+                422
+            );
         }
 
         $availableOnTopup = $topup->refundableAmount();
@@ -401,48 +417,74 @@ class WalletService
             throw new RuntimeException('Clientul are o incarcare activa. Opreste sesiunea inainte de retur.', 422);
         }
 
-        $maibPaymentService ??= app(MaibPaymentService::class);
-        $refunded = $amount;
+        if ($this->hasPendingRefund($user)) {
+            throw new RuntimeException('Exista deja un retur in curs pentru acest client.', 422);
+        }
 
-        DB::transaction(function () use ($topup, $user, $amount, $stripePaymentService, $maibPaymentService, &$refunded) {
+        $maibPaymentService ??= app(MaibPaymentService::class);
+
+        // Phase 1: reserve refund under row locks (provider call stays outside TX).
+        $reservation = DB::transaction(function () use ($topup, $user, $amount) {
             $topup = WalletTopup::query()->lockForUpdate()->findOrFail($topup->id);
             $user = User::query()->lockForUpdate()->findOrFail($user->id);
 
+            if ($this->hasOpenChargingSession($user)) {
+                throw new RuntimeException('Clientul are o incarcare activa. Opreste sesiunea inainte de retur.', 422);
+            }
+
             $slice = round(min($amount, $topup->refundableAmount(), $this->balance($user)), 2);
-            $refunded = $slice;
 
             if ($slice <= 0) {
                 throw new RuntimeException('Nu mai exista suma disponibila pentru retur.', 422);
             }
 
-            $providerRefundId = null;
-
-            if ($topup->payment_provider === 'stripe') {
-                if (! $topup->payment_intent_id) {
-                    throw new RuntimeException(
-                        'Plata originala nu poate fi returnata automat. Lipseste payment_intent.',
-                        422
-                    );
-                }
-
-                if (! $stripePaymentService->isConfigured()) {
-                    throw new RuntimeException('Stripe nu este configurat.', 422);
-                }
-
-                $stripeRefund = $stripePaymentService->refundPaymentIntent(
-                    $topup->payment_intent_id,
-                    $slice,
-                    $topup->currency ?: ($user->currency ?: 'MDL')
+            $provider = strtolower((string) ($topup->payment_provider ?: 'local'));
+            if (! in_array($provider, ['maib', 'local'], true)) {
+                throw new RuntimeException(
+                    'Providerul acestei alimentari nu mai este suportat pentru retur automat.',
+                    422
                 );
-                $providerRefundId = $stripeRefund['id'] ?? null;
-            } elseif ($topup->payment_provider === 'maib') {
-                if (! $topup->payment_session_id) {
-                    throw new RuntimeException(
-                        'Plata originala nu poate fi returnata automat. Lipseste checkoutId MAIB.',
-                        422
-                    );
-                }
+            }
 
+            if ($provider === 'maib' && ! $topup->payment_session_id) {
+                throw new RuntimeException(
+                    'Plata originala nu poate fi returnata automat. Lipseste checkoutId MAIB.',
+                    422
+                );
+            }
+
+            $refund = WalletRefund::query()->create([
+                'user_id' => $user->id,
+                'wallet_topup_id' => $topup->id,
+                'amount' => $slice,
+                'currency' => $topup->currency ?: ($user->currency ?: 'MDL'),
+                'status' => 'pending',
+                'payment_provider' => $provider,
+                'provider_refund_id' => null,
+            ]);
+
+            // Debit wallet immediately under lock so a crash after provider success
+            // cannot leave refunded card money still spendable in-app.
+            $topup->increment('amount_refunded', $slice);
+            $user->decrement('wallet_balance', $slice);
+
+            return [
+                'refund_id' => $refund->id,
+                'slice' => $slice,
+                'topup_id' => $topup->id,
+                'user_id' => $user->id,
+                'provider' => $provider,
+                'payment_intent_id' => $topup->payment_intent_id,
+                'payment_session_id' => $topup->payment_session_id,
+                'currency' => $topup->currency ?: ($user->currency ?: 'MDL'),
+            ];
+        });
+
+        $providerRefundId = null;
+
+        try {
+            // Phase 2: provider call outside the DB transaction.
+            if ($reservation['provider'] === 'maib') {
                 if (! $maibPaymentService->isConfigured()) {
                     throw new RuntimeException('MAIB nu este configurat.', 422);
                 }
@@ -450,25 +492,72 @@ class WalletService
                 // Checkout API refunds by paymentId (not checkoutId).
                 // payment_intent_id stores MAIB paymentId; payment_session_id stores checkoutId.
                 $maibRefund = $maibPaymentService->refund(
-                    (string) $topup->payment_session_id,
-                    $slice,
-                    $topup->payment_intent_id ? (string) $topup->payment_intent_id : null,
+                    (string) $reservation['payment_session_id'],
+                    $reservation['slice'],
+                    $reservation['payment_intent_id'] ? (string) $reservation['payment_intent_id'] : null,
                 );
-                $providerRefundId = $maibRefund['id'] ?? $topup->payment_session_id;
+                $providerRefundId = $maibRefund['id'] ?? $reservation['payment_session_id'];
+            }
+        } catch (\Throwable $exception) {
+            if ($this->isAmbiguousProviderError($exception)) {
+                // Timeout / connection drop: MAIB may already have refunded. Keep the wallet
+                // debit and pending row for manual/ops reconcile — never auto-restore.
+                DB::transaction(function () use ($reservation): void {
+                    $refund = WalletRefund::query()->lockForUpdate()->find($reservation['refund_id']);
+                    if ($refund && $refund->status === 'pending') {
+                        $refund->update(['status' => 'needs_review']);
+                    }
+                });
+
+                throw new RuntimeException(
+                    'Returul la card este incert (timeout/conexiune). Soldul ramane rezervat pana la reconciliere.',
+                    503
+                );
             }
 
-            WalletRefund::query()->create([
-                'user_id' => $user->id,
-                'wallet_topup_id' => $topup->id,
-                'amount' => $slice,
-                'currency' => $topup->currency ?: ($user->currency ?: 'MDL'),
+            DB::transaction(function () use ($reservation) {
+                $refund = WalletRefund::query()->lockForUpdate()->find($reservation['refund_id']);
+                $topup = WalletTopup::query()->lockForUpdate()->find($reservation['topup_id']);
+                $user = User::query()->lockForUpdate()->find($reservation['user_id']);
+
+                if ($refund && in_array($refund->status, ['pending', 'needs_review'], true)) {
+                    $refund->update(['status' => 'failed']);
+                }
+
+                if ($topup) {
+                    $topup->decrement('amount_refunded', $reservation['slice']);
+                }
+
+                if ($user) {
+                    $user->increment('wallet_balance', $reservation['slice']);
+                }
+            });
+
+            throw $exception;
+        }
+
+        // Persist provider proof immediately so a crash before "completed" is recoverable.
+        if ($providerRefundId) {
+            WalletRefund::query()
+                ->whereKey($reservation['refund_id'])
+                ->whereIn('status', ['pending', 'needs_review'])
+                ->update(['provider_refund_id' => $providerRefundId]);
+        }
+
+        // Phase 3: mark completed after provider success (wallet already debited).
+        $refunded = DB::transaction(function () use ($reservation, $providerRefundId) {
+            $refund = WalletRefund::query()->lockForUpdate()->findOrFail($reservation['refund_id']);
+
+            if ($refund->status === 'completed') {
+                return (float) $refund->amount;
+            }
+
+            $refund->update([
                 'status' => 'completed',
-                'payment_provider' => $topup->payment_provider ?: 'local',
-                'stripe_refund_id' => $providerRefundId,
+                'provider_refund_id' => $providerRefundId ?: $refund->provider_refund_id,
             ]);
 
-            $topup->increment('amount_refunded', $slice);
-            $user->decrement('wallet_balance', $slice);
+            return round((float) $refund->amount, 2);
         });
 
         $topup = $topup->fresh();
@@ -481,6 +570,25 @@ class WalletService
             'topup_amount_refunded' => round((float) $topup->amount_refunded, 2),
             'topup_refundable_amount' => $topup->refundableAmount(),
         ];
+    }
+
+    /**
+     * True when the provider may have accepted the refund despite the client error
+     * (timeout / dropped connection). Auto-restoring wallet would double-credit.
+     */
+    private function isAmbiguousProviderError(\Throwable $exception): bool
+    {
+        if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+            return true;
+        }
+
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'timeout')
+            || str_contains($message, 'timed out')
+            || str_contains($message, 'cURL error 28')
+            || str_contains($message, 'connection reset')
+            || str_contains($message, 'could not resolve host');
     }
 
     public function estimatedCostForSession(ChargingSession $session, ?float $pricePerKwh = null): float
@@ -544,14 +652,30 @@ class WalletService
             return;
         }
 
-        $amount = round((float) $reservation->fee_amount, 2);
-        if ($amount <= 0) {
+        DB::transaction(function () use ($user, $reservation): void {
+            $reservation = \App\Models\Reservation::query()
+                ->whereKey($reservation->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $reservation || ! $reservation->fee_charged) {
+                return;
+            }
+
+            $amount = round((float) $reservation->fee_amount, 2);
+            if ($amount <= 0) {
+                $reservation->update(['fee_charged' => false]);
+
+                return;
+            }
+
+            $lockedUser = User::query()
+                ->whereKey($user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedUser->increment('wallet_balance', $amount);
             $reservation->update(['fee_charged' => false]);
-
-            return;
-        }
-
-        $user->increment('wallet_balance', $amount);
-        $reservation->update(['fee_charged' => false]);
+        });
     }
 }

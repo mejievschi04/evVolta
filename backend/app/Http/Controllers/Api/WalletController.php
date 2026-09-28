@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\WalletTopup;
 use App\Services\MaibPaymentService;
-use App\Services\StripePaymentService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,7 +80,6 @@ class WalletController extends Controller
 
     public function createTopupCheckout(
         Request $request,
-        StripePaymentService $stripePaymentService,
         MaibPaymentService $maibPaymentService,
     ): JsonResponse {
         $user = $request->user();
@@ -96,11 +94,9 @@ class WalletController extends Controller
             'amount' => 'required|numeric|min:50|max:50000',
         ]);
 
-        $provider = $this->resolvePaymentProvider($stripePaymentService, $maibPaymentService);
-
-        if ($provider === null) {
+        if (! $maibPaymentService->isConfigured()) {
             return response()->json([
-                'message' => 'Plata cu cardul nu este configurata. Contacteaza administratorul.',
+                'message' => 'Plata cu cardul (MAIB) nu este configurata. Contacteaza administratorul.',
             ], 422);
         }
 
@@ -109,19 +105,15 @@ class WalletController extends Controller
             'amount' => round((float) $data['amount'], 2),
             'currency' => $user->currency ?? 'MDL',
             'status' => 'pending',
-            'payment_provider' => $provider,
+            'payment_provider' => 'maib',
         ]);
 
         try {
-            if ($provider === 'maib') {
-                $checkout = $maibPaymentService->createWalletTopupPayment(
-                    $topup,
-                    $user,
-                    (string) $request->ip()
-                );
-            } else {
-                $checkout = $stripePaymentService->createWalletTopupSession($topup, $user);
-            }
+            $checkout = $maibPaymentService->createWalletTopupPayment(
+                $topup,
+                $user,
+                (string) $request->ip()
+            );
         } catch (RuntimeException $exception) {
             $topup->delete();
 
@@ -132,21 +124,20 @@ class WalletController extends Controller
 
         $topup->update([
             'payment_session_id' => $checkout['id'],
-            'payment_provider' => $provider,
+            'payment_provider' => 'maib',
         ]);
 
         return response()->json([
             'topup_id' => $topup->id,
             'checkout_url' => $checkout['url'],
             'payment_session_id' => $checkout['id'],
-            'payment_provider' => $provider,
+            'payment_provider' => 'maib',
         ]);
     }
 
     public function verifyTopupPayment(
         Request $request,
         WalletTopup $topup,
-        StripePaymentService $stripePaymentService,
         MaibPaymentService $maibPaymentService,
         WalletService $walletService,
     ): JsonResponse {
@@ -171,38 +162,13 @@ class WalletController extends Controller
             ], 422);
         }
 
-        if ($topup->payment_provider === 'maib') {
-            return $this->verifyMaibTopup($topup, $user, $maibPaymentService, $walletService);
-        }
-
-        try {
-            $session = $stripePaymentService->retrieveCheckoutSession($topup->payment_session_id);
-        } catch (RuntimeException $exception) {
+        if ($topup->payment_provider !== 'maib') {
             return response()->json([
-                'message' => $exception->getMessage(),
+                'message' => 'Providerul acestei alimentari nu mai este suportat.',
             ], 422);
         }
 
-        if (($session['payment_status'] ?? null) === 'paid') {
-            $walletService->creditTopup(
-                $topup,
-                $session['id'] ?? $topup->payment_session_id,
-                $session['payment_intent'] ?? null,
-            );
-        }
-
-        $topup = $topup->fresh();
-        $user = $user->fresh();
-
-        return response()->json([
-            'message' => $topup->status === 'paid'
-                ? 'Plata a fost confirmata.'
-                : 'Plata este inca in curs de procesare.',
-            'payment_status' => $session['payment_status'] ?? 'unpaid',
-            'session_status' => $session['status'] ?? 'open',
-            'wallet_balance' => $walletService->balance($user),
-            'topup' => $topup,
-        ]);
+        return $this->verifyMaibTopup($topup, $user, $maibPaymentService, $walletService);
     }
 
     private function verifyMaibTopup(
@@ -244,30 +210,5 @@ class WalletController extends Controller
             'wallet_balance' => $walletService->balance($user),
             'topup' => $topup,
         ]);
-    }
-
-    private function resolvePaymentProvider(
-        StripePaymentService $stripePaymentService,
-        MaibPaymentService $maibPaymentService,
-    ): ?string {
-        $configured = strtolower((string) config('services.payment.provider', 'maib'));
-
-        if ($configured === 'maib' && $maibPaymentService->isConfigured()) {
-            return 'maib';
-        }
-
-        if ($configured === 'stripe' && $stripePaymentService->isConfigured()) {
-            return 'stripe';
-        }
-
-        if ($maibPaymentService->isConfigured()) {
-            return 'maib';
-        }
-
-        if ($stripePaymentService->isConfigured()) {
-            return 'stripe';
-        }
-
-        return null;
     }
 }

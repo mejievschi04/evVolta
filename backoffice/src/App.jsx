@@ -1956,7 +1956,6 @@ function toInputMonth(date = new Date()) {
 function ReportsView({ onDownloadReport }) {
   const today = toInputDate();
   const thisMonth = toInputMonth();
-  const [dailyDate, setDailyDate] = useState(today);
   const [monthlyMonth, setMonthlyMonth] = useState(thisMonth);
   const [topupFrom, setTopupFrom] = useState(today);
   const [topupTo, setTopupTo] = useState(today);
@@ -1990,31 +1989,8 @@ function ReportsView({ onDownloadReport }) {
 
         <div className="reports-grid">
           <article className="report-card">
-            <h3>Raport zilnic pe statii</h3>
-            <p>Sesiuni inchise, kWh si venit facturat pe fiecare statie pentru o zi.</p>
-            <label>
-              Data
-              <input
-                onChange={(event) => setDailyDate(event.target.value)}
-                required
-                type="date"
-                value={dailyDate}
-              />
-            </label>
-            <button
-              className="primary-button"
-              disabled={busyKey === 'daily' || !dailyDate}
-              onClick={() => runDownload('daily', `/backoffice/reports/stations/daily?date=${encodeURIComponent(dailyDate)}`)}
-              type="button"
-            >
-              <Download size={16} />
-              {busyKey === 'daily' ? 'Se genereaza...' : 'Descarca PDF'}
-            </button>
-          </article>
-
-          <article className="report-card">
             <h3>Raport lunar pe statii</h3>
-            <p>Acelasi agregat pe luna calendaristica (YYYY-MM).</p>
+            <p>Pe luna aleasa: fiecare zi × fiecare statie (sesiuni, kWh, venit facturat).</p>
             <label>
               Luna
               <input
@@ -2037,7 +2013,7 @@ function ReportsView({ onDownloadReport }) {
 
           <article className="report-card">
             <h3>Raport alimentari</h3>
-            <p>Alimentari wallet platite pe interval, cu totaluri si returnari.</p>
+            <p>Pe interval: fiecare zi × fiecare utilizator (tranzactii, suma, returnat, net).</p>
             <div className="settings-grid">
               <label>
                 De la
@@ -2517,7 +2493,7 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
     (item) => item.user?.name,
     (item) => item.user?.email,
     (item) => item.payment_provider,
-    (item) => item.stripe_refund_id,
+    (item) => item.provider_refund_id,
     (item) => String(item.id),
     (item) => String(item.wallet_topup_id)
   ]));
@@ -2672,7 +2648,7 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
                   <strong>{formatDateTime(refund.created_at)}</strong>
                   <span>
                     {refund.payment_provider ?? '—'}
-                    {refund.stripe_refund_id ? ` · ${refund.stripe_refund_id.slice(0, 18)}…` : ''}
+                    {refund.provider_refund_id ? ` · ${refund.provider_refund_id.slice(0, 18)}…` : ''}
                   </span>
                 </div>
               </div>
@@ -3074,7 +3050,7 @@ function UserDetailModal({
               <>
                 <div className="detail-section">
                   <h3>Alimentare manuala</h3>
-                  <p className="detail-empty">Adauga sold in wallet fara Stripe (test / compensare).</p>
+                  <p className="detail-empty">Adauga sold in wallet fara card (test / compensare).</p>
                   {creditError ? <div className="error-banner">{creditError}</div> : null}
                   <form
                     onSubmit={(event) => {
@@ -3767,7 +3743,7 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
   );
   const userLabel = topup.user?.email ?? topup.user?.name ?? `user #${topup.user_id}`;
   const provider = String(topup.payment_provider || 'local');
-  const isCardProvider = provider === 'stripe' || provider === 'maib';
+  const isCardProvider = provider === 'maib';
 
   return (
     <div className="modal-backdrop" role="presentation">

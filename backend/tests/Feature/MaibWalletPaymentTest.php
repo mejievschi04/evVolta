@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Mail\WalletTopupConfirmationMail;
+use App\Jobs\SendWalletTopupConfirmationJob;
 use App\Models\WalletTopup;
 use App\Services\MaibPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class MaibWalletPaymentTest extends TestCase
@@ -26,7 +26,6 @@ class MaibWalletPaymentTest extends TestCase
             'services.maib.signature_key' => '67be8e54-ac28-485d-9369-27f6d3c55a27',
             'services.maib.base_url' => 'https://api.maibmerchants.md',
             'services.maib.language' => 'ro',
-            'services.stripe.secret' => null,
         ]);
     }
 
@@ -67,8 +66,6 @@ class MaibWalletPaymentTest extends TestCase
 
     public function test_callback_with_valid_signature_credits_wallet_once(): void
     {
-        Mail::fake();
-
         $user = $this->createAppUser(['wallet_balance' => 20]);
         $topup = WalletTopup::query()->create([
             'user_id' => $user->id,
@@ -99,11 +96,74 @@ class MaibWalletPaymentTest extends TestCase
         $this->assertSame('paid', $topup->fresh()->status);
         $this->assertSame('5a4d27a4-79f5-426b-9403-cccdeee81747', $topup->fresh()->payment_session_id);
         $this->assertSame('379b31a3-8283-43d4-8a7b-eef8c0736a32', $topup->fresh()->payment_intent_id);
-        Mail::assertSent(WalletTopupConfirmationMail::class, 1);
+        Queue::assertPushed(SendWalletTopupConfirmationJob::class, 1);
 
         $this->postSignedMaibCallback($payload)->assertOk();
         $this->assertSame(120.0, (float) $user->fresh()->wallet_balance);
-        Mail::assertSent(WalletTopupConfirmationMail::class, 1);
+        Queue::assertPushed(SendWalletTopupConfirmationJob::class, 1);
+    }
+
+    public function test_callback_amount_mismatch_does_not_credit(): void
+    {
+        $user = $this->createAppUser(['wallet_balance' => 20]);
+        $topup = WalletTopup::query()->create([
+            'user_id' => $user->id,
+            'amount' => 100,
+            'currency' => 'MDL',
+            'status' => 'pending',
+            'payment_provider' => 'maib',
+            'payment_session_id' => 'checkout-amount-mismatch',
+        ]);
+
+        $payload = [
+            'checkoutId' => 'checkout-amount-mismatch',
+            'amount' => 100,
+            'currency' => 'MDL',
+            'orderId' => 'wallet-topup-'.$topup->id,
+            'paymentId' => 'pay-mismatch',
+            'paymentAmount' => 50,
+            'paymentCurrency' => 'MDL',
+            'paymentStatus' => 'Executed',
+            'processingStatus' => 'OK',
+        ];
+
+        $this->postSignedMaibCallback($payload)
+            ->assertOk()
+            ->assertJsonPath('credited', false)
+            ->assertJsonPath('reason', 'amount_mismatch');
+
+        $this->assertSame(20.0, (float) $user->fresh()->wallet_balance);
+        $this->assertSame('pending', $topup->fresh()->status);
+    }
+
+    public function test_callback_processing_ok_alone_does_not_credit(): void
+    {
+        $user = $this->createAppUser(['wallet_balance' => 20]);
+        $topup = WalletTopup::query()->create([
+            'user_id' => $user->id,
+            'amount' => 100,
+            'currency' => 'MDL',
+            'status' => 'pending',
+            'payment_provider' => 'maib',
+            'payment_session_id' => 'checkout-processing-only',
+        ]);
+
+        $payload = [
+            'checkoutId' => 'checkout-processing-only',
+            'amount' => 100,
+            'currency' => 'MDL',
+            'orderId' => 'wallet-topup-'.$topup->id,
+            'paymentId' => 'pay-processing-only',
+            'paymentAmount' => 100,
+            'paymentCurrency' => 'MDL',
+            'paymentStatus' => 'Created',
+            'processingStatus' => 'OK',
+        ];
+
+        $this->postSignedMaibCallback($payload)->assertOk();
+
+        $this->assertSame(20.0, (float) $user->fresh()->wallet_balance);
+        $this->assertSame('pending', $topup->fresh()->status);
     }
 
     public function test_callback_with_invalid_signature_is_rejected(): void

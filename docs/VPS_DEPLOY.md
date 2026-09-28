@@ -11,7 +11,7 @@ Domeniu productie: **`https://ocpp.volta.md`**
 | `/` | Backoffice React (static `backoffice/dist`) |
 | `/api/*` | Laravel API (mobil) |
 | `/backoffice/*` | Laravel JSON API (admin, sesiune cookie) |
-| `/payments/*` | Redirect Stripe |
+| `/payments/*` | Redirect MAIB (success/fail) |
 | `/ocpp/*` | WebSocket OCPP 1.6J (proxy → `ocpp:serve :9010`) |
 | `/up` | Health check |
 
@@ -189,15 +189,9 @@ bash deploy/deploy.sh
 2. Statia trebuie sa aiba acces internet catre VPS (nu doar LAN).
 3. Daca statia e doar in LAN privat, foloseste VPN sau tunnel (WireGuard) catre VPS.
 
-## Stripe productie
+## MAIB productie
 
-1. Chei live in `.env` (`STRIPE_SECRET`, `STRIPE_PUBLIC`).
-2. Webhook in Stripe Dashboard:
-   - URL: `https://ocpp.volta.md/api/stripe/webhook`
-   - Eveniment: `checkout.session.completed`
-3. `STRIPE_WEBHOOK_SECRET` din Dashboard.
-
-Vezi si [`backend/docs/STRIPE_SETUP.md`](../backend/docs/STRIPE_SETUP.md).
+Vezi [`backend/docs/MAIB_SETUP.md`](../backend/docs/MAIB_SETUP.md): Callback, Success/Fail URL, `MAIB_CLIENT_ID` / `MAIB_CLIENT_SECRET` / `MAIB_SIGNATURE_KEY`.
 
 ## Servicii systemd
 
@@ -242,7 +236,7 @@ In browser: `https://ocpp.volta.md` → login backoffice.
 - [ ] SSL activ (HTTPS)
 - [ ] Admin creat cu `volta:create-admin`
 - [ ] Demo users dezactivati / parole schimbate
-- [ ] Stripe live + webhook
+- [ ] MAIB live + callback URL-uri
 - [ ] `OCPP_PUBLIC_URL` cu `wss://`
 - [ ] Statia testata: BootNotification → start → kWh → stop
 - [ ] Firewall: doar 22, 80, 443

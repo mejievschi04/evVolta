@@ -77,6 +77,28 @@ services:
       app:
         condition: service_started
 
+  queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--sleep=1", "--tries=3", "--timeout=120"]
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_CONNECTION: pgsql
+      RUN_MIGRATIONS: "false"
+      CACHE_CONFIG: "false"
+    volumes:
+      - ./.env.docker:/var/www/backend/.env
+      - app_storage:/var/www/backend/storage
+      - app_cache:/var/www/backend/bootstrap/cache
+    depends_on:
+      app:
+        condition: service_started
+
   nginx:
     build:
       context: .

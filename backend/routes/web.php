@@ -5,7 +5,6 @@ use App\Http\Controllers\Backoffice\DashboardController;
 use App\Http\Controllers\Backoffice\ReportController;
 use App\Http\Controllers\LegalController;
 use App\Http\Controllers\Payments\MaibRedirectController;
-use App\Http\Controllers\Payments\StripeRedirectController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('backoffice.login'));
@@ -59,19 +58,12 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::get('/invoices/{invoice}/download', [DashboardController::class, 'downloadInvoice'])->name('backoffice.invoices.download');
         Route::post('/invoices/{invoice}/send', [DashboardController::class, 'sendInvoice'])->name('backoffice.invoices.send');
         Route::post('/invoices/{invoice}/delete', [DashboardController::class, 'deleteInvoice'])->name('backoffice.invoices.delete');
-        Route::get('/reports/stations/daily', [ReportController::class, 'stationsDaily'])->name('backoffice.reports.stations.daily');
         Route::get('/reports/stations/monthly', [ReportController::class, 'stationsMonthly'])->name('backoffice.reports.stations.monthly');
         Route::get('/reports/wallet-topups', [ReportController::class, 'walletTopups'])->name('backoffice.reports.wallet_topups');
         Route::post('/settings', [DashboardController::class, 'updateSettings'])->name('backoffice.settings.update');
         Route::post('/tariff', [DashboardController::class, 'updateTariff'])->name('backoffice.tariff.update');
     });
 });
-
-Route::get('/payments/stripe/success', [StripeRedirectController::class, 'success'])
-    ->name('payments.stripe.success');
-
-Route::get('/payments/stripe/cancel', [StripeRedirectController::class, 'cancel'])
-    ->name('payments.stripe.cancel');
 
 Route::get('/payments/maib/success', [MaibRedirectController::class, 'success'])
     ->name('payments.maib.success');

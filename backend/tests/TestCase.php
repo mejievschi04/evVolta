@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Jobs\SendInvoiceEmailJob;
+use App\Jobs\SendWalletTopupConfirmationJob;
 use App\Models\Station;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -16,7 +17,7 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         // Avoid sync Dompdf rendering on every invoice create during the suite.
-        Queue::fake([SendInvoiceEmailJob::class]);
+        Queue::fake([SendInvoiceEmailJob::class, SendWalletTopupConfirmationJob::class]);
     }
 
     protected function createAdminUser(array $overrides = []): User

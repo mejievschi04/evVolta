@@ -135,14 +135,12 @@ class InvoiceIssuanceService
             'status' => 'paid',
             'paid_at' => $paidAt,
             'issued_at' => $paidAt,
-            'payment_provider' => $topup->payment_provider ?: 'stripe',
+            'payment_provider' => $topup->payment_provider ?: 'maib',
             'payment_session_id' => $topup->payment_session_id,
         ], $seller);
 
-        $invoice = $this->createWithUniqueInvoiceNumber($attributes);
-        $this->queueInvoiceEmail($invoice);
-
-        return $invoice;
+        // Confirmation email (SendWalletTopupConfirmationJob) attaches the fiscal PDF.
+        return $this->createWithUniqueInvoiceNumber($attributes);
     }
 
     /**
@@ -219,19 +217,45 @@ class InvoiceIssuanceService
             return;
         }
 
-        SendInvoiceEmailJob::dispatch($invoice->id);
+        SendInvoiceEmailJob::dispatch($invoice->id)->afterCommit();
     }
 
     private function nextInvoiceNumber(): string
     {
-        $max = 0;
+        $row = DB::table('invoice_number_counters')
+            ->where('id', 1)
+            ->lockForUpdate()
+            ->first();
 
-        foreach (Invoice::query()->whereNotNull('invoice_number')->pluck('invoice_number') as $number) {
-            if (preg_match('/^\d{1,7}$/', (string) $number)) {
-                $max = max($max, (int) $number);
+        if (! $row) {
+            $max = 0;
+            foreach (Invoice::query()->whereNotNull('invoice_number')->pluck('invoice_number') as $number) {
+                if (preg_match('/^\d{1,7}$/', (string) $number)) {
+                    $max = max($max, (int) $number);
+                }
             }
+
+            DB::table('invoice_number_counters')->insert([
+                'id' => 1,
+                'next_value' => $max + 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $row = DB::table('invoice_number_counters')
+                ->where('id', 1)
+                ->lockForUpdate()
+                ->first();
         }
 
-        return str_pad((string) ($max + 1), 7, '0', STR_PAD_LEFT);
+        $value = (int) $row->next_value;
+        DB::table('invoice_number_counters')
+            ->where('id', 1)
+            ->update([
+                'next_value' => $value + 1,
+                'updated_at' => now(),
+            ]);
+
+        return str_pad((string) $value, 7, '0', STR_PAD_LEFT);
     }
 }

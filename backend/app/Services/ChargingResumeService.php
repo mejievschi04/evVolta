@@ -95,11 +95,6 @@ class ChargingResumeService
 
                 if ($openSession && ! $openSession->end_time) {
                     $budgetBefore = (float) ($openSession->charge_budget ?? 0);
-                    $spentEstimate = $this->estimateSpent($openSession);
-
-                    if ($budgetBefore > 0) {
-                        $carryBudget = round(max(0, $budgetBefore - $spentEstimate), 2);
-                    }
 
                     $target = (float) ($openSession->target_kwh ?? 0);
                     if ($target > 0) {
@@ -122,6 +117,12 @@ class ChargingResumeService
 
                     $previousSession = $openSession->fresh();
                     $station = $station->fresh();
+
+                    // After settle, charge_budget stores the charged slice — not an estimate.
+                    if ($budgetBefore > 0) {
+                        $spentSettled = (float) ($previousSession?->charge_budget ?? 0);
+                        $carryBudget = round(max(0, $budgetBefore - $spentSettled), 2);
+                    }
                 }
             }
 
@@ -163,26 +164,46 @@ class ChargingResumeService
             return $session->fresh();
         });
 
-        $recoveryIds = $this->ocppService->recoverConnectorForRemoteStart(
-            $station->fresh(),
-            $resolvedConnectorId,
-            $created,
-            'user_resume_suspended',
-            true
-        );
+        try {
+            $recoveryIds = $this->ocppService->recoverConnectorForRemoteStart(
+                $station->fresh(),
+                $resolvedConnectorId,
+                $created,
+                'user_resume_suspended',
+                true
+            );
 
-        if ($recoveryIds === []) {
-            $ocppResponse = $this->ocppService->queueRemoteStart($station->fresh(), $created, $user);
-            $ocppResponse['resume_recovery'] = false;
-        } else {
-            $ocppResponse = [
-                'station_id' => $station->id,
-                'mode' => config('services.ocpp.mode'),
-                'status' => 'queued',
-                'message' => 'Continua: reset conector + RemoteStart.',
-                'command_ids' => $recoveryIds,
-                'resume_recovery' => true,
-            ];
+            if ($recoveryIds === []) {
+                $ocppResponse = $this->ocppService->queueRemoteStart($station->fresh(), $created, $user);
+                $ocppResponse['resume_recovery'] = false;
+            } else {
+                $ocppResponse = [
+                    'station_id' => $station->id,
+                    'mode' => config('services.ocpp.mode'),
+                    'status' => 'queued',
+                    'message' => 'Continua: reset conector + RemoteStart.',
+                    'command_ids' => $recoveryIds,
+                    'resume_recovery' => true,
+                ];
+            }
+        } catch (\Throwable $exception) {
+            $this->chargingStopService->finalizeStop(
+                $created->fresh(),
+                $station->fresh(),
+                'app',
+                null,
+                null,
+                'RemoteStartFailed',
+                [
+                    'trigger' => 'charging.resume.ocpp_failed',
+                    'error' => $exception->getMessage(),
+                ]
+            );
+
+            throw new RuntimeException(
+                'Nu s-a putut trimite comanda de continuare catre statie. Soldul a fost eliberat.',
+                422
+            );
         }
 
         $this->auditLogService->record(
@@ -242,19 +263,5 @@ class ChargingResumeService
         }
 
         return null;
-    }
-
-    private function estimateSpent(ChargingSession $session): float
-    {
-        $session->loadMissing('user');
-        $live = is_array($session->live_metrics) ? $session->live_metrics : [];
-        if (isset($live['budget_spent'])) {
-            return round((float) $live['budget_spent'], 2);
-        }
-
-        $kwh = app(SessionEnergyService::class)->telemetryKwhDelivered($session);
-        $price = app(TariffService::class)->pricePerKwhForUser($session->user);
-
-        return round(max(0, $kwh * $price), 2);
     }
 }

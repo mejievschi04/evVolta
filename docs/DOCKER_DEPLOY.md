@@ -18,7 +18,7 @@ Document pas-cu-pas pentru productie: **PostgreSQL + Laravel + OCPP + Backoffice
 7. [Verificare](#7-verificare)
 8. [Admin backoffice](#8-admin-backoffice)
 9. [Nginx pe host + SSL](#9-nginx-pe-host--ssl)
-10. [Stripe, OCPP, mobile](#10-stripe-ocpp-mobile)
+10. [Plăți (MAIB), OCPP, mobile](#10-plăți-maib-ocpp-mobile)
 11. [Update-uri ulterioare](#11-update-uri-ulterioare)
 12. [Comenzi utile](#12-comenzi-utile)
 13. [Depanare](#13-depanare)
@@ -53,7 +53,7 @@ nginx pe HOST (443, SSL)          ← optional dar recomandat
 | `/` | Backoffice React (build static) |
 | `/api/*` | Laravel API (mobil) |
 | `/backoffice/*` | Laravel API (admin) |
-| `/payments/*` | Redirect Stripe |
+| `/payments/*` | Redirect MAIB (success/fail) |
 | `/ocpp/*` | WebSocket OCPP (statii) |
 | `/up` | Health check |
 
@@ -63,6 +63,7 @@ nginx pe HOST (443, SSL)          ← optional dar recomandat
 | `app` | Laravel PHP-FPM |
 | `ocpp` | `php artisan ocpp:serve` pe port 9010 |
 | `scheduler` | `php artisan schedule:work` (facturi lunare) |
+| `queue` | `php artisan queue:work` (email facturi / job-uri async) |
 | `nginx` | Servește backoffice + proxy către app/ocpp |
 
 **Important:** Nu instalezi PostgreSQL sau PHP pe host — totul rulează în Docker. Pe host poți avea doar nginx (pentru SSL) și Docker.
@@ -166,11 +167,18 @@ nano .env.docker
 | Variabilă | Când |
 |-----------|------|
 | `MAIB_CLIENT_ID`, `MAIB_CLIENT_SECRET`, `MAIB_SIGNATURE_KEY` | Plăți wallet (MAIB Checkout v2) |
-| `STRIPE_*` | Doar dacă `PAYMENT_PROVIDER=stripe` |
-| `MAIL_*` | Trimitere facturi pe email |
+| `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` | Email facturi + confirmări alimentări |
+| `MAIL_SCHEME` | Gol pe 587 (STARTTLS); `smtps` pe 465 (SSL) |
 | `HTTP_PORT` | Dacă 8080 e ocupat (ex. `8081`) |
 
 `APP_KEY` și `JWT_SECRET` se generează automat la primul start dacă sunt goale.
+
+**SMTP:** după ce pui datele în `.env.docker`, repornește `app` + `queue` (email-urile ies pe queue). Test rapid:
+
+```bash
+docker compose exec app php artisan tinker --execute="Mail::raw('test V CHARGE', fn (\$m) => \$m->to('tu@email.md')->subject('SMTP OK'));"
+docker compose logs --tail=50 queue
+```
 
 ### 5.4 Symlink pentru Docker Compose
 
@@ -206,7 +214,7 @@ docker compose up -d --build
 
 **Prima rulare:** 5–15 minute (build backoffice cu npm + composer PHP).
 
-La final ar trebui 5 containere:
+La final ar trebui 6 containere:
 
 ```bash
 docker compose ps
@@ -220,6 +228,7 @@ evvolta-db-1          Up (healthy)
 evvolta-app-1         Up
 evvolta-ocpp-1        Up
 evvolta-scheduler-1   Up
+evvolta-queue-1       Up
 evvolta-nginx-1       Up
 ```
 
@@ -377,14 +386,6 @@ Test token: `POST https://api.maibmerchants.md/v2/auth/token` cu `clientId` / `c
 
 Detalii: [`backend/docs/MAIB_SETUP.md`](../backend/docs/MAIB_SETUP.md).
 
-### Stripe (opțional, fallback)
-
-1. În `.env.docker`: `PAYMENT_PROVIDER=stripe` + `STRIPE_SECRET` / `STRIPE_PUBLIC` / `STRIPE_WEBHOOK_SECRET`
-2. Webhook: `https://ocpp.volta.md/api/stripe/webhook` → `checkout.session.completed`
-3. `docker compose restart app ocpp scheduler`
-
-Vezi și [`backend/docs/STRIPE_SETUP.md`](../backend/docs/STRIPE_SETUP.md).
-
 ### Stație OCPP (EU1060 etc.)
 
 | Câmp pe stație | Valoare |
@@ -528,7 +529,7 @@ docker compose restart app
 - [ ] `curl https://ocpp.volta.md/up` — OK
 - [ ] Login backoffice funcțional
 - [ ] `APP_DEBUG=false`
-- [ ] MAIB în `.env.docker` + URL-uri callback în portal (sau Stripe, dacă e fallback)
+- [ ] MAIB în `.env.docker` + URL-uri callback în portal
 - [ ] Stație test: BootNotification → start → stop
 - [ ] Backup periodic volum `pgdata` (PostgreSQL)
 

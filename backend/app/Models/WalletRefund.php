@@ -13,7 +13,7 @@ class WalletRefund extends Model
         'currency',
         'status',
         'payment_provider',
-        'stripe_refund_id',
+        'provider_refund_id',
     ];
 
     protected $casts = [

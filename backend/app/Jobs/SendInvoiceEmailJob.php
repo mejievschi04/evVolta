@@ -30,6 +30,6 @@ class SendInvoiceEmailJob implements ShouldQueue
             return;
         }
 
-        $invoiceMailService->sendSafely($invoice);
+        $invoiceMailService->send($invoice);
     }
 }

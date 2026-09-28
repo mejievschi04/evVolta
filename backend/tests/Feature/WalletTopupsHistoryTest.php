@@ -22,7 +22,7 @@ class WalletTopupsHistoryTest extends TestCase
             'amount' => 150,
             'currency' => 'MDL',
             'status' => 'paid',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'paid_at' => now()->subDay(),
         ]);
 
@@ -31,7 +31,7 @@ class WalletTopupsHistoryTest extends TestCase
             'amount' => 80,
             'currency' => 'MDL',
             'status' => 'pending',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
         ]);
 
         WalletTopup::query()->create([
@@ -39,7 +39,7 @@ class WalletTopupsHistoryTest extends TestCase
             'amount' => 500,
             'currency' => 'MDL',
             'status' => 'paid',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'paid_at' => now(),
         ]);
 
@@ -64,7 +64,7 @@ class WalletTopupsHistoryTest extends TestCase
             'amount' => 200,
             'currency' => 'MDL',
             'status' => 'paid',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'paid_at' => now(),
         ]);
 

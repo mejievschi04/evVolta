@@ -137,7 +137,7 @@ class UserAccountBillingTest extends TestCase
 
         $this->actingAs($personal, 'api')
             ->postJson('/api/invoices/' . $invoice->id . '/checkout-session')
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_personal_invoice_index_returns_prepay_statistics(): void

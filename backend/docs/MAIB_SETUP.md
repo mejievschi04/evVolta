@@ -56,14 +56,6 @@ echo $r->status()."\n".$r->body()."\n";
 '
 ```
 
-Opțional (fallback Stripe):
-
-```env
-# PAYMENT_PROVIDER=stripe
-# STRIPE_SECRET=...
-# STRIPE_WEBHOOK_SECRET=...
-```
-
 ## URL-uri în portalul MAIB (Project settings)
 
 | Câmp | Valoare producție |

@@ -2,7 +2,7 @@
 
 Sistem de management incarcare EV (backend Laravel + backoffice React + gateway OCPP 1.6J).
 
-- **Backend** — API JWT, billing, Stripe, OCPP gateway
+- **Backend** — API JWT, billing (MAIB), OCPP gateway
 - **Backoffice** — administrare statii, sesiuni, clienti, facturi, audit
 - **OCPP** — statii reale (EU1060 etc.) via WebSocket
 
@@ -83,13 +83,13 @@ bash deploy/deploy.sh
 ## Documentatie
 
 - [`backend/docs/OCPP_SETUP.md`](backend/docs/OCPP_SETUP.md) — OCPP 1.6J, EU1060, configurare statie
-- [`backend/docs/STRIPE_SETUP.md`](backend/docs/STRIPE_SETUP.md) — plati Stripe
+- [`backend/docs/MAIB_SETUP.md`](backend/docs/MAIB_SETUP.md) — plati MAIB
 - [`docs/VPS_DEPLOY.md`](docs/VPS_DEPLOY.md) — productie VPS
 
 ## Notes
 
 - `OCPP_MODE=gateway` (implicit) pentru statii reale; `simulator` pentru demo fara hardware
 - Oprire fortata statie: `php artisan ocpp:force-stop {ocpp_identity} --connector=2`
-- Billing prepay: alimentare wallet (MAIB card / opțional Stripe) + debit la fiecare sesiune; factura se emite automat dupa plata
+- Billing prepay: alimentare wallet (MAIB card) + debit la fiecare sesiune; factura se emite automat dupa plata
 - QR statie: campul `qr_code` (serial hardware sau `station:<slug>`)
 - Setup MAIB: [`backend/docs/MAIB_SETUP.md`](backend/docs/MAIB_SETUP.md)

@@ -55,7 +55,7 @@ class MaibRedirectController extends Controller
             ];
         }
 
-        return view('payments.stripe-return', [
+        return view('payments.payment-return', [
             'title' => $title,
             'status' => $status,
             'invoiceId' => 0,

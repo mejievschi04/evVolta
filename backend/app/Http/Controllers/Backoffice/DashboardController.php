@@ -22,7 +22,6 @@ use App\Services\SessionPresentationService;
 use App\Services\OcppSessionDebugService;
 use App\Services\OcppService;
 use App\Services\ReservationService;
-use App\Services\StripePaymentService;
 use App\Services\TariffService;
 use App\Services\UserDeletionService;
 use App\Services\WalletService;
@@ -1173,43 +1172,84 @@ class DashboardController extends Controller
     {
         try {
             DB::transaction(function () use ($session): void {
-            $session = ChargingSession::query()
-                ->whereKey($session->id)
-                ->lockForUpdate()
-                ->first();
+                $session = ChargingSession::query()
+                    ->whereKey($session->id)
+                    ->lockForUpdate()
+                    ->first();
 
-            if (! $session) {
-                throw new RuntimeException('Sesiunea nu a fost gasita.', 404);
-            }
+                if (! $session) {
+                    throw new RuntimeException('Sesiunea nu a fost gasita.', 404);
+                }
 
-            $station = Station::query()
-                ->whereKey($session->station_id)
-                ->lockForUpdate()
-                ->first();
+                $station = Station::query()
+                    ->whereKey($session->station_id)
+                    ->lockForUpdate()
+                    ->first();
 
-            Invoice::query()
-                ->where('source_session_id', $session->id)
-                ->delete();
+                $wasActive = $session->end_time === null;
 
-            if (! $session->end_time && $station) {
-                $station->update(['status' => Station::STATUS_AVAILABLE]);
-            }
+                // Settle any open hold before removing the session row.
+                if ($wasActive) {
+                    if (! $station) {
+                        throw new RuntimeException('Statia sesiunii nu a fost gasita.', 422);
+                    }
 
-            $this->auditLogService->record(
-                action: 'backoffice.session.deleted',
-                actor: $this->backofficeActor(),
-                subjectType: ChargingSession::class,
-                subjectId: $session->id,
-                station: $station,
-                session: $session,
-                metadata: [
-                    'user_id' => $session->user_id,
-                    'station_id' => $session->station_id,
-                    'was_active' => $session->end_time === null,
-                ]
-            );
+                    $this->chargingStopService->finalizeStop(
+                        $session,
+                        $station,
+                        'backoffice',
+                        null,
+                        null,
+                        'BackofficeDelete',
+                        ['trigger' => 'backoffice.session.deleted']
+                    );
 
-            $session->delete();
+                    $session = ChargingSession::query()
+                        ->whereKey($session->id)
+                        ->lockForUpdate()
+                        ->firstOrFail();
+                    $station = Station::query()
+                        ->whereKey($session->station_id)
+                        ->lockForUpdate()
+                        ->first();
+                }
+
+                $invoices = Invoice::query()
+                    ->where('source_session_id', $session->id)
+                    ->lockForUpdate()
+                    ->get();
+
+                $keptPaidInvoices = 0;
+                foreach ($invoices as $invoice) {
+                    // Keep paid / fiscal invoices; only drop unpaid drafts.
+                    if ($invoice->status === 'paid') {
+                        $invoice->update(['source_session_id' => null]);
+                        $keptPaidInvoices++;
+                    } else {
+                        $invoice->delete();
+                    }
+                }
+
+                if ($station && ! $station->hasActiveSessionOnConnector((int) ($session->ocpp_connector_id ?: 1))) {
+                    $station->update(['status' => Station::STATUS_AVAILABLE]);
+                }
+
+                $this->auditLogService->record(
+                    action: 'backoffice.session.deleted',
+                    actor: $this->backofficeActor(),
+                    subjectType: ChargingSession::class,
+                    subjectId: $session->id,
+                    station: $station,
+                    session: $session,
+                    metadata: [
+                        'user_id' => $session->user_id,
+                        'station_id' => $session->station_id,
+                        'was_active' => $wasActive,
+                        'kept_paid_invoices' => $keptPaidInvoices,
+                    ]
+                );
+
+                $session->delete();
             });
         } catch (RuntimeException $exception) {
             if ($request->expectsJson()) {
@@ -1407,7 +1447,7 @@ class DashboardController extends Controller
                             'currency' => $refund->currency,
                             'status' => $refund->status,
                             'payment_provider' => $refund->payment_provider,
-                            'stripe_refund_id' => $refund->stripe_refund_id,
+                            'provider_refund_id' => $refund->provider_refund_id,
                             'created_at' => $refund->created_at,
                             'topup' => $refund->walletTopup ? [
                                 'id' => $refund->walletTopup->id,
@@ -1481,7 +1521,7 @@ class DashboardController extends Controller
                     'currency' => $refund->currency,
                     'status' => $refund->status,
                     'payment_provider' => $refund->payment_provider,
-                    'stripe_refund_id' => $refund->stripe_refund_id,
+                    'provider_refund_id' => $refund->provider_refund_id,
                     'created_at' => $refund->created_at,
                     'user' => $refund->user?->only([
                         'id',
@@ -1511,7 +1551,6 @@ class DashboardController extends Controller
         Request $request,
         WalletTopup $topup,
         WalletService $walletService,
-        StripePaymentService $stripePaymentService,
     ): JsonResponse|RedirectResponse {
         $data = $request->validate([
             'amount' => 'nullable|numeric|min:0.01|max:50000',
@@ -1522,7 +1561,7 @@ class DashboardController extends Controller
             : null;
 
         try {
-            $result = $walletService->refundTopup($topup, $stripePaymentService, $amount);
+            $result = $walletService->refundTopup($topup, $amount);
         } catch (RuntimeException $exception) {
             return $this->respondMutationError($request, $exception->getMessage(), (int) ($exception->getCode() ?: 422));
         }

@@ -22,7 +22,11 @@
             @endif
         </table>
 
-        <p>Factura și istoricul tranzacției sunt disponibile în aplicația V CHARGE.</p>
+        @if ($invoice)
+            <p>Factura fiscală în format PDF este atașată acestui email. O găsești și în aplicația V CHARGE.</p>
+        @else
+            <p>Istoricul tranzacției este disponibil în aplicația V CHARGE.</p>
+        @endif
         <p style="margin-bottom:0;color:#6b7280">Ai nevoie de ajutor? Scrie-ne la <a href="mailto:support@volta.md">support@volta.md</a>.</p>
     </main>
 </body>

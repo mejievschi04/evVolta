@@ -33,6 +33,10 @@ class BillingService
             return null;
         }
 
+        $tariffService = app(TariffService::class);
+        $pricePerKwh = $tariffService->pricePerKwhForUser($session->user);
+        $charged = app(WalletService::class)->settleSession($session, $pricePerKwh);
+
         $existing = Invoice::query()
             ->where('source_session_id', $session->id)
             ->first();
@@ -40,10 +44,6 @@ class BillingService
         if ($existing) {
             return $existing;
         }
-
-        $tariffService = app(TariffService::class);
-        $pricePerKwh = $tariffService->pricePerKwhForUser($session->user);
-        $charged = app(WalletService::class)->settleSession($session, $pricePerKwh);
 
         return $this->invoiceIssuanceService->createSessionInvoice($session->fresh(), $charged);
     }

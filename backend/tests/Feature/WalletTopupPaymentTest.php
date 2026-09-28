@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\WalletTopup;
-use App\Services\StripePaymentService;
+use App\Services\MaibPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Tests\TestCase;
@@ -19,7 +19,7 @@ class WalletTopupPaymentTest extends TestCase
         config(['billing.prepaid_wallet_enabled' => true]);
     }
 
-    public function test_verify_wallet_topup_credits_balance_when_stripe_is_paid(): void
+    public function test_verify_wallet_topup_credits_balance_when_maib_is_paid(): void
     {
         $user = $this->createAppUser(['wallet_balance' => 50]);
 
@@ -28,21 +28,21 @@ class WalletTopupPaymentTest extends TestCase
             'amount' => 100,
             'currency' => 'MDL',
             'status' => 'pending',
-            'payment_provider' => 'stripe',
-            'payment_session_id' => 'cs_test_wallet_1',
+            'payment_provider' => 'maib',
+            'payment_session_id' => 'checkout-wallet-1',
         ]);
 
-        $stripe = Mockery::mock(StripePaymentService::class);
-        $stripe->shouldReceive('retrieveCheckoutSession')
+        $maib = Mockery::mock(MaibPaymentService::class);
+        $maib->shouldReceive('getPaymentInfo')
             ->once()
-            ->with('cs_test_wallet_1')
+            ->with('checkout-wallet-1')
             ->andReturn([
-                'id' => 'cs_test_wallet_1',
-                'payment_status' => 'paid',
-                'status' => 'complete',
-                'payment_intent' => 'pi_test_wallet_1',
+                'status' => 'Executed',
+                'paymentId' => 'pay-wallet-1',
             ]);
-        $this->app->instance(StripePaymentService::class, $stripe);
+        $maib->shouldReceive('isCheckoutPaid')->once()->andReturn(true);
+        $maib->shouldReceive('extractPaymentId')->once()->andReturn('pay-wallet-1');
+        $this->app->instance(MaibPaymentService::class, $maib);
 
         $this->actingAs($user, 'api')
             ->postJson('/api/wallet/topups/' . $topup->id . '/verify-payment')
@@ -52,7 +52,7 @@ class WalletTopupPaymentTest extends TestCase
             ->assertJsonPath('wallet_balance', 150);
 
         $this->assertSame(150.0, (float) $user->fresh()->wallet_balance);
-        $this->assertSame('pi_test_wallet_1', $topup->fresh()->payment_intent_id);
+        $this->assertSame('pay-wallet-1', $topup->fresh()->payment_intent_id);
         $this->assertDatabaseHas('invoices', [
             'user_id' => $user->id,
             'wallet_topup_id' => $topup->id,
@@ -71,14 +71,14 @@ class WalletTopupPaymentTest extends TestCase
             'amount' => 100,
             'currency' => 'MDL',
             'status' => 'paid',
-            'payment_provider' => 'stripe',
-            'payment_session_id' => 'cs_test_wallet_paid',
+            'payment_provider' => 'maib',
+            'payment_session_id' => 'checkout-wallet-paid',
             'paid_at' => now(),
         ]);
 
-        $stripe = Mockery::mock(StripePaymentService::class);
-        $stripe->shouldNotReceive('retrieveCheckoutSession');
-        $this->app->instance(StripePaymentService::class, $stripe);
+        $maib = Mockery::mock(MaibPaymentService::class);
+        $maib->shouldNotReceive('getPaymentInfo');
+        $this->app->instance(MaibPaymentService::class, $maib);
 
         $this->actingAs($user, 'api')
             ->postJson('/api/wallet/topups/' . $topup->id . '/verify-payment')
@@ -97,8 +97,8 @@ class WalletTopupPaymentTest extends TestCase
             'amount' => 100,
             'currency' => 'MDL',
             'status' => 'pending',
-            'payment_provider' => 'stripe',
-            'payment_session_id' => 'cs_test_wallet_2',
+            'payment_provider' => 'maib',
+            'payment_session_id' => 'checkout-other',
         ]);
 
         $this->actingAs($other, 'api')

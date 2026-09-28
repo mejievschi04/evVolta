@@ -14,30 +14,11 @@ class ReportDocumentService
     /**
      * @return array{pdf: string, filename: string}
      */
-    public function stationsDaily(Carbon $day): array
-    {
-        $from = $day->copy()->startOfDay();
-        $to = $day->copy()->endOfDay();
-        $rows = $this->stationAggregates($from, $to);
-
-        $title = 'Raport zilnic pe statii';
-        $periodLabel = $day->format('d.m.Y');
-        $filename = sprintf('raport-statii-zilnic-%s.pdf', $day->format('Y-m-d'));
-
-        return [
-            'pdf' => $this->renderStationsPdf($title, $periodLabel, $rows),
-            'filename' => $filename,
-        ];
-    }
-
-    /**
-     * @return array{pdf: string, filename: string}
-     */
     public function stationsMonthly(Carbon $month): array
     {
         $from = $month->copy()->startOfMonth();
         $to = $month->copy()->endOfMonth();
-        $rows = $this->stationAggregates($from, $to);
+        $rows = $this->stationDayAggregates($from, $to);
 
         $title = 'Raport lunar pe statii';
         $periodLabel = $month->translatedFormat('F Y');
@@ -56,44 +37,40 @@ class ReportDocumentService
     {
         $from = $from->copy()->startOfDay();
         $to = $to->copy()->endOfDay();
+        $rows = $this->topupDayAggregates($from, $to);
 
-        $topups = WalletTopup::query()
-            ->with('user:id,name,email')
-            ->where('status', 'paid')
-            ->whereNotNull('paid_at')
-            ->whereBetween('paid_at', [$from, $to])
-            ->orderBy('paid_at')
-            ->get();
+        $totalTx = (int) $rows->sum('topups_count');
+        $totalAmount = round((float) $rows->sum('amount'), 2);
+        $totalRefunded = round((float) $rows->sum('amount_refunded'), 2);
+        $totalNet = round($totalAmount - $totalRefunded, 2);
 
-        $totalAmount = round((float) $topups->sum('amount'), 2);
-        $totalRefunded = round((float) $topups->sum('amount_refunded'), 2);
-        $net = round($totalAmount - $totalRefunded, 2);
+        $bodyRows = $rows->map(function (array $row) {
+            $dateLabel = $row['date'] !== 'unknown'
+                ? Carbon::createFromFormat('Y-m-d', $row['date'])->format('d.m.Y')
+                : '-';
+            $userLabel = e($row['user_name']);
+            if ($row['user_email'] !== '') {
+                $userLabel .= '<br><span class="muted">'.e($row['user_email']).'</span>';
+            }
 
-        $rowsHtml = $topups->map(function (WalletTopup $topup) {
-            $paidAt = $topup->paid_at?->format('d.m.Y H:i') ?? '-';
-            $name = e($topup->user?->name ?? '-');
-            $email = e($topup->user?->email ?? '-');
-            $amount = number_format((float) $topup->amount, 2, '.', ' ');
-            $refunded = number_format((float) $topup->amount_refunded, 2, '.', ' ');
-            $provider = e((string) ($topup->payment_provider ?: '-'));
-
-            return "<tr>
-                <td>{$paidAt}</td>
-                <td>{$name}<br><span class=\"muted\">{$email}</span></td>
-                <td class=\"num\">{$amount}</td>
-                <td class=\"num\">{$refunded}</td>
-                <td>{$provider}</td>
-                <td>paid</td>
-            </tr>";
+            return sprintf(
+                '<tr><td>%s</td><td>%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%s</td></tr>',
+                e($dateLabel),
+                $userLabel,
+                number_format($row['topups_count'], 0, '.', ' '),
+                number_format($row['amount'], 2, '.', ' '),
+                number_format($row['amount_refunded'], 2, '.', ' '),
+                number_format($row['net'], 2, '.', ' ')
+            );
         })->implode('');
 
-        if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="6" class="empty">Nicio alimentare in interval.</td></tr>';
+        if ($bodyRows === '') {
+            $bodyRows = '<tr><td colspan="6" class="empty">Nicio alimentare in interval.</td></tr>';
         }
 
         $periodLabel = $from->format('d.m.Y') . ' – ' . $to->format('d.m.Y');
         $html = $this->wrapReportHtml(
-            'Raport alimentari wallet',
+            'Raport alimentari',
             $periodLabel,
             <<<HTML
 <table>
@@ -101,22 +78,23 @@ class ReportDocumentService
     <tr>
       <th>Data</th>
       <th>Utilizator</th>
+      <th class="num">Tranzactii</th>
       <th class="num">Suma (MDL)</th>
       <th class="num">Returnat</th>
-      <th>Provider</th>
-      <th>Status</th>
+      <th class="num">Net (MDL)</th>
     </tr>
   </thead>
   <tbody>
-    {$rowsHtml}
+    {$bodyRows}
+    <tr class="grand">
+      <td colspan="2"><strong>Total</strong></td>
+      <td class="num"><strong>{$this->int($totalTx)}</strong></td>
+      <td class="num"><strong>{$this->money($totalAmount)}</strong></td>
+      <td class="num"><strong>{$this->money($totalRefunded)}</strong></td>
+      <td class="num"><strong>{$this->money($totalNet)}</strong></td>
+    </tr>
   </tbody>
 </table>
-<div class="totals">
-  <p><strong>Total alimentat:</strong> {$this->money($totalAmount)} MDL</p>
-  <p><strong>Total returnat:</strong> {$this->money($totalRefunded)} MDL</p>
-  <p><strong>Net:</strong> {$this->money($net)} MDL</p>
-  <p><strong>Tranzactii:</strong> {$topups->count()}</p>
-</div>
 HTML
         );
 
@@ -131,9 +109,11 @@ HTML
     }
 
     /**
-     * @return Collection<int, array{station_id: int|null, station_name: string, sessions_count: int, total_kwh: float, revenue: float}>
+     * One row per calendar day × station (sessions closed that day).
+     *
+     * @return Collection<int, array{date: string, station_id: int|null, station_name: string, sessions_count: int, total_kwh: float, revenue: float}>
      */
-    private function stationAggregates(Carbon $from, Carbon $to): Collection
+    private function stationDayAggregates(Carbon $from, Carbon $to): Collection
     {
         $sessions = ChargingSession::query()
             ->with(['station:id,name', 'invoice:id,source_session_id,total_amount,invoice_type'])
@@ -141,14 +121,20 @@ HTML
             ->whereBetween('end_time', [$from, $to])
             ->get();
 
-        $byStation = $sessions->groupBy(fn (ChargingSession $session) => (string) ($session->station_id ?? 0));
-
-        $stationIds = $byStation->keys()->map(fn ($id) => (int) $id)->filter()->values();
+        $stationIds = $sessions->pluck('station_id')->filter()->unique()->values();
         $stationNames = Station::query()
             ->whereIn('id', $stationIds)
             ->pluck('name', 'id');
 
-        return $byStation->map(function (Collection $group, string $stationKey) use ($stationNames) {
+        $grouped = $sessions->groupBy(function (ChargingSession $session) {
+            $day = $session->end_time?->format('Y-m-d') ?? 'unknown';
+            $stationId = (int) ($session->station_id ?? 0);
+
+            return $day.'|'.$stationId;
+        });
+
+        return $grouped->map(function (Collection $group, string $key) use ($stationNames) {
+            [$day, $stationKey] = explode('|', $key, 2);
             $stationId = (int) $stationKey;
             $name = $stationId > 0
                 ? (string) ($stationNames[$stationId] ?? $group->first()?->station?->name ?? 'Statie #'.$stationId)
@@ -164,17 +150,69 @@ HTML
             }), 2);
 
             return [
+                'date' => $day,
                 'station_id' => $stationId > 0 ? $stationId : null,
                 'station_name' => $name,
                 'sessions_count' => $group->count(),
                 'total_kwh' => round((float) $group->sum('kwh_consumed'), 3),
                 'revenue' => $revenue,
             ];
-        })->sortBy('station_name')->values();
+        })
+            ->sortBy([
+                ['date', 'asc'],
+                ['station_name', 'asc'],
+            ])
+            ->values();
     }
 
     /**
-     * @param  Collection<int, array{station_id: int|null, station_name: string, sessions_count: int, total_kwh: float, revenue: float}>  $rows
+     * One row per calendar day × user (paid topups that day).
+     *
+     * @return Collection<int, array{date: string, user_id: int|null, user_name: string, user_email: string, topups_count: int, amount: float, amount_refunded: float, net: float}>
+     */
+    private function topupDayAggregates(Carbon $from, Carbon $to): Collection
+    {
+        $topups = WalletTopup::query()
+            ->with('user:id,name,email')
+            ->where('status', 'paid')
+            ->whereNotNull('paid_at')
+            ->whereBetween('paid_at', [$from, $to])
+            ->get();
+
+        $grouped = $topups->groupBy(function (WalletTopup $topup) {
+            $day = $topup->paid_at?->format('Y-m-d') ?? 'unknown';
+            $userId = (int) ($topup->user_id ?? 0);
+
+            return $day.'|'.$userId;
+        });
+
+        return $grouped->map(function (Collection $group, string $key) {
+            [$day, $userKey] = explode('|', $key, 2);
+            $userId = (int) $userKey;
+            $user = $group->first()?->user;
+            $amount = round((float) $group->sum('amount'), 2);
+            $refunded = round((float) $group->sum('amount_refunded'), 2);
+
+            return [
+                'date' => $day,
+                'user_id' => $userId > 0 ? $userId : null,
+                'user_name' => (string) ($user?->name ?? ($userId > 0 ? 'User #'.$userId : 'Fara utilizator')),
+                'user_email' => (string) ($user?->email ?? ''),
+                'topups_count' => $group->count(),
+                'amount' => $amount,
+                'amount_refunded' => $refunded,
+                'net' => round($amount - $refunded, 2),
+            ];
+        })
+            ->sortBy([
+                ['date', 'asc'],
+                ['user_name', 'asc'],
+            ])
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, array{date: string, station_id: int|null, station_name: string, sessions_count: int, total_kwh: float, revenue: float}>  $rows
      */
     private function renderStationsPdf(string $title, string $periodLabel, Collection $rows): string
     {
@@ -183,8 +221,13 @@ HTML
         $totalRevenue = round((float) $rows->sum('revenue'), 2);
 
         $bodyRows = $rows->map(function (array $row) {
+            $dateLabel = $row['date'] !== 'unknown'
+                ? Carbon::createFromFormat('Y-m-d', $row['date'])->format('d.m.Y')
+                : '-';
+
             return sprintf(
-                '<tr><td>%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%s</td></tr>',
+                '<tr><td>%s</td><td>%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%s</td></tr>',
+                e($dateLabel),
                 e($row['station_name']),
                 number_format($row['sessions_count'], 0, '.', ' '),
                 number_format($row['total_kwh'], 3, '.', ' '),
@@ -193,7 +236,7 @@ HTML
         })->implode('');
 
         if ($bodyRows === '') {
-            $bodyRows = '<tr><td colspan="4" class="empty">Nicio sesiune in interval.</td></tr>';
+            $bodyRows = '<tr><td colspan="5" class="empty">Nicio sesiune in interval.</td></tr>';
         }
 
         $html = $this->wrapReportHtml(
@@ -203,6 +246,7 @@ HTML
 <table>
   <thead>
     <tr>
+      <th>Data</th>
       <th>Statie</th>
       <th class="num">Sesiuni</th>
       <th class="num">kWh</th>
@@ -212,7 +256,7 @@ HTML
   <tbody>
     {$bodyRows}
     <tr class="grand">
-      <td><strong>Total</strong></td>
+      <td colspan="2"><strong>Total luna</strong></td>
       <td class="num"><strong>{$this->int($totalSessions)}</strong></td>
       <td class="num"><strong>{$this->kwh($totalKwh)}</strong></td>
       <td class="num"><strong>{$this->money($totalRevenue)}</strong></td>
@@ -222,7 +266,7 @@ HTML
 HTML
         );
 
-        return Pdf::loadHTML($html)->setPaper('a4')->output();
+        return Pdf::loadHTML($html)->setPaper('a4', 'landscape')->output();
     }
 
     private function wrapReportHtml(string $title, string $periodLabel, string $body): string
@@ -238,15 +282,16 @@ HTML
   <meta charset="utf-8">
   <title>{$safeTitle}</title>
   <style>
-    body { margin: 0; padding: 24px; font-family: DejaVu Sans, sans-serif; color: #111; font-size: 12px; }
-    h1 { margin: 0 0 4px; font-size: 18px; }
-    .meta { color: #555; margin-bottom: 16px; font-size: 11px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 7px 8px; vertical-align: top; }
-    th { background: #f3f4f6; text-align: left; font-size: 10px; text-transform: uppercase; }
+    body { margin: 0; padding: 18px; font-family: DejaVu Sans, Arial, sans-serif; color: #111; font-size: 11px; }
+    h1 { margin: 0 0 4px; font-size: 16px; text-transform: uppercase; }
+    .meta { color: #555; margin-bottom: 12px; font-size: 11px; }
+    table, table.lines { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #111; padding: 6px 5px; vertical-align: top; }
+    th { background: #f3f4f6; text-align: left; font-size: 9px; text-transform: uppercase; }
     td.num, th.num { text-align: right; white-space: nowrap; }
-    tr.grand td { background: #f9fafb; }
-    .totals { margin-top: 14px; line-height: 1.6; }
+    .center { text-align: center; }
+    tr.grand td, tr.totals td { background: #f9fafb; font-weight: 700; }
+    .totals-note { margin-top: 14px; line-height: 1.6; }
     .muted { color: #6b7280; font-size: 10px; }
     .empty { text-align: center; color: #6b7280; }
   </style>

@@ -110,72 +110,112 @@ class SocialAuthService
 
         $providerUserId = $identity['provider_user_id'];
 
-        $user = User::query()->where($providerColumn, $providerUserId)->first();
-        if ($user) {
-            return $user;
-        }
-
-        $email = $identity['email'];
-        if ($email) {
-            $user = User::query()->where('email', $email)->first();
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            $user = User::query()->where($providerColumn, $providerUserId)->first();
             if ($user) {
-                if ($user->isAdmin()) {
-                    throw new RuntimeException('Contul de administrator se foloseste doar in backoffice.', 403);
-                }
+                return $user;
+            }
 
-                if ($user->isAnonymized()) {
-                    throw new RuntimeException('Contul a fost sters.', 403);
-                }
+            $email = $identity['email'];
+            if ($email) {
+                $user = User::query()->where('email', $email)->first();
+                if ($user) {
+                    if ($user->isAdmin()) {
+                        throw new RuntimeException('Contul de administrator se foloseste doar in backoffice.', 403);
+                    }
 
-                if (! ($identity['email_verified'] ?? false)) {
-                    throw new RuntimeException(
-                        'Email-ul din provider nu este verificat. Autentifica-te cu parola sau foloseste un email verificat.',
-                        403
-                    );
+                    if ($user->isAnonymized()) {
+                        throw new RuntimeException('Contul a fost sters.', 403);
+                    }
+
+                    if (! ($identity['email_verified'] ?? false)) {
+                        throw new RuntimeException(
+                            'Email-ul din provider nu este verificat. Autentifica-te cu parola sau foloseste un email verificat.',
+                            403
+                        );
+                    }
+
+                    try {
+                        $user->forceFill([
+                            $providerColumn => $providerUserId,
+                            'email_verified_at' => $user->email_verified_at ?? now(),
+                        ])->save();
+
+                        return $user->fresh();
+                    } catch (\Illuminate\Database\QueryException $exception) {
+                        if (! $this->isUniqueConstraintViolation($exception) || $attempt >= 3) {
+                            throw $exception;
+                        }
+
+                        continue;
+                    }
                 }
+            }
+
+            if (! $email) {
+                throw new RuntimeException(
+                    'Providerul nu a furnizat un email. Partajeaza email-ul la autentificare sau foloseste un cont existent.',
+                    422
+                );
+            }
+
+            $firstName = $identity['first_name'] ?: null;
+            $lastName = $identity['last_name'] ?: null;
+            $fullName = trim((string) ($identity['name'] ?? ''));
+            if ($fullName === '') {
+                $fullName = trim(implode(' ', array_filter([$firstName, $lastName])));
+            }
+            if ($fullName === '') {
+                $fullName = strstr($email, '@', true) ?: 'Utilizator V CHARGE';
+            }
+
+            try {
+                $user = User::query()->create([
+                    'name' => $fullName,
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'email' => $email,
+                    'password' => Hash::make(Str::random(64)),
+                    'currency' => 'MDL',
+                    $providerColumn => $providerUserId,
+                ]);
 
                 $user->forceFill([
-                    $providerColumn => $providerUserId,
-                    'email_verified_at' => $user->email_verified_at ?? now(),
+                    'is_admin' => false,
+                    'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
+                    'wallet_balance' => 0,
+                    'email_verified_at' => ($identity['email_verified'] ?? false) ? now() : null,
                 ])->save();
 
                 return $user->fresh();
+            } catch (\Illuminate\Database\QueryException $exception) {
+                if (! $this->isUniqueConstraintViolation($exception) || $attempt >= 3) {
+                    throw $exception;
+                }
             }
         }
 
-        if (! $email) {
-            // Apple may omit email after the first authorization.
-            $email = sprintf('%s_%s@users.volta.local', $provider, substr(hash('sha256', $providerUserId), 0, 24));
+        $existing = User::query()->where($providerColumn, $providerUserId)->first()
+            ?? ($identity['email'] ? User::query()->where('email', $identity['email'])->first() : null);
+
+        if ($existing) {
+            return $existing;
         }
 
-        $firstName = $identity['first_name'] ?: null;
-        $lastName = $identity['last_name'] ?: null;
-        $fullName = trim((string) ($identity['name'] ?? ''));
-        if ($fullName === '') {
-            $fullName = trim(implode(' ', array_filter([$firstName, $lastName])));
-        }
-        if ($fullName === '') {
-            $fullName = strstr($email, '@', true) ?: 'Utilizator V CHARGE';
-        }
+        throw new RuntimeException('Nu s-a putut crea contul social. Incearca din nou.', 409);
+    }
 
-        $user = User::query()->create([
-            'name' => $fullName,
-            'first_name' => $firstName,
-            'last_name' => $lastName,
-            'email' => $email,
-            'password' => Hash::make(Str::random(64)),
-            'currency' => 'MDL',
-            $providerColumn => $providerUserId,
-        ]);
+    private function isUniqueConstraintViolation(\Illuminate\Database\QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? '');
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+        $message = strtolower($exception->getMessage());
 
-        $user->forceFill([
-            'is_admin' => false,
-            'account_type' => User::ACCOUNT_TYPE_CUSTOMER,
-            'wallet_balance' => 0,
-            'email_verified_at' => ($identity['email_verified'] ?? false) ? now() : null,
-        ])->save();
-
-        return $user->fresh();
+        return $sqlState === '23000'
+            || $driverCode === 1062
+            || $driverCode === 19
+            || str_contains($message, 'unique')
+            || str_contains($message, 'duplicate');
     }
 
     /**

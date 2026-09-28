@@ -7,7 +7,6 @@ use App\Http\Controllers\Api\ChargingController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReservationController;
-use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\TariffController;
 use App\Http\Controllers\Api\SessionController;
@@ -21,8 +20,6 @@ Route::post('/auth/apple', [AuthController::class, 'loginWithApple'])->middlewar
 Route::get('/legal', [LegalController::class, 'config']);
 Route::get('/legal/terms', [LegalController::class, 'terms']);
 Route::get('/legal/privacy', [LegalController::class, 'privacy']);
-Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
-    ->middleware('throttle:120,1');
 Route::post('/maib/callback', [MaibCallbackController::class, 'handle'])
     ->middleware('throttle:120,1');
 
@@ -67,7 +64,5 @@ Route::middleware('auth:api')->group(function () {
         Route::post('/wallet/topups/{topup}/verify-payment', [WalletController::class, 'verifyTopupPayment']);
         Route::get('/invoices', [InvoiceController::class, 'index']);
         Route::get('/invoices/{invoice}/download', [InvoiceController::class, 'download']);
-        Route::post('/invoices/{invoice}/checkout-session', [InvoiceController::class, 'createCheckoutSession']);
-        Route::post('/invoices/{invoice}/verify-payment', [InvoiceController::class, 'verifyPayment']);
     });
 });

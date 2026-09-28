@@ -59,10 +59,6 @@ class ChargingStopService
                 ];
             }
 
-            if ($this->shouldFinalizeLocally($session)) {
-                return $this->finalizeStop($session, $station, $stopSource);
-            }
-
             $ocppResponse = $this->ocppService->stopTransaction($station, $session);
 
             return [
@@ -481,16 +477,5 @@ class ChargingStopService
             ])
             ->latest('id')
             ->first();
-    }
-
-    private function shouldFinalizeLocally(ChargingSession $session): bool
-    {
-        if (! $session->ocpp_transaction_id) {
-            return false;
-        }
-
-        return (float) $session->kwh_consumed <= 0
-            && $session->start_time
-            && $session->start_time->diffInMinutes(now()) < 3;
     }
 }

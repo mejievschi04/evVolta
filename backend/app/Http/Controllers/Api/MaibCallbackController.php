@@ -66,10 +66,34 @@ class MaibCallbackController extends Controller
             return response()->json(['received' => true, 'matched' => false]);
         }
 
-        $paid = strcasecmp($paymentStatus, 'Executed') === 0
-            || strcasecmp($processingStatus, 'OK') === 0;
+        $paid = strcasecmp($paymentStatus, 'Executed') === 0;
 
         if ($paid) {
+            $callbackAmount = null;
+            if (isset($payload['paymentAmount']) && is_numeric($payload['paymentAmount'])) {
+                $callbackAmount = round((float) $payload['paymentAmount'], 2);
+            } elseif (isset($payload['amount']) && is_numeric($payload['amount'])) {
+                $callbackAmount = round((float) $payload['amount'], 2);
+            }
+
+            $expectedAmount = round((float) $topup->amount, 2);
+            if ($callbackAmount !== null && abs($callbackAmount - $expectedAmount) > 0.009) {
+                Log::warning('maib.callback.amount_mismatch', [
+                    'topup_id' => $topup->id,
+                    'expected' => $expectedAmount,
+                    'callback_amount' => $callbackAmount,
+                    'checkoutId' => $checkoutId,
+                    'paymentId' => $paymentId,
+                ]);
+
+                return response()->json([
+                    'received' => true,
+                    'matched' => true,
+                    'credited' => false,
+                    'reason' => 'amount_mismatch',
+                ]);
+            }
+
             // Keep checkoutId in payment_session_id; store MAIB paymentId in payment_intent_id.
             $walletService->creditTopup(
                 $topup,

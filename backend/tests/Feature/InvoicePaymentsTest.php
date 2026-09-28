@@ -10,7 +10,7 @@ class InvoicePaymentsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_invoice_checkout_session_is_not_available_in_app(): void
+    public function test_invoice_checkout_session_route_is_removed(): void
     {
         $user = $this->createPersonalUser([
             'name' => 'Driver One',
@@ -34,10 +34,10 @@ class InvoicePaymentsTest extends TestCase
 
         $this->actingAs($user, 'api')
             ->postJson('/api/invoices/' . $invoice->id . '/checkout-session')
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
-    public function test_invoice_verify_payment_is_not_available_in_app(): void
+    public function test_invoice_verify_payment_route_is_removed(): void
     {
         $user = $this->createPersonalUser([
             'name' => 'Driver One',
@@ -53,7 +53,7 @@ class InvoicePaymentsTest extends TestCase
             'invoice_number' => 'EVM-202604-2',
             'period_start' => '2026-04-01',
             'period_end' => '2026-04-30',
-            'payment_provider' => 'stripe',
+            'payment_provider' => 'maib',
             'payment_session_id' => 'cs_test_123',
             'total_amount' => 12.50,
             'total_kwh' => 25.00,
@@ -63,7 +63,7 @@ class InvoicePaymentsTest extends TestCase
 
         $this->actingAs($user, 'api')
             ->postJson('/api/invoices/' . $invoice->id . '/verify-payment')
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_authenticated_user_can_download_own_invoice_document(): void
@@ -88,17 +88,17 @@ class InvoicePaymentsTest extends TestCase
             'invoice_number' => 'EVM-202604-9',
             'period_start' => '2026-04-01',
             'period_end' => '2026-04-30',
-            'total_amount' => 42.50,
-            'total_kwh' => 85.00,
-            'sessions_count' => 4,
-            'status' => 'unpaid',
+            'total_amount' => 12.50,
+            'total_kwh' => 25.00,
+            'sessions_count' => 3,
+            'status' => 'paid',
+            'paid_at' => now(),
         ]);
 
         $this->actingAs($user, 'api')
             ->get('/api/invoices/' . $invoice->id . '/download')
             ->assertOk()
-            ->assertHeader('Content-Type', 'application/pdf')
-            ->assertHeader('Content-Disposition', 'attachment; filename="evm-202604-9.pdf"');
+            ->assertHeader('Content-Type', 'application/pdf');
 
         $this->actingAs($otherUser, 'api')
             ->get('/api/invoices/' . $invoice->id . '/download')

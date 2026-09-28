@@ -6,7 +6,7 @@ cd "${ROOT}"
 
 if [ ! -f .env.docker ]; then
   cp deploy/docker.env.example .env.docker
-  echo "Creat .env.docker — editeaza DB_PASSWORD, APP_URL, Stripe, apoi ruleaza din nou."
+  echo "Creat .env.docker — editeaza DB_PASSWORD, APP_URL, MAIB, apoi ruleaza din nou."
   exit 1
 fi
 
