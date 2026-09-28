@@ -25,10 +25,10 @@ class ChargingStopPreparingTest extends TestCase
 
     public function test_stop_queues_remote_command_for_preparing_session_without_ocpp_transaction(): void
     {
-        $user = User::query()->create([
-            'name' => 'Driver One',
+        $user = $this->createAppUser([
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
+            'name' => 'Driver One',
+            'wallet_balance' => 500,
         ]);
 
         $station = Station::query()->create([

@@ -201,6 +201,6 @@ class ChargingStartGatewayTest extends TestCase
                 'connector_id' => 1,
             ])
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Conecteaza masina la portul rezervat inainte de pornire.');
+            ->assertJsonPath('message', 'Conecteaza masina la port inainte de pornire.');
     }
 }

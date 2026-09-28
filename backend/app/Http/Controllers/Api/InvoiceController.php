@@ -63,10 +63,9 @@ class InvoiceController extends Controller
     {
         $this->authorizeInvoice($request, $invoice);
 
-        return response($invoiceDocumentService->html($invoice), 200, [
-            'Content-Type' => 'text/html; charset=UTF-8',
+        return response($invoiceDocumentService->pdf($invoice), 200, [
+            'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="' . $invoiceDocumentService->filename($invoice) . '"',
-            'Content-Security-Policy' => (string) config('security.csp_document'),
         ]);
     }
 

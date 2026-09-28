@@ -400,6 +400,11 @@ class ChargingStopService
             return false;
         }
 
+        // Finishing + cable still present is handled by force-restart on start, not abandoned close.
+        if ($status === 'Finishing') {
+            return false;
+        }
+
         if (
             $session->ocpp_transaction_id
             && $session->start_time
@@ -413,7 +418,7 @@ class ChargingStopService
                 || $session->start_time->lessThanOrEqualTo(now()->subMinutes(2));
         }
 
-        return in_array($status, ['Available', 'Finishing'], true)
+        return in_array($status, ['Available'], true)
             && $this->shouldAutoFinalizeOnConnectorRelease($session, $station, $status);
     }
 

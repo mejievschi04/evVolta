@@ -18,14 +18,20 @@ class WalletController extends Controller
     {
         $user = $request->user();
 
+        $requiresPrepaid = $walletService->enabled()
+            && $user->usesCardPayment()
+            && ! $user->isFreeCharging();
+
         return response()->json([
             'wallet_balance' => $walletService->balance($user),
             'currency' => $user->currency ?? 'MDL',
-            'requires_prepaid' => $walletService->enabled() && $user->usesCardPayment(),
+            'account_type' => $user->account_type,
+            'free_charging' => $user->isFreeCharging(),
+            'requires_prepaid' => $requiresPrepaid,
             'prepaid_wallet_enabled' => $walletService->enabled(),
-            'charge_options' => $walletService->enabled() && $user->usesCardPayment()
+            'charge_options' => $requiresPrepaid
                 ? $walletService->chargeOptions($user)
-                : null,
+                : ($user->isFreeCharging() ? $walletService->chargeOptions($user) : null),
         ]);
     }
 

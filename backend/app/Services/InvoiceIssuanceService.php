@@ -2,10 +2,13 @@
 
 namespace App\Services;
 
+use App\Jobs\SendInvoiceEmailJob;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\WalletTopup;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 class InvoiceIssuanceService
 {
@@ -33,7 +36,8 @@ class InvoiceIssuanceService
         $amount = round(max(0, $chargedAmount), 2);
         $kwh = round((float) $session->kwh_consumed, 3);
 
-        if ($amount <= 0 && $kwh <= 0) {
+        // Do not invent zero-amount fiscal docs for unpaid/unsettled energy.
+        if ($amount <= 0) {
             return null;
         }
 
@@ -45,12 +49,11 @@ class InvoiceIssuanceService
         $fiscal = $this->fiscalCalculator->breakdown($amount, $quantity);
         $seller = $this->fiscalCalculator->sellerSnapshot();
 
-        return Invoice::query()->create(array_merge([
+        $attributes = array_merge([
             'user_id' => $session->user_id,
             'source_session_id' => $session->id,
             'invoice_type' => 'session',
-            'series' => (string) config('invoice.series', 'VE'),
-            'invoice_number' => $this->nextInvoiceNumber((string) config('invoice.series', 'VE')),
+            'series' => null,
             'month' => $end->format('Y-m'),
             'currency' => $session->user->currency ?? 'MDL',
             'period_start' => $start->toDateString(),
@@ -75,7 +78,12 @@ class InvoiceIssuanceService
             'paid_at' => $end,
             'issued_at' => $end,
             'payment_provider' => 'wallet',
-        ], $seller));
+        ], $seller);
+
+        $invoice = $this->createWithUniqueInvoiceNumber($attributes);
+        $this->queueInvoiceEmail($invoice);
+
+        return $invoice;
     }
 
     public function createWalletTopupInvoice(WalletTopup $topup): ?Invoice
@@ -96,15 +104,18 @@ class InvoiceIssuanceService
 
         $paidAt = $topup->paid_at ? Carbon::parse($topup->paid_at) : now();
         $amount = round((float) $topup->amount, 2);
+        if ($amount <= 0) {
+            return null;
+        }
+
         $fiscal = $this->fiscalCalculator->breakdown($amount, 1.0);
         $seller = $this->fiscalCalculator->sellerSnapshot();
 
-        return Invoice::query()->create(array_merge([
+        $attributes = array_merge([
             'user_id' => $topup->user_id,
             'wallet_topup_id' => $topup->id,
             'invoice_type' => 'wallet_topup',
-            'series' => (string) config('invoice.series', 'VE'),
-            'invoice_number' => $this->nextInvoiceNumber((string) config('invoice.series', 'VE')),
+            'series' => null,
             'month' => $paidAt->format('Y-m'),
             'currency' => $topup->currency ?: ($topup->user->currency ?? 'MDL'),
             'period_start' => $paidAt->toDateString(),
@@ -126,16 +137,101 @@ class InvoiceIssuanceService
             'issued_at' => $paidAt,
             'payment_provider' => $topup->payment_provider ?: 'stripe',
             'payment_session_id' => $topup->payment_session_id,
-        ], $seller));
+        ], $seller);
+
+        $invoice = $this->createWithUniqueInvoiceNumber($attributes);
+        $this->queueInvoiceEmail($invoice);
+
+        return $invoice;
     }
 
-    private function nextInvoiceNumber(string $prefix): string
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function createWithUniqueInvoiceNumber(array $attributes): Invoice
     {
-        $date = now()->format('Ymd');
-        $sequence = Invoice::query()
-            ->whereDate('created_at', today())
-            ->count() + 1;
+        $attempts = 0;
 
-        return sprintf('%s-%s-%04d', $prefix, $date, $sequence);
+        while ($attempts < 8) {
+            $attempts++;
+
+            try {
+                return DB::transaction(function () use ($attributes) {
+                    // Re-check uniqueness guards inside the transaction.
+                    if (! empty($attributes['source_session_id'])) {
+                        $existing = Invoice::query()
+                            ->where('source_session_id', $attributes['source_session_id'])
+                            ->lockForUpdate()
+                            ->first();
+                        if ($existing) {
+                            return $existing;
+                        }
+                    }
+
+                    if (! empty($attributes['wallet_topup_id'])) {
+                        $existing = Invoice::query()
+                            ->where('wallet_topup_id', $attributes['wallet_topup_id'])
+                            ->lockForUpdate()
+                            ->first();
+                        if ($existing) {
+                            return $existing;
+                        }
+                    }
+
+                    $attributes['invoice_number'] = $this->nextInvoiceNumber();
+
+                    return Invoice::query()->create($attributes);
+                });
+            } catch (QueryException $exception) {
+                if (! $this->isUniqueConstraintViolation($exception) || $attempts >= 8) {
+                    throw $exception;
+                }
+
+                usleep(10_000 * $attempts);
+            }
+        }
+
+        throw new \RuntimeException('Nu s-a putut aloca un numar de factura unic.');
+    }
+
+    private function isUniqueConstraintViolation(QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? '');
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+        $message = strtolower($exception->getMessage());
+
+        return $sqlState === '23000'
+            || $driverCode === 1062
+            || $driverCode === 19
+            || str_contains($message, 'unique')
+            || str_contains($message, 'duplicate');
+    }
+
+    private function queueInvoiceEmail(Invoice $invoice): void
+    {
+        $recipient = $invoice->buyer_email;
+        if (! filled($recipient)) {
+            $invoice->loadMissing('user:id,email');
+            $recipient = $invoice->user?->email;
+        }
+
+        if (! filled($recipient)) {
+            return;
+        }
+
+        SendInvoiceEmailJob::dispatch($invoice->id);
+    }
+
+    private function nextInvoiceNumber(): string
+    {
+        $max = 0;
+
+        foreach (Invoice::query()->whereNotNull('invoice_number')->pluck('invoice_number') as $number) {
+            if (preg_match('/^\d{1,7}$/', (string) $number)) {
+                $max = max($max, (int) $number);
+            }
+        }
+
+        return str_pad((string) ($max + 1), 7, '0', STR_PAD_LEFT);
     }
 }

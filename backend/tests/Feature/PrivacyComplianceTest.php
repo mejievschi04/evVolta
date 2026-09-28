@@ -80,6 +80,7 @@ class PrivacyComplianceTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/me/delete', [
                 'password' => 'password123',
+                'confirm_delete' => true,
             ])
             ->assertOk()
             ->assertJsonPath('message', 'Contul a fost sters.');
@@ -106,7 +107,7 @@ class PrivacyComplianceTest extends TestCase
         ])->save();
 
         $this->actingAs($user, 'api')
-            ->getJson('/api/stations')
+            ->getJson('/api/wallet')
             ->assertStatus(428)
             ->assertJsonPath('code', 'LEGAL_ACCEPTANCE_REQUIRED');
 
@@ -116,7 +117,7 @@ class PrivacyComplianceTest extends TestCase
             ->assertJsonPath('legal.accepted', true);
 
         $this->actingAs($user, 'api')
-            ->getJson('/api/stations')
+            ->getJson('/api/wallet')
             ->assertOk();
     }
 

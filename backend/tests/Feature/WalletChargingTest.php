@@ -36,6 +36,46 @@ class WalletChargingTest extends TestCase
             ->assertCreated();
     }
 
+    public function test_service_user_can_start_without_wallet_balance(): void
+    {
+        $user = $this->createServiceUser(['wallet_balance' => 0]);
+        $station = $this->walletStation();
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/charging/start', [
+                'station_id' => $station->id,
+            ])
+            ->assertCreated();
+
+        $this->assertSame(0.0, (float) $user->fresh()->wallet_balance);
+        $this->assertDatabaseHas('charging_sessions', [
+            'user_id' => $user->id,
+            'charge_budget' => null,
+        ]);
+    }
+
+    public function test_wallet_endpoint_marks_service_as_free_charging(): void
+    {
+        $user = $this->createServiceUser(['wallet_balance' => 0]);
+
+        $this->actingAs($user, 'api')
+            ->getJson('/api/wallet')
+            ->assertOk()
+            ->assertJsonPath('free_charging', true)
+            ->assertJsonPath('requires_prepaid', false)
+            ->assertJsonPath('charge_options.price_per_kwh', 0)
+            ->assertJsonPath('account_type', User::ACCOUNT_TYPE_SERVICE);
+    }
+
+    public function test_service_assert_can_hold_budget_is_noop(): void
+    {
+        $user = $this->createServiceUser(['wallet_balance' => 0]);
+
+        app(WalletService::class)->assertCanHoldBudget($user, 100);
+
+        $this->assertSame(0.0, (float) $user->fresh()->wallet_balance);
+    }
+
     private function walletStation(array $overrides = []): Station
     {
         return Station::query()->create(array_merge([
@@ -49,7 +89,7 @@ class WalletChargingTest extends TestCase
             'last_heartbeat_at' => now(),
             'ocpp_configuration' => [
                 'connectors' => [
-                    1 => ['connectorId' => 1, 'status' => 'Available'],
+                    1 => ['connectorId' => 1, 'status' => 'Preparing'],
                 ],
             ],
         ], $overrides));

@@ -52,7 +52,7 @@ class ChargingController extends Controller
                 $user = $request->user();
                 $prepaidLimits = null;
 
-                if ($this->walletService->enabled() && $user->usesCardPayment()) {
+                if ($this->walletService->enabled() && $user->usesCardPayment() && ! $user->isFreeCharging()) {
                     $prepaidLimits = $this->walletService->resolvePrepaidStart(
                         isset($payload['budget_amount']) ? (float) $payload['budget_amount'] : null,
                         isset($payload['target_kwh']) ? (float) $payload['target_kwh'] : null,
@@ -88,6 +88,14 @@ class ChargingController extends Controller
                     if (! $station->connectorCanStart($requestedConnector, $user)) {
                         throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
                     }
+
+                    // Close the caller's own stale/zombie rows before candidate checks.
+                    $this->chargingStopService->reconcileOpenSessionsBeforeStart(
+                        $station,
+                        (int) $user->id,
+                        $requestedConnector
+                    );
+                    $station = $station->fresh();
                 }
 
                 $connectorId = $station->resolveStartConnectorIdForUser($user, $requestedConnector);
@@ -161,6 +169,16 @@ class ChargingController extends Controller
                         );
                         $station = $station->fresh();
                     } else {
+                        if (
+                            $prepaidLimits !== null
+                            && (float) ($userSessionOnConnector->charge_budget ?? 0) <= 0
+                        ) {
+                            throw new RuntimeException(
+                                'Sesiunea nu are buget prepay. Opreste si porneste din nou cu suma selectata.',
+                                422
+                            );
+                        }
+
                         $this->ocppService->ensureReadyForRemoteCommands($station);
 
                         $userSessionOnConnector->update([
@@ -186,6 +204,16 @@ class ChargingController extends Controller
                     ->first();
 
                 if ($pendingWithoutConnector) {
+                    if (
+                        $prepaidLimits !== null
+                        && (float) ($pendingWithoutConnector->charge_budget ?? 0) <= 0
+                    ) {
+                        throw new RuntimeException(
+                            'Sesiunea nu are buget prepay. Opreste si porneste din nou cu suma selectata.',
+                            422
+                        );
+                    }
+
                     $this->ocppService->ensureReadyForRemoteCommands($station);
 
                     $pendingWithoutConnector->update([
@@ -217,6 +245,16 @@ class ChargingController extends Controller
                     $pendingWrongConnector
                     && ! $this->chargingStopService->sessionIsCurrentlyCharging($pendingWrongConnector, $station)
                 ) {
+                    if (
+                        $prepaidLimits !== null
+                        && (float) ($pendingWrongConnector->charge_budget ?? 0) <= 0
+                    ) {
+                        throw new RuntimeException(
+                            'Sesiunea nu are buget prepay. Opreste si porneste din nou cu suma selectata.',
+                            422
+                        );
+                    }
+
                     $this->ocppService->ensureReadyForRemoteCommands($station);
 
                     $pendingWrongConnector->update([
@@ -245,6 +283,8 @@ class ChargingController extends Controller
                 if ($occupiedConnectorCount >= count($expectedConnectorIds)) {
                     throw new RuntimeException('Toate porturile statiei sunt ocupate.', 422);
                 }
+
+                $this->assertUserMayOpenNewSession($user, $station, $connectorId);
 
                 $session = ChargingSession::query()->create([
                     'user_id' => $request->user()->id,
@@ -502,5 +542,39 @@ class ChargingController extends Controller
                     ? $this->sessionPresentationService->invoiceSummary($result['invoice'])
                     : null),
         ]);
+    }
+
+    /**
+     * Dual-port pe aceeasi statie e permis (max 2). Sesiune pe alta statie sau
+     * a 3-a sesiune activa pe acelasi user e blocata — evita hold-uri orfane.
+     */
+    private function assertUserMayOpenNewSession($user, Station $station, int $connectorId): void
+    {
+        $openSessions = ChargingSession::query()
+            ->where('user_id', $user->id)
+            ->whereNull('end_time')
+            ->get(['id', 'station_id', 'ocpp_connector_id']);
+
+        if ($openSessions->isEmpty()) {
+            return;
+        }
+
+        if ($openSessions->contains(fn ($session) => (int) $session->station_id !== (int) $station->id)) {
+            throw new RuntimeException(
+                'Ai deja o incarcare activa pe alta statie. Opreste-o inainte de a porni alta.',
+                422
+            );
+        }
+
+        $otherOnSameStation = $openSessions
+            ->filter(fn ($session) => (int) ($session->ocpp_connector_id ?: 0) !== $connectorId)
+            ->count();
+
+        if ($otherOnSameStation >= 2) {
+            throw new RuntimeException(
+                'Ai deja doua incarcari active. Opreste una inainte de a porni alta.',
+                422
+            );
+        }
     }
 }

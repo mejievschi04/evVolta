@@ -26,8 +26,17 @@ class TariffService
         return $this->globalPricePerKwh();
     }
 
+    public function servicePricePerKwh(): float
+    {
+        return 0.0;
+    }
+
     public function pricePerKwhForUser(?User $user): float
     {
+        if ($user?->isFreeCharging()) {
+            return $this->servicePricePerKwh();
+        }
+
         if ($user?->isPersonalAccount()) {
             return $this->personalPricePerKwh();
         }

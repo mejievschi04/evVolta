@@ -22,6 +22,13 @@ class BillingService
     {
         $session->loadMissing('user');
 
+        if ($session->user?->isFreeCharging()) {
+            $pricePerKwh = app(TariffService::class)->pricePerKwhForUser($session->user);
+            app(WalletService::class)->settleSession($session, $pricePerKwh);
+
+            return null;
+        }
+
         if (! $session->user?->usesCardPayment()) {
             return null;
         }
@@ -63,22 +70,8 @@ class BillingService
             return null;
         }
 
-        $existing = Invoice::query()
-            ->where('source_session_id', $session->id)
-            ->first();
-
-        if ($existing) {
-            return $existing;
-        }
-
-        if ((float) $session->kwh_consumed <= 0) {
-            return null;
-        }
-
-        return $this->invoiceIssuanceService->createSessionInvoice(
-            $session->fresh(),
-            $this->estimatedSessionCharge($session),
-        );
+        // Always settle wallet holds first — never invent a paid invoice from estimates alone.
+        return $this->finalizeBillingForSession($session);
     }
 
     public function generateMonthlyInvoices(?Carbon $targetMonth = null): int

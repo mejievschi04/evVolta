@@ -117,7 +117,7 @@ si cum ne poti contacta. Se citeste impreuna cu Termenii si conditiile.
             <li>Facturi / evidenta fiscala: aproximativ {{ $retention['invoices_years'] ?? 7 }} ani.</li>
             <li>Sesiuni de incarcare: pana la {{ $retention['charging_sessions_days'] ?? 2555 }} zile.</li>
             <li>Rezervari inchise: {{ $retention['reservations_days'] ?? 730 }} zile.</li>
-            <li>Jurnale audit: {{ $retention['audit_logs_days'] ?? 730 }} zile.</li>
+            <li>Jurnale audit: {{ $retention['audit_logs_days'] ?? 7 }} zile.</li>
             <li>Mesaje OCPP tehnice: {{ $retention['ocpp_messages_days'] ?? 90 }} zile.</li>
         </ul>
         <p>

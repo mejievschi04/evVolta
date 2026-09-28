@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth');
+Route::post('/auth/google', [AuthController::class, 'loginWithGoogle'])->middleware('throttle:auth');
+Route::post('/auth/apple', [AuthController::class, 'loginWithApple'])->middleware('throttle:auth');
 Route::get('/legal', [LegalController::class, 'config']);
 Route::get('/legal/terms', [LegalController::class, 'terms']);
 Route::get('/legal/privacy', [LegalController::class, 'privacy']);

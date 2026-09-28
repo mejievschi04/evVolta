@@ -104,10 +104,13 @@ class WalletService
     public function chargeOptions(?User $user = null): array
     {
         $price = $this->currentPricePerKwh($user);
+        $freeCharging = (bool) $user?->isFreeCharging();
 
         return [
             'price_per_kwh' => $price,
             'currency' => 'MDL',
+            'account_type' => $user?->account_type,
+            'free_charging' => $freeCharging,
             'min_budget' => self::MIN_BUDGET_AMOUNT,
             'max_budget' => self::MAX_BUDGET_AMOUNT,
             'min_target_kwh' => $this->minTargetKwh($user),
@@ -119,7 +122,7 @@ class WalletService
 
     public function assertCanHoldBudget(User $user, float $budgetAmount): void
     {
-        if (! $this->enabled() || ! $user->usesCardPayment()) {
+        if (! $this->enabled() || $user->isFreeCharging() || ! $user->usesPrepaidWallet()) {
             return;
         }
 
@@ -134,17 +137,24 @@ class WalletService
 
     public function holdBudgetForSession(User $user, ChargingSession $session, float $budgetAmount, ?float $targetKwh = null): void
     {
-        if (! $this->enabled() || ! $user->usesCardPayment()) {
+        if (! $this->enabled() || $user->isFreeCharging() || ! $user->usesPrepaidWallet()) {
             return;
         }
 
-        $this->assertCanHoldBudget($user, $budgetAmount);
+        DB::transaction(function () use ($user, $session, $budgetAmount, $targetKwh): void {
+            $user = User::query()
+                ->whereKey($user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $user->decrement('wallet_balance', $budgetAmount);
-        $session->update([
-            'charge_budget' => round($budgetAmount, 2),
-            'target_kwh' => $targetKwh !== null ? round($targetKwh, 3) : null,
-        ]);
+            $this->assertCanHoldBudget($user, $budgetAmount);
+
+            $user->decrement('wallet_balance', $budgetAmount);
+            ChargingSession::query()->whereKey($session->id)->update([
+                'charge_budget' => round($budgetAmount, 2),
+                'target_kwh' => $targetKwh !== null ? round($targetKwh, 3) : null,
+            ]);
+        });
     }
 
     public function settleSession(ChargingSession $session, float $pricePerKwh): float
@@ -157,11 +167,27 @@ class WalletService
             $session->loadMissing('user');
 
             $user = $session->user;
-            $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
             $budget = (float) ($session->charge_budget ?? 0);
 
-            if (! $user?->usesCardPayment() || $budget <= 0) {
-                return $actualCost;
+            // Free charging: never bill energy, but always release any leftover hold
+            // (e.g. plan flipped to service mid-session).
+            if ($user?->isFreeCharging()) {
+                if ($budget > 0) {
+                    $lockedUser = User::query()
+                        ->whereKey($user->id)
+                        ->lockForUpdate()
+                        ->firstOrFail();
+                    $lockedUser->increment('wallet_balance', $budget);
+                    $session->update(['charge_budget' => 0]);
+                }
+
+                return 0.0;
+            }
+
+            $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
+
+            if (! $user || ! $user->usesPrepaidWallet() || ! $this->enabled()) {
+                return $user?->usesPrepaidWallet() ? $actualCost : 0.0;
             }
 
             $user = User::query()
@@ -169,15 +195,27 @@ class WalletService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $charged = round(min($actualCost, $budget), 2);
-            $refund = round(max(0, $budget - $charged), 2);
+            if ($budget > 0) {
+                $charged = round(min($actualCost, $budget), 2);
+                $refund = round(max(0, $budget - $charged), 2);
 
-            if ($refund > 0) {
-                $user->increment('wallet_balance', $refund);
+                if ($refund > 0) {
+                    $user->increment('wallet_balance', $refund);
+                }
+
+                // Mark the hold as settled by shrinking the remaining budget to the
+                // charged amount. Re-running settlement then computes a zero refund.
+                $session->update(['charge_budget' => $charged]);
+
+                return $charged;
             }
 
-            // Mark the hold as settled by shrinking the remaining budget to the
-            // charged amount. Re-running settlement then computes a zero refund.
+            // Prepaid session without a prior hold (e.g. started as service, then
+            // flipped to personal/customer): debit available wallet balance.
+            $charged = round(min($actualCost, $this->balance($user)), 2);
+            if ($charged > 0) {
+                $user->decrement('wallet_balance', $charged);
+            }
             $session->update(['charge_budget' => $charged]);
 
             return $charged;
@@ -189,34 +227,54 @@ class WalletService
         ?string $paymentSessionId = null,
         ?string $paymentIntentId = null,
     ): void {
-        if ($topup->status === 'paid') {
+        $paidTopup = null;
+        $invoice = null;
+        $justCredited = false;
+
+        DB::transaction(function () use ($topup, $paymentSessionId, $paymentIntentId, &$paidTopup, &$invoice, &$justCredited): void {
+            $locked = WalletTopup::query()
+                ->whereKey($topup->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status === 'paid') {
+                $paidTopup = $locked->fresh(['user']);
+
+                return;
+            }
+
+            $locked->update([
+                'status' => 'paid',
+                'paid_at' => now(),
+                'payment_provider' => $locked->payment_provider ?: 'stripe',
+                'payment_session_id' => $paymentSessionId ?: $locked->payment_session_id,
+                'payment_intent_id' => $paymentIntentId ?: $locked->payment_intent_id,
+            ]);
+
+            User::query()
+                ->whereKey($locked->user_id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->increment('wallet_balance', (float) $locked->amount);
+
+            $paidTopup = $locked->fresh(['user']);
+            $invoice = app(InvoiceIssuanceService::class)->createWalletTopupInvoice($paidTopup);
+            $justCredited = true;
+        });
+
+        if (! $justCredited || ! $paidTopup?->user?->email) {
             return;
         }
 
-        $topup->update([
-            'status' => 'paid',
-            'paid_at' => now(),
-            'payment_provider' => $topup->payment_provider ?: 'stripe',
-            'payment_session_id' => $paymentSessionId ?: $topup->payment_session_id,
-            'payment_intent_id' => $paymentIntentId ?: $topup->payment_intent_id,
-        ]);
-
-        $topup->user()->increment('wallet_balance', (float) $topup->amount);
-
-        $paidTopup = $topup->fresh(['user']);
-        $invoice = app(InvoiceIssuanceService::class)->createWalletTopupInvoice($paidTopup);
-
-        if ($paidTopup->user?->email) {
-            try {
-                Mail::to($paidTopup->user->email, $paidTopup->user->name)
-                    ->send(new WalletTopupConfirmationMail($paidTopup, $invoice));
-            } catch (\Throwable $exception) {
-                Log::error('wallet.topup_confirmation_email_failed', [
-                    'topup_id' => $paidTopup->id,
-                    'invoice_id' => $invoice?->id,
-                    'exception' => $exception->getMessage(),
-                ]);
-            }
+        try {
+            Mail::to($paidTopup->user->email, $paidTopup->user->name)
+                ->send(new WalletTopupConfirmationMail($paidTopup, $invoice));
+        } catch (\Throwable $exception) {
+            Log::error('wallet.topup_confirmation_email_failed', [
+                'topup_id' => $paidTopup->id,
+                'invoice_id' => $invoice?->id,
+                'exception' => $exception->getMessage(),
+            ]);
         }
     }
 

@@ -36,7 +36,10 @@ class UserDeletionService
         }
 
         if ((float) $user->wallet_balance > 0.009) {
-            throw new RuntimeException('Soldul contului trebuie sa fie zero inainte de stergere.', 422);
+            // Service accounts cannot spend prepaid balance; allow delete with write-off.
+            if (! $user->isFreeCharging()) {
+                throw new RuntimeException('Soldul contului trebuie sa fie zero inainte de stergere.', 422);
+            }
         }
 
         $unpaidInvoices = Invoice::query()
@@ -58,6 +61,9 @@ class UserDeletionService
             'name' => $user->name,
             'account_type' => $user->account_type,
             'wallet_balance' => $user->wallet_balance,
+            'wallet_write_off' => $user->isFreeCharging() && (float) $user->wallet_balance > 0.009
+                ? round((float) $user->wallet_balance, 2)
+                : null,
             'mode' => 'anonymize_retain_fiscal',
         ];
 
@@ -87,6 +93,7 @@ class UserDeletionService
                 metadata: [
                     'account_type' => $metadata['account_type'],
                     'wallet_balance' => $metadata['wallet_balance'],
+                    'wallet_write_off' => $metadata['wallet_write_off'],
                     'mode' => 'anonymize_retain_fiscal',
                     // Do not store cleartext email after erasure request.
                     'email_hash' => hash('sha256', strtolower((string) $metadata['email'])),
@@ -100,6 +107,8 @@ class UserDeletionService
                 'email' => sprintf('deleted.%d.%s@anonymized.vcharge.local', $user->id, Str::lower(Str::random(8))),
                 'phone' => null,
                 'password' => Hash::make(Str::random(64)),
+                'google_id' => null,
+                'apple_id' => null,
                 'wallet_balance' => 0,
                 'remember_token' => null,
                 'legal_accepted_at' => null,

@@ -104,7 +104,7 @@ class ReservationService
         $status = $station->connectorOcppStatus($connectorId);
 
         if (! $station->isPluggedConnectorStatus($status)) {
-            throw new RuntimeException('Conecteaza masina la portul rezervat inainte de pornire.', 422);
+            throw new RuntimeException('Conecteaza masina la port inainte de pornire.', 422);
         }
     }
 

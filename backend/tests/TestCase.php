@@ -2,13 +2,23 @@
 
 namespace Tests;
 
+use App\Jobs\SendInvoiceEmailJob;
 use App\Models\Station;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Queue;
 
 abstract class TestCase extends BaseTestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Avoid sync Dompdf rendering on every invoice create during the suite.
+        Queue::fake([SendInvoiceEmailJob::class]);
+    }
+
     protected function createAdminUser(array $overrides = []): User
     {
         $user = User::query()->create(array_merge([
@@ -57,6 +67,14 @@ abstract class TestCase extends BaseTestCase
     {
         return $this->createAppUser(array_merge([
             'account_type' => User::ACCOUNT_TYPE_PERSONAL,
+        ], $overrides));
+    }
+
+    protected function createServiceUser(array $overrides = []): User
+    {
+        return $this->createAppUser(array_merge([
+            'account_type' => User::ACCOUNT_TYPE_SERVICE,
+            'wallet_balance' => 0,
         ], $overrides));
     }
 

@@ -10,9 +10,24 @@ return [
         'charging_sessions_days' => (int) env('PRIVACY_SESSIONS_RETENTION_DAYS', 2555), // ~7y
         'reservations_days' => (int) env('PRIVACY_RESERVATIONS_RETENTION_DAYS', 730),
         'wallet_topups_days' => (int) env('PRIVACY_WALLET_RETENTION_DAYS', 2555),
-        'audit_logs_days' => (int) env('PRIVACY_AUDIT_RETENTION_DAYS', 730),
+        'audit_logs_days' => (int) env('PRIVACY_AUDIT_RETENTION_DAYS', 7),
+        // Money / account mutation trail kept longer than generic operational audits.
+        'audit_logs_financial_days' => (int) env('PRIVACY_AUDIT_FINANCIAL_RETENTION_DAYS', 365),
         'ocpp_messages_days' => (int) env('PRIVACY_OCPP_MESSAGES_RETENTION_DAYS', 90),
         'export_throttle_per_minute' => 2,
+    ],
+
+    /*
+    | Action prefixes retained under the longer financial window.
+    */
+    'audit_financial_action_prefixes' => [
+        'wallet.',
+        'backoffice.wallet',
+        'backoffice.user',
+        'charging.',
+        'auth.account_deleted',
+        'invoice.',
+        'privacy.',
     ],
 
     'rights_sla_days' => (int) env('PRIVACY_RIGHTS_SLA_DAYS', 30),

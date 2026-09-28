@@ -9,7 +9,7 @@ class InvoiceMail extends Mailable
     public function __construct(
         private readonly string $subjectLine,
         private readonly string $bodyHtml,
-        private readonly string $attachmentHtml,
+        private readonly string $attachmentPdf,
         private readonly string $attachmentName,
     ) {
     }
@@ -19,8 +19,8 @@ class InvoiceMail extends Mailable
         return $this
             ->subject($this->subjectLine)
             ->html($this->bodyHtml)
-            ->attachData($this->attachmentHtml, $this->attachmentName, [
-                'mime' => 'text/html',
+            ->attachData($this->attachmentPdf, $this->attachmentName, [
+                'mime' => 'application/pdf',
             ]);
     }
 }

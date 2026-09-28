@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\ChargingSession;
 use App\Models\Station;
-use App\Models\User;
 use App\Services\OcppService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
@@ -16,7 +15,7 @@ class StationUnlockConnectorTest extends TestCase
 
     public function test_unlock_connector_requires_active_session(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createAppUser();
         $station = Station::query()->create([
             'name' => 'VOLTA 1',
             'location' => 'Depou',
@@ -30,7 +29,7 @@ class StationUnlockConnectorTest extends TestCase
 
     public function test_unlock_connector_queues_ocpp_command(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createAppUser();
         $station = Station::query()->create([
             'name' => 'VOLTA 1',
             'location' => 'Depou',

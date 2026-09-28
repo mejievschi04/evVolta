@@ -59,6 +59,21 @@ return [
         'scheme' => env('MOBILE_APP_SCHEME', 'vcharge'),
     ],
 
+    'google' => [
+        // OAuth client IDs used as JWT audience (web + iOS + Android).
+        'client_id' => trim((string) env('GOOGLE_CLIENT_ID', '')),
+        'ios_client_id' => trim((string) env('GOOGLE_IOS_CLIENT_ID', '')),
+        'android_client_id' => trim((string) env('GOOGLE_ANDROID_CLIENT_ID', '')),
+        'client_ids' => (string) env('GOOGLE_CLIENT_IDS', ''),
+    ],
+
+    'apple' => [
+        // Bundle ID / Services ID used as JWT audience for Sign in with Apple.
+        'client_id' => trim((string) env('APPLE_CLIENT_ID', 'com.mjsky.voltaev')),
+        'bundle_id' => trim((string) env('APPLE_BUNDLE_ID', 'com.mjsky.voltaev')),
+        'audiences' => (string) env('APPLE_AUDIENCES', ''),
+    ],
+
     'ocpp' => [
         'mode' => env('OCPP_MODE', 'gateway'),
         'host' => env('OCPP_HOST', '0.0.0.0'),

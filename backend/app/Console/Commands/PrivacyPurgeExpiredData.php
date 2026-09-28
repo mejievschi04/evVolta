@@ -20,15 +20,57 @@ class PrivacyPurgeExpiredData extends Command
         $dryRun = (bool) $this->option('dry-run');
         $now = Carbon::now();
 
-        $auditDays = max(30, (int) config('privacy.retention.audit_logs_days', 730));
+        $auditDays = max(7, (int) config('privacy.retention.audit_logs_days', 7));
+        $financialAuditDays = max(
+            $auditDays,
+            (int) config('privacy.retention.audit_logs_financial_days', 365)
+        );
         $ocppDays = max(14, (int) config('privacy.retention.ocpp_messages_days', 90));
         $reservationDays = max(30, (int) config('privacy.retention.reservations_days', 730));
+        $financialPrefixes = array_values(array_filter(
+            (array) config('privacy.audit_financial_action_prefixes', [])
+        ));
 
         $auditCutoff = $now->copy()->subDays($auditDays);
+        $financialAuditCutoff = $now->copy()->subDays($financialAuditDays);
         $ocppCutoff = $now->copy()->subDays($ocppDays);
         $reservationCutoff = $now->copy()->subDays($reservationDays);
 
-        $auditCount = AuditLog::query()->where('created_at', '<', $auditCutoff)->count();
+        $operationalAuditQuery = AuditLog::query()
+            ->where('created_at', '<', $auditCutoff)
+            ->where(function ($query) use ($financialPrefixes): void {
+                if ($financialPrefixes === []) {
+                    return;
+                }
+
+                $query->where(function ($inner) use ($financialPrefixes): void {
+                    foreach ($financialPrefixes as $prefix) {
+                        $inner->where('action', 'not like', $prefix.'%');
+                    }
+                });
+            });
+
+        $financialAuditQuery = AuditLog::query()
+            ->where('created_at', '<', $financialAuditCutoff)
+            ->where(function ($query) use ($financialPrefixes): void {
+                if ($financialPrefixes === []) {
+                    $query->whereRaw('1 = 0');
+
+                    return;
+                }
+
+                $query->where(function ($inner) use ($financialPrefixes): void {
+                    foreach ($financialPrefixes as $index => $prefix) {
+                        if ($index === 0) {
+                            $inner->where('action', 'like', $prefix.'%');
+                        } else {
+                            $inner->orWhere('action', 'like', $prefix.'%');
+                        }
+                    }
+                });
+            });
+
+        $auditCount = (clone $operationalAuditQuery)->count() + (clone $financialAuditQuery)->count();
         $ocppCount = Schema::hasTable('ocpp_messages')
             ? OcppMessage::query()->where('created_at', '<', $ocppCutoff)->count()
             : 0;
@@ -42,7 +84,8 @@ class PrivacyPurgeExpiredData extends Command
             ->where('updated_at', '<', $reservationCutoff)
             ->count();
 
-        $this->info("Audit logs older than {$auditCutoff->toDateString()}: {$auditCount}");
+        $this->info("Operational audit logs older than {$auditCutoff->toDateString()}: ".(clone $operationalAuditQuery)->count());
+        $this->info("Financial audit logs older than {$financialAuditCutoff->toDateString()}: ".(clone $financialAuditQuery)->count());
         $this->info("OCPP messages older than {$ocppCutoff->toDateString()}: {$ocppCount}");
         $this->info("Closed reservations older than {$reservationCutoff->toDateString()}: {$reservationCount}");
 
@@ -52,7 +95,8 @@ class PrivacyPurgeExpiredData extends Command
             return self::SUCCESS;
         }
 
-        AuditLog::query()->where('created_at', '<', $auditCutoff)->delete();
+        $operationalAuditQuery->delete();
+        $financialAuditQuery->delete();
 
         if (Schema::hasTable('ocpp_messages')) {
             OcppMessage::query()->where('created_at', '<', $ocppCutoff)->delete();
@@ -68,7 +112,7 @@ class PrivacyPurgeExpiredData extends Command
             ->where('updated_at', '<', $reservationCutoff)
             ->delete();
 
-        $this->info('Privacy purge completed.');
+        $this->info("Privacy purge completed (audit total matched: {$auditCount}).");
 
         return self::SUCCESS;
     }

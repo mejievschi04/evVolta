@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Backoffice;
 
 use App\Http\Controllers\Controller;
-use App\Mail\InvoiceMail;
 use App\Models\AuditLog;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
@@ -18,6 +17,7 @@ use App\Services\AuditLogService;
 use App\Services\BillingService;
 use App\Services\ChargingStopService;
 use App\Services\InvoiceDocumentService;
+use App\Services\InvoiceMailService;
 use App\Services\SessionPresentationService;
 use App\Services\OcppSessionDebugService;
 use App\Services\OcppService;
@@ -35,7 +35,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use RuntimeException;
 use Illuminate\Support\Str;
@@ -47,6 +46,7 @@ class DashboardController extends Controller
         private readonly BillingService $billingService,
         private readonly ChargingStopService $chargingStopService,
         private readonly InvoiceDocumentService $invoiceDocumentService,
+        private readonly InvoiceMailService $invoiceMailService,
         private readonly OcppService $ocppService,
         private readonly OcppSessionDebugService $ocppSessionDebugService,
         private readonly SessionPresentationService $sessionPresentationService,
@@ -328,8 +328,9 @@ class DashboardController extends Controller
                 'users' => [
                     'customer' => User::query()->where('account_type', User::ACCOUNT_TYPE_CUSTOMER)->count(),
                     'personal' => User::query()->where('account_type', User::ACCOUNT_TYPE_PERSONAL)->count(),
+                    'service' => User::query()->where('account_type', User::ACCOUNT_TYPE_SERVICE)->count(),
                     'walletBalanceTotal' => round((float) User::query()
-                        ->where('account_type', User::ACCOUNT_TYPE_CUSTOMER)
+                        ->whereIn('account_type', [User::ACCOUNT_TYPE_CUSTOMER, User::ACCOUNT_TYPE_PERSONAL])
                         ->sum('wallet_balance'), 2),
                 ],
                 'wallet' => [
@@ -584,17 +585,26 @@ class DashboardController extends Controller
 
     public function auditLogs(Request $request): JsonResponse
     {
+        $retentionDays = max(7, (int) config('privacy.retention.audit_logs_days', 7));
+
         return response()->json([
             'data' => AuditLog::query()
                 ->with(['actor:id,name,email', 'station:id,name', 'session:id,user_id,station_id,start_time'])
+                ->where('created_at', '>=', now()->subDays($retentionDays))
                 ->latest('id')
-                ->limit(100)
+                ->limit(500)
                 ->get(),
         ]);
     }
 
     public function auditLog(AuditLog $auditLog): JsonResponse
     {
+        $retentionDays = max(7, (int) config('privacy.retention.audit_logs_days', 7));
+
+        if ($auditLog->created_at && $auditLog->created_at->lt(now()->subDays($retentionDays))) {
+            abort(404);
+        }
+
         return response()->json([
             'data' => $auditLog->load([
                 'actor:id,name,email',
@@ -1218,7 +1228,7 @@ class DashboardController extends Controller
 
     public function users(Request $request): JsonResponse
     {
-        $accountType = trim((string) $request->query('account_type', ''));
+        $accountType = trim((string) $request->query('account_type', 'all'));
 
         $query = User::query()
             ->where('is_admin', false)
@@ -1234,7 +1244,13 @@ class DashboardController extends Controller
             ->latest('id')
             ->limit(100);
 
-        if (in_array($accountType, [User::ACCOUNT_TYPE_PERSONAL, User::ACCOUNT_TYPE_CUSTOMER], true)) {
+        $allowedTypes = [
+            User::ACCOUNT_TYPE_SERVICE,
+            User::ACCOUNT_TYPE_PERSONAL,
+            User::ACCOUNT_TYPE_CUSTOMER,
+        ];
+
+        if ($accountType !== '' && $accountType !== 'all' && in_array($accountType, $allowedTypes, true)) {
             $query->where('account_type', $accountType);
         }
 
@@ -1598,7 +1614,7 @@ class DashboardController extends Controller
             'name' => 'nullable|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => ['required', 'string', 'min:6'],
-            'account_type' => 'required|in:personal,customer',
+            'account_type' => 'required|in:service,personal,customer',
         ]);
 
         $name = trim((string) ($data['name'] ?? ''));
@@ -1653,7 +1669,7 @@ class DashboardController extends Controller
                 'max:255',
                 Rule::unique('users', 'email')->ignore($user->id),
             ],
-            'account_type' => 'required|in:personal,customer',
+            'account_type' => 'required|in:service,personal,customer',
             'password' => 'nullable|string|min:6',
         ]);
 
@@ -1664,6 +1680,15 @@ class DashboardController extends Controller
             'email',
             'account_type',
         ]);
+
+        if ($data['account_type'] !== $user->account_type
+            && app(WalletService::class)->hasOpenChargingSession($user)
+        ) {
+            return $this->respondMutationError(
+                $request,
+                'Nu poti schimba planul in timpul unei incarcari active. Opreste sesiunea mai intai.',
+            );
+        }
 
         $name = trim((string) ($data['name'] ?? ''));
         $firstName = trim((string) ($data['first_name'] ?? ''));
@@ -1754,10 +1779,10 @@ class DashboardController extends Controller
 
     public function downloadInvoice(Invoice $invoice): Response
     {
-        $html = $this->invoiceDocumentService->html($invoice);
+        $pdf = $this->invoiceDocumentService->pdf($invoice);
 
-        return response($html, 200, [
-            'Content-Type' => 'text/html; charset=UTF-8',
+        return response($pdf, 200, [
+            'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="' . $this->invoiceDocumentService->filename($invoice) . '"',
         ]);
     }
@@ -1770,13 +1795,9 @@ class DashboardController extends Controller
             return $this->respondMutationError($request, 'Factura nu are un client cu email valid.');
         }
 
-        $html = $this->invoiceDocumentService->html($invoice);
-        $filename = $this->invoiceDocumentService->filename($invoice);
-        $subject = 'Factura ' . ($invoice->invoice_number ?: '#' . $invoice->id) . ' - V CHARGE';
-        $body = $this->invoiceDocumentService->emailBody($invoice);
-
-        Mail::to($invoice->user->email, $invoice->user->name)
-            ->send(new InvoiceMail($subject, $body, $html, $filename));
+        if (! $this->invoiceMailService->send($invoice)) {
+            return $this->respondMutationError($request, 'Factura nu a putut fi trimisa pe email.');
+        }
 
         $this->auditLogService->record(
             action: 'backoffice.invoice.sent',

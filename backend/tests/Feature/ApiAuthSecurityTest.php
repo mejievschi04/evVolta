@@ -87,7 +87,34 @@ class ApiAuthSecurityTest extends TestCase
     public function test_jwt_ttl_defaults_are_thirty_days(): void
     {
         $this->assertSame(43200, (int) config('jwt.ttl'));
-        $this->assertSame(43200, (int) config('jwt.refresh_ttl'));
+        $this->assertSame(720, (int) config('jwt.ttl_session'));
+        $this->assertGreaterThanOrEqual(
+            (int) config('jwt.ttl'),
+            (int) config('jwt.refresh_ttl'),
+            'refresh_ttl must be at least as long as access ttl'
+        );
+    }
+
+    public function test_remember_me_false_issues_shorter_token(): void
+    {
+        $user = $this->createAppUser([
+            'email' => 'session@example.test',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $response = $this->postJson('/api/login', [
+            'email' => 'session@example.test',
+            'password' => 'password123',
+            'accept_terms' => true,
+            'remember_me' => false,
+        ])->assertOk();
+
+        $token = $response->json('access_token');
+        $payload = JWTAuth::setToken($token)->getPayload();
+        $ttlSeconds = (int) $payload->get('exp') - (int) $payload->get('iat');
+
+        $this->assertSame(false, $response->json('remember_me'));
+        $this->assertEqualsWithDelta(720 * 60, $ttlSeconds, 5);
     }
 
     public function test_profile_update_writes_audit_log(): void

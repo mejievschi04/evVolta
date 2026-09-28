@@ -51,16 +51,21 @@ class BackofficeInvoicesTest extends TestCase
         $this->withSession($session)
             ->get('/backoffice/invoices/' . $invoice->id . '/download')
             ->assertOk()
-            ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
-            ->assertHeader('Content-Disposition', 'attachment; filename="evm-202604-1.html"')
-            ->assertSee('EVM-202604-1');
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'attachment; filename="evm-202604-1.pdf"');
 
         $this->withSession($session)
             ->postJson('/backoffice/invoices/' . $invoice->id . '/send')
             ->assertOk()
             ->assertJsonPath('message', 'Factura a fost trimisa pe email.');
 
-        Mail::assertSent(InvoiceMail::class);
+        Mail::assertSent(InvoiceMail::class, function (InvoiceMail $mail) {
+            $built = $mail->build();
+            $attachments = $built->rawAttachments ?? [];
+
+            return count($attachments) === 1
+                && ($attachments[0]['options']['mime'] ?? null) === 'application/pdf';
+        });
 
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'backoffice.invoice.sent',

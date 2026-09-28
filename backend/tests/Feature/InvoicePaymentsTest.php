@@ -97,9 +97,8 @@ class InvoicePaymentsTest extends TestCase
         $this->actingAs($user, 'api')
             ->get('/api/invoices/' . $invoice->id . '/download')
             ->assertOk()
-            ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
-            ->assertHeader('Content-Disposition', 'attachment; filename="evm-202604-9.html"')
-            ->assertSee('EVM-202604-9');
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'attachment; filename="evm-202604-9.pdf"');
 
         $this->actingAs($otherUser, 'api')
             ->get('/api/invoices/' . $invoice->id . '/download')

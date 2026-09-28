@@ -141,16 +141,21 @@ class ChargingResumeService
             ]);
 
             if ($carryBudget !== null && $carryBudget >= WalletService::MIN_BUDGET_AMOUNT && $user->usesCardPayment()) {
-                try {
-                    $this->walletService->holdBudgetForSession(
-                        $user->fresh(),
-                        $session->fresh(),
-                        $carryBudget,
-                        $carryTargetKwh
-                    );
-                } catch (RuntimeException) {
-                    // Continua fara hold daca soldul nu mai permite — user poate reporni cu buget nou.
-                }
+                $this->walletService->holdBudgetForSession(
+                    $user->fresh(),
+                    $session->fresh(),
+                    $carryBudget,
+                    $carryTargetKwh
+                );
+            } elseif (
+                $this->walletService->enabled()
+                && $user->usesCardPayment()
+                && ! $user->isFreeCharging()
+            ) {
+                throw new RuntimeException(
+                    'Bugetul ramas este insuficient pentru continuare. Porneste o sesiune noua cu o suma selectata.',
+                    422
+                );
             }
 
             $station->update(['status' => Station::STATUS_CHARGING]);

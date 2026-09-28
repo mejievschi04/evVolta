@@ -24,6 +24,7 @@ class AccountDeletionApiTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/me/delete', [
                 'password' => 'password123',
+                'confirm_delete' => true,
             ])
             ->assertOk()
             ->assertJsonPath('message', 'Contul a fost sters.');
@@ -45,6 +46,7 @@ class AccountDeletionApiTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/me/delete', [
                 'password' => 'wrong-password',
+                'confirm_delete' => true,
             ])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Parola este incorecta.');
@@ -72,6 +74,7 @@ class AccountDeletionApiTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/me/delete', [
                 'password' => 'password123',
+                'confirm_delete' => true,
             ])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Exista o incarcare activa. Opreste sesiunea inainte de stergerea contului.');
@@ -86,6 +89,7 @@ class AccountDeletionApiTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/me/delete', [
                 'password' => 'password123',
+                'confirm_delete' => true,
             ])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Soldul contului trebuie sa fie zero inainte de stergere.');
@@ -114,6 +118,7 @@ class AccountDeletionApiTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/me/delete', [
                 'password' => 'password123',
+                'confirm_delete' => true,
             ])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Contul are facturi neplatite. Achita sau contacteaza suportul.');
@@ -147,6 +152,7 @@ class AccountDeletionApiTest extends TestCase
         $this->actingAs($user, 'api')
             ->postJson('/api/me/delete', [
                 'password' => 'password123',
+                'confirm_delete' => true,
             ])
             ->assertOk();
 

@@ -15,10 +15,10 @@ class ChargingSessionReconcileTest extends TestCase
 
     public function test_reconcile_closes_duplicate_open_sessions_on_same_connector(): void
     {
-        $user = User::query()->create([
-            'name' => 'Driver',
+        $user = $this->createAppUser([
             'email' => 'reconcile@example.test',
-            'password' => bcrypt('password123'),
+            'name' => 'Driver',
+            'wallet_balance' => 500,
         ]);
 
         $station = Station::query()->create([

@@ -1475,7 +1475,7 @@ button {
 .ops-row-user,
 .compact-row.user-row {
   display: grid;
-  grid-template-columns: 44px minmax(180px, 1.4fr) minmax(110px, 0.7fr) minmax(120px, 0.8fr) minmax(90px, 0.6fr) auto;
+  grid-template-columns: 44px minmax(160px, 1.3fr) minmax(90px, 0.55fr) minmax(100px, 0.65fr) minmax(110px, 0.75fr) minmax(80px, 0.5fr) auto;
   align-items: center;
   gap: 14px;
   margin-bottom: 0;
@@ -1508,6 +1508,46 @@ button {
   border-color: rgba(228, 255, 33, 0.55);
   color: var(--ink);
   background: linear-gradient(145deg, #f8ff7a, var(--neon));
+}
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.report-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 9, 5, 0.72);
+}
+
+.report-card h3 {
+  margin: 0;
+  color: #f4ffd0;
+  font-size: 16px;
+}
+
+.report-card p {
+  margin: 0;
+  color: #9fb07a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.report-card label {
+  display: grid;
+  gap: 6px;
+  color: #d8e7b8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.report-card .primary-button {
+  justify-self: start;
 }
 
 .stations-card-grid {
@@ -2446,7 +2486,7 @@ button {
 .compact-row.personal-row,
 .compact-row.client-row,
 .ops-row-user {
-  grid-template-columns: 44px minmax(180px, 1.4fr) minmax(110px, 0.7fr) minmax(120px, 0.8fr) minmax(90px, 0.6fr) auto;
+  grid-template-columns: 44px minmax(160px, 1.3fr) minmax(90px, 0.55fr) minmax(100px, 0.65fr) minmax(110px, 0.75fr) minmax(80px, 0.5fr) auto;
 }
 
 .debt-value {

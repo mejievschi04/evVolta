@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\LegalAcceptanceService;
+use App\Services\SocialAuthService;
 use App\Services\UserDeletionService;
 use App\Services\UserPrivacyExportService;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,7 @@ class AuthController extends Controller
         private readonly LegalAcceptanceService $legalAcceptanceService,
         private readonly UserDeletionService $userDeletionService,
         private readonly UserPrivacyExportService $userPrivacyExportService,
+        private readonly SocialAuthService $socialAuthService,
     ) {
     }
 
@@ -36,8 +38,10 @@ class AuthController extends Controller
             'phone' => 'nullable|string|max:40',
             'password' => ['required', 'string', Password::defaults()],
             'accept_terms' => 'required|accepted',
+            'remember_me' => 'sometimes|boolean',
         ]);
 
+        $remember = $this->wantsRemember($request, $data);
         $firstName = trim((string) ($data['first_name'] ?? ''));
         $lastName = trim((string) ($data['last_name'] ?? ''));
         $fullName = trim($firstName.' '.$lastName);
@@ -62,7 +66,7 @@ class AuthController extends Controller
 
         $this->legalAcceptanceService->recordAcceptance($user, $request, 'register');
 
-        $token = Auth::guard('api')->login($user);
+        $token = $this->issueApiToken($user, $remember);
 
         $this->auditLogService->record(
             action: 'auth.register',
@@ -72,12 +76,15 @@ class AuthController extends Controller
             metadata: [
                 'ip' => $request->ip(),
                 'legal_version' => $this->legalAcceptanceService->currentVersion(),
+                'remember_me' => $remember,
             ],
         );
 
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
+            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60,
+            'remember_me' => $remember,
             'user' => $user->fresh(),
             'legal' => $this->legalAcceptanceService->statusForUser($user->fresh(), $request),
         ], 201);
@@ -89,7 +96,11 @@ class AuthController extends Controller
             'email' => 'required|email',
             'password' => 'required|string',
             'accept_terms' => 'required|accepted',
+            'remember_me' => 'sometimes|boolean',
         ]);
+
+        $remember = $this->wantsRemember($request, $credentials);
+        $this->configureApiTokenTtl($remember);
 
         $loginCredentials = [
             'email' => $credentials['email'],
@@ -152,15 +163,62 @@ class AuthController extends Controller
             subjectId: $user->id,
             metadata: [
                 'ip' => $request->ip(),
+                'remember_me' => $remember,
             ],
         );
 
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
+            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60,
+            'remember_me' => $remember,
             'user' => $user,
             'legal' => $this->legalAcceptanceService->statusForUser($user, $request),
         ]);
+    }
+
+    public function loginWithGoogle(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'id_token' => 'required|string',
+            'accept_terms' => 'required|accepted',
+            'remember_me' => 'sometimes|boolean',
+        ]);
+
+        try {
+            $identity = $this->socialAuthService->verifyGoogleIdToken($data['id_token']);
+            $user = $this->socialAuthService->findOrCreateUser('google', $identity);
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], $exception->getCode() >= 400 ? $exception->getCode() : 401);
+        }
+
+        return $this->completeSocialLogin($request, $user, 'google', $this->wantsRemember($request, $data));
+    }
+
+    public function loginWithApple(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'identity_token' => 'required|string',
+            'full_name' => 'nullable|string|max:255',
+            'accept_terms' => 'required|accepted',
+            'remember_me' => 'sometimes|boolean',
+        ]);
+
+        try {
+            $identity = $this->socialAuthService->verifyAppleIdentityToken(
+                $data['identity_token'],
+                $data['full_name'] ?? null,
+            );
+            $user = $this->socialAuthService->findOrCreateUser('apple', $identity);
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], $exception->getCode() >= 400 ? $exception->getCode() : 401);
+        }
+
+        return $this->completeSocialLogin($request, $user, 'apple', $this->wantsRemember($request, $data));
     }
 
     public function refresh(): JsonResponse
@@ -320,12 +378,25 @@ class AuthController extends Controller
         }
 
         $data = $request->validate([
-            'password' => 'required|string',
+            'password' => 'nullable|string',
+            'confirm_delete' => 'nullable|accepted',
         ]);
 
-        if (! Hash::check($data['password'], $user->password)) {
+        if ($user->usesPasswordForDeletion()) {
+            if (! is_string($data['password'] ?? null) || $data['password'] === '') {
+                return response()->json([
+                    'message' => 'Parola este obligatorie pentru stergerea contului.',
+                ], 422);
+            }
+
+            if (! Hash::check($data['password'], $user->password)) {
+                return response()->json([
+                    'message' => 'Parola este incorecta.',
+                ], 422);
+            }
+        } elseif (! filter_var($data['confirm_delete'] ?? false, FILTER_VALIDATE_BOOL)) {
             return response()->json([
-                'message' => 'Parola este incorecta.',
+                'message' => 'Confirma stergerea contului.',
             ], 422);
         }
 
@@ -368,5 +439,80 @@ class AuthController extends Controller
                 'Content-Disposition' => 'attachment; filename="v-charge-privacy-export-'.$user->id.'.json"',
             ]
         );
+    }
+
+    private function completeSocialLogin(Request $request, User $user, string $provider, bool $remember = true): JsonResponse
+    {
+        if ($user->isAdmin()) {
+            return response()->json([
+                'message' => 'Contul de administrator se foloseste doar in backoffice.',
+            ], 403);
+        }
+
+        if ($user->isAnonymized()) {
+            return response()->json([
+                'message' => 'Contul a fost sters.',
+            ], 403);
+        }
+
+        if (! $this->legalAcceptanceService->hasCurrentAcceptance($user)) {
+            $this->legalAcceptanceService->recordAcceptance($user, $request, 'social_'.$provider);
+            $user = $user->fresh();
+        }
+
+        $token = $this->issueApiToken($user, $remember);
+
+        $this->auditLogService->record(
+            action: 'auth.login_social',
+            actor: $user,
+            subjectType: User::class,
+            subjectId: $user->id,
+            metadata: [
+                'provider' => $provider,
+                'ip' => $request->ip(),
+                'remember_me' => $remember,
+            ],
+        );
+
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60,
+            'remember_me' => $remember,
+            'user' => $user->fresh(),
+            'legal' => $this->legalAcceptanceService->statusForUser($user->fresh(), $request),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function wantsRemember(Request $request, array $data = []): bool
+    {
+        if (array_key_exists('remember_me', $data)) {
+            return filter_var($data['remember_me'], FILTER_VALIDATE_BOOL);
+        }
+
+        if ($request->exists('remember_me')) {
+            return filter_var($request->input('remember_me'), FILTER_VALIDATE_BOOL);
+        }
+
+        return false;
+    }
+
+    private function configureApiTokenTtl(bool $remember): void
+    {
+        $ttl = $remember
+            ? (int) config('jwt.ttl_remember', config('jwt.ttl', 43200))
+            : (int) config('jwt.ttl_session', 720);
+
+        Auth::guard('api')->setTTL(max(1, $ttl));
+    }
+
+    private function issueApiToken(User $user, bool $remember): string
+    {
+        $this->configureApiTokenTtl($remember);
+
+        return Auth::guard('api')->login($user);
     }
 }

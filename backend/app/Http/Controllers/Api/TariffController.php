@@ -15,9 +15,11 @@ class TariffController extends Controller
 
         return response()->json([
             'price_per_kwh' => $tariffService->pricePerKwhForUser($user),
+            'service_price_per_kwh' => $tariffService->servicePricePerKwh(),
             'customer_price_per_kwh' => $tariffService->globalPricePerKwh(),
             'personal_price_per_kwh' => $tariffService->personalPricePerKwh(),
             'account_type' => $user?->account_type,
+            'free_charging' => (bool) $user?->isFreeCharging(),
             'currency' => 'MDL',
         ]);
     }

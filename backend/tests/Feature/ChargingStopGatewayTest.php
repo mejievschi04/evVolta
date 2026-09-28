@@ -25,10 +25,10 @@ class ChargingStopGatewayTest extends TestCase
 
     public function test_gateway_stop_queues_remote_command_without_closing_session(): void
     {
-        $user = User::query()->create([
-            'name' => 'Driver One',
+        $user = $this->createAppUser([
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
+            'name' => 'Driver One',
+            'wallet_balance' => 500,
         ]);
 
         $station = Station::query()->create([
@@ -74,10 +74,10 @@ class ChargingStopGatewayTest extends TestCase
 
     public function test_gateway_stop_without_transaction_id_queues_remote_command(): void
     {
-        $user = User::query()->create([
-            'name' => 'Driver One',
+        $user = $this->createAppUser([
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
+            'name' => 'Driver One',
+            'wallet_balance' => 500,
         ]);
 
         $station = Station::query()->create([

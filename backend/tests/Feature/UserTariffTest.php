@@ -43,6 +43,22 @@ class UserTariffTest extends TestCase
         $this->assertSame(0.40, app(TariffService::class)->pricePerKwhForUser($customer));
     }
 
+    public function test_service_users_have_free_tariff(): void
+    {
+        Tariff::query()->create([
+            'price_per_kwh' => 0.50,
+            'personal_price_per_kwh' => 0.10,
+        ]);
+
+        $service = $this->createServiceUser(['email' => 'service.tariff@example.test']);
+        $tariffService = app(TariffService::class);
+
+        $this->assertSame(0.0, $tariffService->servicePricePerKwh());
+        $this->assertSame(0.0, $tariffService->pricePerKwhForUser($service));
+        $this->assertTrue($service->isFreeCharging());
+        $this->assertFalse($service->usesCardPayment());
+    }
+
     public function test_personal_tariff_falls_back_to_customer_tariff_when_not_set(): void
     {
         Tariff::query()->create(['price_per_kwh' => 0.35]);
@@ -143,6 +159,63 @@ class UserTariffTest extends TestCase
             ->assertJsonPath('price_per_kwh', 0.12)
             ->assertJsonPath('customer_price_per_kwh', 0.5)
             ->assertJsonPath('personal_price_per_kwh', 0.12)
+            ->assertJsonPath('service_price_per_kwh', 0)
+            ->assertJsonPath('free_charging', false)
             ->assertJsonPath('account_type', User::ACCOUNT_TYPE_PERSONAL);
+    }
+
+    public function test_api_tariff_endpoint_returns_free_for_service(): void
+    {
+        Tariff::query()->create([
+            'price_per_kwh' => 0.50,
+            'personal_price_per_kwh' => 0.12,
+        ]);
+
+        $service = $this->createServiceUser(['email' => 'service.api@example.test']);
+
+        $this->actingAs($service, 'api')
+            ->getJson('/api/tariff/current')
+            ->assertOk()
+            ->assertJsonPath('price_per_kwh', 0)
+            ->assertJsonPath('service_price_per_kwh', 0)
+            ->assertJsonPath('free_charging', true)
+            ->assertJsonPath('account_type', User::ACCOUNT_TYPE_SERVICE);
+    }
+
+    public function test_service_session_billing_debits_zero_and_skips_invoice(): void
+    {
+        config(['billing.prepaid_wallet_enabled' => true]);
+
+        Tariff::query()->create([
+            'price_per_kwh' => 0.50,
+            'personal_price_per_kwh' => 0.10,
+        ]);
+
+        $service = $this->createServiceUser([
+            'email' => 'service.bill@example.test',
+            'wallet_balance' => 0,
+        ]);
+
+        $station = Station::query()->create([
+            'name' => 'VOLTA 1',
+            'location' => 'Chisinau',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'station:volta-service',
+        ]);
+
+        $session = ChargingSession::query()->create([
+            'user_id' => $service->id,
+            'station_id' => $station->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'kwh_consumed' => 12,
+            'charge_budget' => null,
+        ]);
+
+        $invoice = app(BillingService::class)->finalizeBillingForSession($session);
+
+        $this->assertNull($invoice);
+        $this->assertSame(0.0, (float) $service->fresh()->wallet_balance);
+        $this->assertSame(0.0, app(WalletService::class)->settleSession($session->fresh(), 0.0));
     }
 }

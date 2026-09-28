@@ -18,6 +18,7 @@ class BackofficeUsersTest extends TestCase
 
         $customer = $this->createAppUser(['email' => 'customer@example.test', 'name' => 'Client Card']);
         $personal = $this->createPersonalUser(['email' => 'personal@example.test', 'name' => 'Angajat VOLTA']);
+        $service = $this->createServiceUser(['email' => 'service@example.test', 'name' => 'Cont Serviciu']);
 
         $session = [
             'backoffice_user_id' => $admin->id,
@@ -37,6 +38,43 @@ class BackofficeUsersTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.email', $personal->email)
             ->assertJsonPath('data.0.account_type', User::ACCOUNT_TYPE_PERSONAL);
+
+        $this->withSession($session)
+            ->getJson('/backoffice/users?account_type=service')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.email', $service->email)
+            ->assertJsonPath('data.0.account_type', User::ACCOUNT_TYPE_SERVICE)
+            ->assertJsonPath('data.0.effective_price_per_kwh', 0);
+
+        $this->withSession($session)
+            ->getJson('/backoffice/users?account_type=all')
+            ->assertOk()
+            ->assertJsonCount(3, 'data');
+    }
+
+    public function test_backoffice_can_create_service_user(): void
+    {
+        $admin = $this->createAdminUser(['email' => 'admin@example.test']);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->postJson('/backoffice/users', [
+                'first_name' => 'Service',
+                'last_name' => 'User',
+                'email' => 'service.create@example.test',
+                'password' => 'secret123',
+                'account_type' => User::ACCOUNT_TYPE_SERVICE,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.account_type', User::ACCOUNT_TYPE_SERVICE);
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'service.create@example.test',
+            'account_type' => User::ACCOUNT_TYPE_SERVICE,
+        ]);
     }
 
     public function test_personal_user_detail_includes_invoices_and_outstanding_balance(): void
@@ -120,12 +158,12 @@ class BackofficeUsersTest extends TestCase
                 'first_name' => 'Ana',
                 'last_name' => 'Popescu',
                 'email' => 'ana.popescu@example.test',
-                'account_type' => User::ACCOUNT_TYPE_PERSONAL,
+                'account_type' => User::ACCOUNT_TYPE_SERVICE,
                 'password' => 'newpass123',
             ])
             ->assertOk()
             ->assertJsonPath('data.email', 'ana.popescu@example.test')
-            ->assertJsonPath('data.account_type', User::ACCOUNT_TYPE_PERSONAL);
+            ->assertJsonPath('data.account_type', User::ACCOUNT_TYPE_SERVICE);
 
         $customer->refresh();
 
@@ -172,7 +210,7 @@ class BackofficeUsersTest extends TestCase
             ->assertOk()
             ->assertJsonPath('message', 'Contul a fost sters.');
 
-        $this->assertDatabaseMissing('users', ['id' => $customer->id]);
+        $this->assertSoftDeleted('users', ['id' => $customer->id]);
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'backoffice.user.deleted',
             'actor_user_id' => $admin->id,

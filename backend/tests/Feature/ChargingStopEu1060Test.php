@@ -24,10 +24,10 @@ class ChargingStopEu1060Test extends TestCase
 
     public function test_remote_stop_uses_cs_assigned_transaction_id_not_meter_values_zero(): void
     {
-        $user = User::query()->create([
-            'name' => 'Driver One',
+        $user = $this->createAppUser([
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
+            'name' => 'Driver One',
+            'wallet_balance' => 500,
         ]);
 
         $station = Station::query()->create([
@@ -70,10 +70,10 @@ class ChargingStopEu1060Test extends TestCase
 
     public function test_rejected_stop_does_not_close_session_in_api(): void
     {
-        $user = User::query()->create([
-            'name' => 'Driver One',
+        $user = $this->createAppUser([
             'email' => 'driver@example.test',
-            'password' => Hash::make('password123'),
+            'name' => 'Driver One',
+            'wallet_balance' => 500,
         ]);
 
         $station = Station::query()->create([
@@ -120,10 +120,10 @@ class ChargingStopEu1060Test extends TestCase
 
     public function test_stop_service_builds_assigned_transaction_payload(): void
     {
-        $user = User::query()->create([
-            'name' => 'Driver One',
+        $user = $this->createAppUser([
             'email' => 'driver2@example.test',
-            'password' => Hash::make('password123'),
+            'name' => 'Driver One',
+            'wallet_balance' => 500,
         ]);
 
         $station = Station::query()->create([

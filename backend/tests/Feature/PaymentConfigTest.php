@@ -11,7 +11,11 @@ class PaymentConfigTest extends TestCase
 
     public function test_customer_receives_card_payment_config(): void
     {
-        config(['services.stripe.secret' => 'sk_test_example']);
+        config([
+            'services.payment.provider' => 'maib',
+            'services.maib.project_key' => 'test-project',
+            'services.maib.project_secret' => 'test-secret',
+        ]);
 
         $user = $this->createAppUser([
             'email' => 'customer@example.test',
@@ -20,14 +24,18 @@ class PaymentConfigTest extends TestCase
         $this->actingAs($user, 'api')
             ->getJson('/api/payments/config')
             ->assertOk()
-            ->assertJsonPath('provider', 'stripe')
+            ->assertJsonPath('provider', 'maib')
             ->assertJsonPath('card_payments_enabled', true)
             ->assertJsonPath('account_type', 'customer');
     }
 
     public function test_personal_user_has_prepaid_wallet_enabled_like_customers(): void
     {
-        config(['services.stripe.secret' => 'sk_test_example']);
+        config([
+            'services.payment.provider' => 'maib',
+            'services.maib.project_key' => 'test-project',
+            'services.maib.project_secret' => 'test-secret',
+        ]);
 
         $user = $this->createPersonalUser([
             'email' => 'personal@example.test',

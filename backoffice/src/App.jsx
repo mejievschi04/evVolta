@@ -44,8 +44,8 @@ const sections = [
   { id: 'reservations', label: 'Rezervari', icon: Calendar },
   { id: 'clients', label: 'Utilizatori', icon: Users },
   { id: 'wallet', label: 'Alimentari', icon: Wallet },
-  { id: 'personal', label: 'Personal', icon: FileText },
   { id: 'invoices', label: 'Facturi', icon: Receipt },
+  { id: 'reports', label: 'Rapoarte', icon: FileText },
   { id: 'audit', label: 'Audit', icon: ShieldCheck },
   { id: 'settings', label: 'Setari', icon: Settings }
 ];
@@ -55,9 +55,8 @@ const endpoints = {
   stations: '/backoffice/stations',
   sessions: '/backoffice/sessions',
   reservations: '/backoffice/reservations',
-  clients: '/backoffice/users?account_type=customer',
+  clients: '/backoffice/users',
   wallet: '/backoffice/wallet-topups',
-  personal: '/backoffice/users?account_type=personal',
   invoices: '/backoffice/invoices',
   audit: '/backoffice/audit-logs'
 };
@@ -71,7 +70,6 @@ const emptyData = {
   walletTopups: [],
   walletRefunds: [],
   walletSummary: null,
-  personal: [],
   invoices: [],
   audit: []
 };
@@ -467,7 +465,16 @@ function effectiveOcppConnectionStatus(station) {
 }
 
 function accountTypeLabel(accountType) {
-  return accountType === 'personal' ? 'Personal' : 'Utilizator';
+  if (accountType === 'service') return 'Serviciu';
+  if (accountType === 'personal') return 'Personal';
+  if (accountType === 'customer') return 'Client';
+  return accountType || '-';
+}
+
+function tariffForAccountType(accountType, customerTariff, personalTariff) {
+  if (accountType === 'service') return 0;
+  if (accountType === 'personal') return personalTariff;
+  return customerTariff;
 }
 
 function statusLabel(status) {
@@ -1257,7 +1264,7 @@ function DashboardView({ dashboard: initialDashboard, loading: parentLoading, ac
             <div className="detail-metrics-grid dash-side-metrics">
               <DetailMetric label="Total facturat" value={formatCurrency(analytics?.revenue?.invoicedTotal ?? stats?.totalRevenue)} helper={`${formatCurrency(analytics?.revenue?.paidTotal)} incasat`} />
               <DetailMetric label="Alimentari luna" value={formatCurrency(analytics?.wallet?.topupsMonth)} helper={`azi ${formatCurrency(analytics?.wallet?.topupsToday ?? stats?.walletTopupsVolumeToday)}`} />
-              <DetailMetric label="Utilizatori" value={formatNumber(stats?.users)} helper={`${formatNumber(analytics?.users?.customer)} conturi`} />
+              <DetailMetric label="Utilizatori" value={formatNumber(stats?.users)} helper={`${formatNumber(analytics?.users?.customer)} client · ${formatNumber(analytics?.users?.personal)} personal · ${formatNumber(analytics?.users?.service)} serviciu`} />
               <DetailMetric label="kWh luna" value={`${formatKwh(analytics?.energy?.month)} kWh`} helper={`${formatNumber(analytics?.sessions?.month)} sesiuni`} />
               <DetailMetric label="OCPP" value={formatNumber(stats?.connectedStations)} helper={`mod ${ocpp?.mode ?? '-'}`} />
             </div>
@@ -1933,6 +1940,166 @@ function SessionsView({ rows, loading, onStop, onDelete, onRefresh, onDownloadIn
   );
 }
 
+function toInputDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toInputMonth(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function ReportsView({ onDownloadReport }) {
+  const today = toInputDate();
+  const thisMonth = toInputMonth();
+  const [dailyDate, setDailyDate] = useState(today);
+  const [monthlyMonth, setMonthlyMonth] = useState(thisMonth);
+  const [topupFrom, setTopupFrom] = useState(today);
+  const [topupTo, setTopupTo] = useState(today);
+  const [busyKey, setBusyKey] = useState('');
+  const [error, setError] = useState('');
+
+  async function runDownload(key, url) {
+    setBusyKey(key);
+    setError('');
+    try {
+      await onDownloadReport(url);
+    } catch (err) {
+      setError(err.message || 'Download-ul raportului a esuat.');
+    } finally {
+      setBusyKey('');
+    }
+  }
+
+  return (
+    <div className="view-stack ops-page">
+      <div className="panel ops-panel">
+        <div className="panel-header ops-panel-header">
+          <div>
+            <h2>Rapoarte</h2>
+            <p>Export PDF pentru contabilitate: statii si alimentari</p>
+          </div>
+          <span className="ops-header-icon"><FileText size={20} /></span>
+        </div>
+
+        {error ? <div className="error-banner">{error}</div> : null}
+
+        <div className="reports-grid">
+          <article className="report-card">
+            <h3>Raport zilnic pe statii</h3>
+            <p>Sesiuni inchise, kWh si venit facturat pe fiecare statie pentru o zi.</p>
+            <label>
+              Data
+              <input
+                onChange={(event) => setDailyDate(event.target.value)}
+                required
+                type="date"
+                value={dailyDate}
+              />
+            </label>
+            <button
+              className="primary-button"
+              disabled={busyKey === 'daily' || !dailyDate}
+              onClick={() => runDownload('daily', `/backoffice/reports/stations/daily?date=${encodeURIComponent(dailyDate)}`)}
+              type="button"
+            >
+              <Download size={16} />
+              {busyKey === 'daily' ? 'Se genereaza...' : 'Descarca PDF'}
+            </button>
+          </article>
+
+          <article className="report-card">
+            <h3>Raport lunar pe statii</h3>
+            <p>Acelasi agregat pe luna calendaristica (YYYY-MM).</p>
+            <label>
+              Luna
+              <input
+                onChange={(event) => setMonthlyMonth(event.target.value)}
+                required
+                type="month"
+                value={monthlyMonth}
+              />
+            </label>
+            <button
+              className="primary-button"
+              disabled={busyKey === 'monthly' || !monthlyMonth}
+              onClick={() => runDownload('monthly', `/backoffice/reports/stations/monthly?month=${encodeURIComponent(monthlyMonth)}`)}
+              type="button"
+            >
+              <Download size={16} />
+              {busyKey === 'monthly' ? 'Se genereaza...' : 'Descarca PDF'}
+            </button>
+          </article>
+
+          <article className="report-card">
+            <h3>Raport alimentari</h3>
+            <p>Alimentari wallet platite pe interval, cu totaluri si returnari.</p>
+            <div className="settings-grid">
+              <label>
+                De la
+                <input
+                  onChange={(event) => setTopupFrom(event.target.value)}
+                  required
+                  type="date"
+                  value={topupFrom}
+                />
+              </label>
+              <label>
+                Pana la
+                <input
+                  onChange={(event) => setTopupTo(event.target.value)}
+                  required
+                  type="date"
+                  value={topupTo}
+                />
+              </label>
+            </div>
+            <div className="ops-filter-row" style={{ marginTop: 8 }}>
+              <button
+                className="filter-chip"
+                onClick={() => {
+                  setTopupFrom(today);
+                  setTopupTo(today);
+                }}
+                type="button"
+              >
+                Azi
+              </button>
+              <button
+                className="filter-chip"
+                onClick={() => {
+                  const start = `${thisMonth}-01`;
+                  setTopupFrom(start);
+                  setTopupTo(today);
+                }}
+                type="button"
+              >
+                Luna curenta
+              </button>
+            </div>
+            <button
+              className="primary-button"
+              disabled={busyKey === 'topups' || !topupFrom || !topupTo}
+              onClick={() => runDownload(
+                'topups',
+                `/backoffice/reports/wallet-topups?from=${encodeURIComponent(topupFrom)}&to=${encodeURIComponent(topupTo)}`
+              )}
+              type="button"
+            >
+              <Download size={16} />
+              {busyKey === 'topups' ? 'Se genereaza...' : 'Descarca PDF'}
+            </button>
+          </article>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
   const [query, setQuery] = useState('');
   const visibleRows = rows.filter((invoice) => matchesQuery(invoice, query, [
@@ -2517,15 +2684,32 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
   );
 }
 
-function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) {
+function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff, personalTariff }) {
   const [query, setQuery] = useState('');
-  const visibleRows = rows.filter((user) => matchesQuery(user, query, [
+  const [planFilter, setPlanFilter] = useState('all');
+  const planFilters = [
+    { id: 'all', label: 'Toti' },
+    { id: 'service', label: 'Serviciu' },
+    { id: 'personal', label: 'Personal' },
+    { id: 'customer', label: 'Client' },
+  ];
+  const planRows = planFilter === 'all'
+    ? rows
+    : rows.filter((user) => user.account_type === planFilter);
+  const visibleRows = planRows.filter((user) => matchesQuery(user, query, [
     (item) => item.name,
     (item) => item.email,
-    (item) => item.currency
+    (item) => item.currency,
+    (item) => accountTypeLabel(item.account_type),
   ]));
-  const totalWallet = rows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
-  const totalSessions = rows.reduce((sum, user) => sum + Number(user.sessions_count || 0), 0);
+  const totalWallet = planRows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
+  const totalSessions = planRows.reduce((sum, user) => sum + Number(user.sessions_count || 0), 0);
+  const planCounts = {
+    all: rows.length,
+    service: rows.filter((user) => user.account_type === 'service').length,
+    personal: rows.filter((user) => user.account_type === 'personal').length,
+    customer: rows.filter((user) => user.account_type === 'customer').length,
+  };
 
   if (loading && !rows.length) return <LoadingState />;
 
@@ -2535,7 +2719,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
         <div className="panel-header ops-panel-header">
           <div>
             <h2>Utilizatori</h2>
-            <p>Conturi cu sold si plata cu cardul</p>
+            <p>Planuri: Serviciu (gratuit), Personal si Client</p>
           </div>
           <div className="panel-header-actions">
             <button className="primary-button" onClick={onCreate} type="button">
@@ -2548,7 +2732,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
         <div className="ops-kpi-bar">
           <div className="ops-kpi">
             <span>Conturi</span>
-            <strong>{formatNumber(rows.length)}</strong>
+            <strong>{formatNumber(planRows.length)}</strong>
           </div>
           <div className="ops-kpi tone-success">
             <span>Sold total</span>
@@ -2563,155 +2747,90 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff }) 
         <div className="ops-control-bar">
           <Toolbar value={query} onChange={setQuery} />
           <div className="ops-filter-row">
+            {planFilters.map((filter) => (
+              <button
+                className={planFilter === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
+                key={filter.id}
+                onClick={() => setPlanFilter(filter.id)}
+                type="button"
+              >
+                {filter.label} ({formatNumber(planCounts[filter.id])})
+              </button>
+            ))}
             <span className="ops-result-count">{formatNumber(visibleRows.length)} afisate</span>
           </div>
         </div>
 
-        {customerTariff != null ? (
-          <div className="tariff-summary-strip">
+        <div className="tariff-summary-strip">
+          <div className="tariff-summary-item">
+            <span className="tariff-summary-icon"><Zap size={16} /></span>
+            <div>
+              <span>Serviciu</span>
+              <strong>Gratuit / 0</strong>
+            </div>
+          </div>
+          {personalTariff != null ? (
+            <div className="tariff-summary-item tariff-summary-item-personal">
+              <span className="tariff-summary-icon"><Zap size={16} /></span>
+              <div>
+                <span>Personal</span>
+                <strong>{formatTariffPrice(personalTariff)} lei/kWh</strong>
+              </div>
+            </div>
+          ) : null}
+          {customerTariff != null ? (
             <div className="tariff-summary-item">
               <span className="tariff-summary-icon"><Zap size={16} /></span>
               <div>
-                <span>Tarif activ utilizatori</span>
+                <span>Client</span>
                 <strong>{formatTariffPrice(customerTariff)} lei/kWh</strong>
               </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
         {rows.length === 0 ? (
           <EmptyState title="Nu exista utilizatori" />
         ) : visibleRows.length === 0 ? (
-          <EmptyState title="Niciun utilizator gasit" detail="Schimba termenul de cautare." />
+          <EmptyState title="Niciun utilizator gasit" detail="Schimba filtrul sau termenul de cautare." />
         ) : (
           <div className="ops-list">
             <div className="ops-list-head ops-row-user" aria-hidden="true">
               <span />
               <span>Utilizator</span>
+              <span>Plan</span>
               <span>Sold</span>
               <span>Tarif</span>
               <span>Sesiuni</span>
               <span>Actiuni</span>
             </div>
-            {visibleRows.map((user) => (
-              <div className="ops-row ops-row-user" key={user.id}>
-                <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
-                <div className="ops-cell">
-                  <strong>{user.name ?? '-'}</strong>
-                  <p>{user.email ?? '-'}</p>
+            {visibleRows.map((user) => {
+              const planTariff = tariffForAccountType(user.account_type, customerTariff, personalTariff);
+              return (
+                <div className="ops-row ops-row-user" key={user.id}>
+                  <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
+                  <div className="ops-cell">
+                    <strong>{user.name ?? '-'}</strong>
+                    <p>{user.email ?? '-'}</p>
+                  </div>
+                  <Badge>{accountTypeLabel(user.account_type)}</Badge>
+                  <Badge variant="success">
+                    {user.account_type === 'service' ? '—' : formatMoney(user.wallet_balance)}
+                  </Badge>
+                  <TariffBadge
+                    fallback={accountTypeLabel(user.account_type)}
+                    value={planTariff}
+                  />
+                  <strong>{formatNumber(user.sessions_count)}</strong>
+                  <div className="ops-actions">
+                    <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
+                      <Eye size={14} />
+                      Detalii
+                    </button>
+                  </div>
                 </div>
-                <Badge variant="success">{formatMoney(user.wallet_balance)}</Badge>
-                <TariffBadge fallback="Tarif utilizatori" value={customerTariff} />
-                <strong>{formatNumber(user.sessions_count)}</strong>
-                <div className="ops-actions">
-                  <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
-                    <Eye size={14} />
-                    Detalii
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function PersonalView({ rows, loading, onCreate, onOpenDetail, personalTariff }) {
-  const [query, setQuery] = useState('');
-  const visibleRows = rows.filter((user) => matchesQuery(user, query, [
-    (item) => item.name,
-    (item) => item.email,
-    (item) => item.currency
-  ]));
-  const totalWallet = rows.reduce((sum, user) => sum + Number(user.wallet_balance || 0), 0);
-  const totalSessions = rows.reduce((sum, user) => sum + Number(user.sessions_count || 0), 0);
-
-  if (loading && !rows.length) return <LoadingState />;
-
-  return (
-    <div className="view-stack ops-page">
-      <div className="panel ops-panel">
-        <div className="panel-header ops-panel-header">
-          <div>
-            <h2>Personal</h2>
-            <p>Conturi interne cu tarif dedicat</p>
-          </div>
-          <div className="panel-header-actions">
-            <button className="primary-button" onClick={onCreate} type="button">
-              <Plus size={18} />
-              Personal nou
-            </button>
-          </div>
-        </div>
-
-        <div className="ops-kpi-bar">
-          <div className="ops-kpi">
-            <span>Conturi</span>
-            <strong>{formatNumber(rows.length)}</strong>
-          </div>
-          <div className="ops-kpi tone-success">
-            <span>Sold total</span>
-            <strong>{formatMoney(totalWallet)}</strong>
-          </div>
-          <div className="ops-kpi tone-live">
-            <span>Sesiuni</span>
-            <strong>{formatNumber(totalSessions)}</strong>
-          </div>
-        </div>
-
-        <div className="ops-control-bar">
-          <Toolbar value={query} onChange={setQuery} />
-          <div className="ops-filter-row">
-            <span className="ops-result-count">{formatNumber(visibleRows.length)} afisate</span>
-          </div>
-        </div>
-
-        {personalTariff != null ? (
-          <div className="tariff-summary-strip">
-            <div className="tariff-summary-item tariff-summary-item-personal">
-              <span className="tariff-summary-icon"><Zap size={16} /></span>
-              <div>
-                <span>Tarif activ personal</span>
-                <strong>{formatTariffPrice(personalTariff)} lei/kWh</strong>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {rows.length === 0 ? (
-          <EmptyState title="Nu exista personal" detail="Adauga conturi de tip Personal." />
-        ) : visibleRows.length === 0 ? (
-          <EmptyState title="Niciun cont personal gasit" detail="Schimba termenul de cautare." />
-        ) : (
-          <div className="ops-list">
-            <div className="ops-list-head ops-row-user" aria-hidden="true">
-              <span />
-              <span>Persoana</span>
-              <span>Sold</span>
-              <span>Tarif</span>
-              <span>Sesiuni</span>
-              <span>Actiuni</span>
-            </div>
-            {visibleRows.map((user) => (
-              <div className="ops-row ops-row-user" key={user.id}>
-                <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
-                <div className="ops-cell">
-                  <strong>{user.name ?? '-'}</strong>
-                  <p>{user.email ?? '-'}</p>
-                </div>
-                <Badge variant="success">{formatMoney(user.wallet_balance)}</Badge>
-                <TariffBadge fallback="Tarif personal" value={personalTariff} />
-                <strong>{formatNumber(user.sessions_count)}</strong>
-                <div className="ops-actions">
-                  <button className="secondary-button mini-button" onClick={() => onOpenDetail(user)} type="button">
-                    <Eye size={14} />
-                    Detalii
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -2787,6 +2906,7 @@ function UserDetailModal({
   const walletRefunds = detail.wallet_refunds ?? [];
   const walletSummary = detail.wallet_summary ?? {};
   const isPrepayAccount = user.account_type === 'customer' || user.account_type === 'personal';
+  const isServiceAccount = user.account_type === 'service';
   const effectivePrice = user.effective_price_per_kwh;
 
   return (
@@ -2857,15 +2977,16 @@ function UserDetailModal({
                     />
                   </label>
                   <label>
-                    Tip cont
+                    Plan
                     <select
                       name="account_type"
                       onChange={(event) => setEditForm((current) => ({ ...current, account_type: event.target.value }))}
                       required
                       value={editForm.account_type}
                     >
-                      <option value="customer">Utilizator</option>
+                      <option value="service">Serviciu</option>
                       <option value="personal">Personal</option>
+                      <option value="customer">Client</option>
                     </select>
                   </label>
                   <label>
@@ -2889,7 +3010,18 @@ function UserDetailModal({
             </div>
 
             <div className="billing-summary-grid">
-              {isPrepayAccount ? (
+              {isServiceAccount ? (
+                <>
+                  <div className="billing-stat">
+                    <span>Plan</span>
+                    <strong>Serviciu</strong>
+                  </div>
+                  <div className="billing-stat billing-stat-tariff">
+                    <span>Tarif aplicat</span>
+                    <strong>Gratuit / 0</strong>
+                  </div>
+                </>
+              ) : isPrepayAccount ? (
                 <>
                   <div className="billing-stat">
                     <span>Sold wallet</span>
@@ -3388,25 +3520,30 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
           <Zap size={18} />
           <div>
             <h3>Tarife energie</h3>
-            <p>Pret per kWh pentru utilizatori si personal</p>
+            <p>Pret per kWh pentru Client si Personal · Serviciu este gratuit</p>
           </div>
         </div>
 
         <div className="tariff-showcase">
-          <article className="tariff-card tariff-card-customer">
-            <span className="tariff-card-label">Utilizatori</span>
-            <strong className="tariff-card-value">
-              {previewCustomerTariff != null && previewCustomerTariff !== ''
-                ? formatTariffPrice(previewCustomerTariff)
-                : '—'}
-            </strong>
-            <span className="tariff-card-unit">lei / kWh</span>
+          <article className="tariff-card">
+            <span className="tariff-card-label">Serviciu</span>
+            <strong className="tariff-card-value">Gratuit</strong>
+            <span className="tariff-card-unit">0 lei / kWh</span>
           </article>
           <article className="tariff-card tariff-card-personal">
             <span className="tariff-card-label">Personal</span>
             <strong className="tariff-card-value">
               {previewPersonalTariff != null && previewPersonalTariff !== ''
                 ? formatTariffPrice(previewPersonalTariff)
+                : '—'}
+            </strong>
+            <span className="tariff-card-unit">lei / kWh</span>
+          </article>
+          <article className="tariff-card tariff-card-customer">
+            <span className="tariff-card-label">Client</span>
+            <strong className="tariff-card-value">
+              {previewCustomerTariff != null && previewCustomerTariff !== ''
+                ? formatTariffPrice(previewCustomerTariff)
                 : '—'}
             </strong>
             <span className="tariff-card-unit">lei / kWh</span>
@@ -3419,7 +3556,7 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
             <input className="input-readonly" readOnly value="MDL (Leu moldovenesc)" />
           </label>
           <label>
-            Tarif kWh utilizatori
+            Client (MDL/kWh)
             <div className="input-affix">
               <input
                 inputMode="decimal"
@@ -3435,7 +3572,7 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
             </div>
           </label>
           <label>
-            Tarif kWh personal
+            Personal (MDL/kWh)
             <div className="input-affix">
               <input
                 inputMode="decimal"
@@ -3723,12 +3860,9 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
 
   const isStation = type === 'station-create' || type === 'station-edit';
   const isEdit = type === 'station-edit';
-  const isPersonalUser = type === 'user-personal';
   const title = isStation
     ? (isEdit ? 'Editeaza statia' : 'Statie noua')
-    : isPersonalUser
-      ? 'Personal nou'
-      : 'Utilizator nou';
+    : 'Utilizator nou';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -3739,9 +3873,7 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
             <p>
               {isStation
                 ? 'Adauga un punct de incarcare'
-                : isPersonalUser
-                  ? 'Cont de tip Personal'
-                  : 'Cont de tip Utilizator'}
+                : 'Alege planul: Serviciu, Personal sau Client'}
             </p>
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Inchide">
@@ -3875,15 +4007,18 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               Email
               <input name="email" type="email" required />
             </label>
+            <label>
+              Plan
+              <select name="account_type" defaultValue="customer" required>
+                <option value="service">Serviciu</option>
+                <option value="personal">Personal</option>
+                <option value="customer">Client</option>
+              </select>
+            </label>
             <label className="full-field">
               Parola
               <input name="password" type="password" required placeholder="Minim 6 caractere" />
             </label>
-            <input
-              name="account_type"
-              type="hidden"
-              value={isPersonalUser ? 'personal' : 'customer'}
-            />
           </div>
         )}
 
@@ -3940,6 +4075,7 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         onCreate={actions.openCustomerForm}
         onOpenDetail={actions.openUserDetail}
         customerTariff={customerTariff}
+        personalTariff={personalTariff}
       />
     ),
     wallet: (
@@ -3951,16 +4087,8 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         summary={data.walletSummary}
       />
     ),
-    personal: (
-      <PersonalView
-        rows={data.personal}
-        loading={loading}
-        onCreate={actions.openPersonalForm}
-        onOpenDetail={actions.openUserDetail}
-        personalTariff={personalTariff}
-      />
-    ),
     invoices: <InvoicesView rows={data.invoices} loading={loading} onDownload={actions.downloadInvoice} onSend={actions.sendInvoice} onDelete={actions.deleteInvoice} />,
+    reports: <ReportsView onDownloadReport={actions.downloadReport} />,
     audit: <AuditView rows={data.audit} loading={loading} onOpenDetail={actions.openAuditDetail} />,
     settings: (
       <div className="view-stack settings-view-stack">
@@ -4112,9 +4240,7 @@ export default function App() {
       ? '/backoffice/stations'
       : modalType === 'station-edit'
         ? `/backoffice/stations/${modalEntity.id}/update`
-        : modalType === 'user-personal' || modalType === 'user-customer'
-          ? '/backoffice/users'
-          : '/backoffice/users';
+        : '/backoffice/users';
 
     await runAction(() => mutateJson(url, values), 'Salvat.');
   }
@@ -4396,6 +4522,31 @@ export default function App() {
     window.open(`/backoffice/invoices/${invoice.id}/download`, '_blank', 'noopener,noreferrer');
   }
 
+  async function downloadReport(url) {
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: { Accept: 'application/pdf' }
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new ApiError(payload.message || 'Raportul nu a putut fi generat.', response.status);
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || 'raport-vcharge.pdf';
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
   async function sendInvoice(invoice) {
     await runAction(
       () => mutateJson(`/backoffice/invoices/${invoice.id}/send`),
@@ -4454,13 +4605,7 @@ export default function App() {
       setActionError('');
       setActionMessage('');
       setModalEntity(null);
-      setModalType('user-customer');
-    },
-    openPersonalForm: () => {
-      setActionError('');
-      setActionMessage('');
-      setModalEntity(null);
-      setModalType('user-personal');
+      setModalType('user-create');
     },
     openStationDetail: async (station) => {
       setStationDetailId(station.id);
@@ -4511,6 +4656,7 @@ export default function App() {
     hardResetStationConnector,
     stopActiveStationSession,
     downloadInvoice,
+    downloadReport,
     sendInvoice,
     deleteInvoice,
     openWalletRefund,

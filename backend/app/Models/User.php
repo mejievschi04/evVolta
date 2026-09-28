@@ -19,6 +19,8 @@ class User extends Authenticatable implements JWTSubject
 
     public const ACCOUNT_TYPE_CUSTOMER = 'customer';
 
+    public const ACCOUNT_TYPE_SERVICE = 'service';
+
     protected $fillable = [
         'name',
         'first_name',
@@ -28,14 +30,22 @@ class User extends Authenticatable implements JWTSubject
         'phone',
         'password',
         'wallet_balance',
+        'google_id',
+        'apple_id',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
         'is_admin',
+        'google_id',
+        'apple_id',
         'legal_accepted_ip',
         'legal_accepted_user_agent',
+    ];
+
+    protected $appends = [
+        'auth_providers',
     ];
 
     protected function casts(): array
@@ -66,14 +76,56 @@ class User extends Authenticatable implements JWTSubject
         return $this->account_type === self::ACCOUNT_TYPE_CUSTOMER;
     }
 
-    public function usesCardPayment(): bool
+    public function isServiceAccount(): bool
+    {
+        return $this->account_type === self::ACCOUNT_TYPE_SERVICE;
+    }
+
+    public function isFreeCharging(): bool
+    {
+        return $this->isServiceAccount();
+    }
+
+    /**
+     * Prepaid wallet plans (Personal + Client). Named distinctly from card rails.
+     */
+    public function usesPrepaidWallet(): bool
     {
         return $this->isCustomerAccount() || $this->isPersonalAccount();
+    }
+
+    /**
+     * @deprecated Use usesPrepaidWallet() — historically meant "wallet prepaid", not a bank card.
+     */
+    public function usesCardPayment(): bool
+    {
+        return $this->usesPrepaidWallet();
     }
 
     public function usesMonthlyBilling(): bool
     {
         return false;
+    }
+
+    /**
+     * @return array{password: bool, google: bool, apple: bool, requires_password_to_delete: bool}
+     */
+    public function getAuthProvidersAttribute(): array
+    {
+        $hasGoogle = filled($this->attributes['google_id'] ?? null);
+        $hasApple = filled($this->attributes['apple_id'] ?? null);
+
+        return [
+            'password' => ! $hasGoogle && ! $hasApple,
+            'google' => $hasGoogle,
+            'apple' => $hasApple,
+            'requires_password_to_delete' => ! $hasGoogle && ! $hasApple,
+        ];
+    }
+
+    public function usesPasswordForDeletion(): bool
+    {
+        return blank($this->google_id) && blank($this->apple_id);
     }
 
     public function isAnonymized(): bool

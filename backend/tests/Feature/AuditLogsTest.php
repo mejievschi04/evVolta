@@ -78,4 +78,67 @@ class AuditLogsTest extends TestCase
             ->assertJsonPath('data.station.name', 'Station Detail')
             ->assertJsonPath('data.metadata.name', 'Station Detail');
     }
+
+    public function test_backoffice_audit_list_only_includes_last_week(): void
+    {
+        config(['privacy.retention.audit_logs_days' => 7]);
+
+        $admin = $this->createAdminUser(['email' => 'admin-audit@example.test']);
+
+        $recent = AuditLog::query()->create([
+            'actor_user_id' => $admin->id,
+            'action' => 'backoffice.station.created',
+            'subject_type' => 'station',
+            'subject_id' => 1,
+            'metadata' => ['name' => 'Recent'],
+        ]);
+        $recent->forceFill(['created_at' => now()->subDays(2)])->save();
+
+        $old = AuditLog::query()->create([
+            'actor_user_id' => $admin->id,
+            'action' => 'backoffice.station.created',
+            'subject_type' => 'station',
+            'subject_id' => 2,
+            'metadata' => ['name' => 'Old'],
+        ]);
+        $old->forceFill(['created_at' => now()->subDays(10)])->save();
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->getJson('/backoffice/audit-logs')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $recent->id);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->getJson('/backoffice/audit-logs/' . $old->id)
+            ->assertNotFound();
+    }
+
+    public function test_privacy_purge_deletes_audit_logs_older_than_one_week(): void
+    {
+        config(['privacy.retention.audit_logs_days' => 7]);
+
+        $keep = AuditLog::query()->create([
+            'action' => 'auth.login',
+            'metadata' => [],
+        ]);
+        $keep->forceFill(['created_at' => now()->subDays(3)])->save();
+
+        $drop = AuditLog::query()->create([
+            'action' => 'auth.login',
+            'metadata' => [],
+        ]);
+        $drop->forceFill(['created_at' => now()->subDays(8)])->save();
+
+        $this->artisan('privacy:purge-expired')->assertSuccessful();
+
+        $this->assertDatabaseHas('audit_logs', ['id' => $keep->id]);
+        $this->assertDatabaseMissing('audit_logs', ['id' => $drop->id]);
+    }
 }

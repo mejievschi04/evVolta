@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\Invoice;
 use App\Services\InvoiceDocumentService;
 use App\Services\InvoiceFiscalCalculator;
-use App\Support\MoneyToWordsRo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -32,7 +31,6 @@ class InvoiceFiscalDocumentTest extends TestCase
     public function test_invoice_html_contains_mandatory_fiscal_elements(): void
     {
         config([
-            'invoice.series' => 'VE',
             'invoice.vat_rate' => 20,
             'invoice.vat_included' => true,
             'invoice.seller.name' => 'V CHARGE SRL',
@@ -56,8 +54,7 @@ class InvoiceFiscalDocumentTest extends TestCase
             'month' => '2026-07',
             'currency' => 'MDL',
             'invoice_type' => 'session',
-            'series' => 'VE',
-            'invoice_number' => 'VE-20260725-0001',
+            'invoice_number' => '0000001',
             'period_start' => '2026-07-25',
             'period_end' => '2026-07-25',
             'total_kwh' => 10,
@@ -84,21 +81,18 @@ class InvoiceFiscalDocumentTest extends TestCase
 
         $this->assertStringContainsString('Furnizor', $html);
         $this->assertStringContainsString('Cumparator', $html);
-        $this->assertStringContainsString('IDNO', $html);
         $this->assertStringContainsString('1002600000000', $html);
-        $this->assertStringContainsString('Cod TVA', $html);
-        $this->assertStringContainsString('Pret unitar fara TVA', $html);
-        $this->assertStringContainsString('Cota TVA', $html);
-        $this->assertStringContainsString('Total TVA', $html);
-        $this->assertStringContainsString('Total de plata', $html);
-        $this->assertStringContainsString('VE-20260725-0001', $html);
+        $this->assertStringContainsString('Denumirea serviciului', $html);
+        $this->assertStringContainsString('Pret unitar', $html);
+        $this->assertStringContainsString('Cota', $html);
+        $this->assertStringContainsString('Valoare', $html);
+        $this->assertStringContainsString('0000001', $html);
         $this->assertStringContainsString('Ion Popescu', $html);
-        $this->assertStringContainsString('art. 117', $html);
-        $this->assertStringContainsString(MoneyToWordsRo::convert(120.0), $html);
+        $this->assertStringContainsString('Data:', $html);
         $this->assertStringContainsString('Content-Security-Policy', $html);
     }
 
-    public function test_download_endpoint_returns_fiscal_html(): void
+    public function test_download_endpoint_returns_fiscal_pdf(): void
     {
         config([
             'invoice.seller.name' => 'V CHARGE SRL',
@@ -116,7 +110,7 @@ class InvoiceFiscalDocumentTest extends TestCase
             'month' => '2026-04',
             'currency' => 'MDL',
             'invoice_type' => 'monthly',
-            'invoice_number' => 'EVM-202604-9',
+            'invoice_number' => '0000009',
             'period_start' => '2026-04-01',
             'period_end' => '2026-04-30',
             'total_amount' => 42.50,
@@ -125,12 +119,44 @@ class InvoiceFiscalDocumentTest extends TestCase
             'status' => 'unpaid',
         ]);
 
-        $this->actingAs($user, 'api')
+        $response = $this->actingAs($user, 'api')
             ->get('/api/invoices/'.$invoice->id.'/download')
             ->assertOk()
-            ->assertSee('Furnizor', false)
-            ->assertSee('Cumparator', false)
-            ->assertSee('Total TVA', false)
-            ->assertSee('EVM-202604-9', false);
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'attachment; filename="0000009.pdf"');
+
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
+    public function test_invoice_numbers_are_seven_digits_sequential(): void
+    {
+        $user = $this->createAppUser(['email' => 'seq@example.test']);
+        $station = \App\Models\Station::query()->create([
+            'name' => 'VOLTA SEQ',
+            'location' => 'Chisinau',
+            'status' => \App\Models\Station::STATUS_AVAILABLE,
+            'qr_code' => 'station:seq-1',
+        ]);
+
+        $sessionOne = \App\Models\ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'start_time' => now()->subHours(2),
+            'end_time' => now()->subHour(),
+            'kwh_consumed' => 2,
+        ]);
+        $sessionTwo = \App\Models\ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'kwh_consumed' => 3,
+        ]);
+
+        $first = app(\App\Services\InvoiceIssuanceService::class)->createSessionInvoice($sessionOne, 8.0);
+        $second = app(\App\Services\InvoiceIssuanceService::class)->createSessionInvoice($sessionTwo, 12.0);
+
+        $this->assertSame('0000001', $first?->invoice_number);
+        $this->assertSame('0000002', $second?->invoice_number);
     }
 }
