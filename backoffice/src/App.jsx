@@ -25,6 +25,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   Settings,
   Square,
   TrendingUp,
@@ -728,13 +729,13 @@ function StationModernCard({
           <button className="station-name-link" onClick={() => onOpenDetail(station)} type="button">
             <strong>{station.name}</strong>
           </button>
-          <p className="station-card-location">
+          <p className="station-card-location" title={station.location || undefined}>
             <MapPin size={13} />
-            {station.location || 'Fara adresa'}
+            <span>{station.location || 'Fara adresa'}</span>
           </p>
-          <p className="station-card-identity">
+          <p className="station-card-identity" title={station.ocpp_identity || undefined}>
             <RadioTower size={13} />
-            {station.ocpp_identity || 'fara OCPP identity'}
+            <span>{station.ocpp_identity || 'fara OCPP identity'}</span>
           </p>
         </div>
         <div className="station-card-badges">
@@ -1171,7 +1172,7 @@ function DashboardView({ dashboard: initialDashboard, loading: parentLoading, ac
           value={`${formatKwh(periodStats?.kwh)} kWh`}
         />
         <StatCard
-          helper={`${formatCurrency(periodStats?.walletTopups)} alimentari wallet`}
+          helper={`${formatCurrency(periodStats?.walletTopups)} alimentari`}
           icon={CircleDollarSign}
           label="Incasari in perioada"
           value={formatCurrency(periodStats?.revenue)}
@@ -1991,15 +1992,17 @@ function ReportsView({ onDownloadReport }) {
           <article className="report-card">
             <h3>Raport lunar pe statii</h3>
             <p>Pe luna aleasa: fiecare zi × fiecare statie (sesiuni, kWh, venit facturat).</p>
-            <label>
-              Luna
-              <input
-                onChange={(event) => setMonthlyMonth(event.target.value)}
-                required
-                type="month"
-                value={monthlyMonth}
-              />
-            </label>
+            <div className="settings-grid">
+              <label>
+                Luna
+                <input
+                  onChange={(event) => setMonthlyMonth(event.target.value)}
+                  required
+                  type="month"
+                  value={monthlyMonth}
+                />
+              </label>
+            </div>
             <button
               className="primary-button"
               disabled={busyKey === 'monthly' || !monthlyMonth}
@@ -2100,7 +2103,7 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
 
   return (
     <ListPanel
-      columns={['Factura', 'Perioada', 'Status', 'Suma / Actiuni']}
+      columns={['Factura', 'Perioada', 'Status', 'Suma', 'Actiuni']}
       emptyTitle="Nu exista facturi"
       icon={Receipt}
       kpis={[
@@ -2119,27 +2122,28 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
           </div>
           <div className="ops-cell">
             <strong>{invoice.month ?? '-'}</strong>
-            <span>{invoiceTypeLabel(invoice.type)}</span>
+            <span>{invoiceTypeLabel(invoice.invoice_type ?? invoice.type)}</span>
           </div>
           <Badge variant={statusVariant(invoice.status)}>{statusLabel(invoice.status)}</Badge>
+          <strong className="ops-amount">{formatMoney(invoice.total_amount)}</strong>
           <div className="ops-actions">
-            <strong>{formatMoney(invoice.total_amount)}</strong>
             <button className="secondary-button mini-button" onClick={() => onDownload(invoice)} type="button">
               <Download size={14} />
               Descarca
             </button>
-            <button className="primary-button mini-button" onClick={() => onSend(invoice)} type="button">
+            <button className="secondary-button mini-button" onClick={() => onSend(invoice)} type="button">
+              <Send size={14} />
               Trimite
             </button>
-            <button className="icon-button danger-icon" onClick={() => onDelete(invoice)} type="button" aria-label="Sterge factura">
-              <X size={16} />
+            <button className="icon-button mini-icon danger-icon" onClick={() => onDelete(invoice)} title="Sterge factura" type="button" aria-label="Sterge factura">
+              <X size={15} />
             </button>
           </div>
         </>
       )}
       resultCount={visibleRows.length}
       rows={visibleRows}
-      rowClassName="ops-row ops-row-4"
+      rowClassName="ops-row ops-row-invoices"
       searchValue={query}
       subtitle="Plati, solduri si documente fiscale"
       title="Facturi"
@@ -2527,19 +2531,24 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
         <div className="ops-control-bar">
           <Toolbar value={query} onChange={setQuery} />
           <div className="ops-filter-row">
-            {walletViewFilters.map((filter) => (
-              <button
-                className={viewMode === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
-                key={filter.id}
-                onClick={() => {
-                  setViewMode(filter.id);
-                  setStatusFilter('');
-                }}
-                type="button"
-              >
-                {filter.label}
-              </button>
-            ))}
+            <div className="ops-segmented" role="tablist">
+              {walletViewFilters.map((filter) => (
+                <button
+                  aria-selected={viewMode === filter.id}
+                  className={viewMode === filter.id ? 'active' : ''}
+                  key={filter.id}
+                  onClick={() => {
+                    setViewMode(filter.id);
+                    setStatusFilter('');
+                  }}
+                  role="tab"
+                  type="button"
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            {viewMode === 'topups' ? <span className="ops-filter-divider" aria-hidden="true" /> : null}
             {viewMode === 'topups' ? walletStatusFilters.map((filter) => (
               <button
                 className={statusFilter === filter.id ? 'filter-chip active-filter' : 'filter-chip'}
@@ -2565,11 +2574,12 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
             <EmptyState title="Niciun rezultat" detail="Schimba filtrul sau cautarea." />
           ) : (
             <div className="ops-list">
-              <div className="ops-list-head ops-row ops-row-4" aria-hidden="true">
+              <div className="ops-list-head ops-row ops-row-5" aria-hidden="true">
                 <span>Utilizator</span>
                 <span>Suma</span>
                 <span>Status</span>
-                <span>Data / Actiuni</span>
+                <span>Data</span>
+                <span className="ops-head-actions">Actiuni</span>
               </div>
               {visibleRows.map((topup) => {
                 const refundableAmount = Number(
@@ -2578,7 +2588,7 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
                 const canRefund = topup.status === 'paid' && refundableAmount > 0;
 
                 return (
-                  <div className="ops-row ops-row-4" key={topup.id}>
+                  <div className="ops-row ops-row-5" key={topup.id}>
                     <div className="ops-cell">
                       <strong>{topup.user?.name ?? `User #${topup.user_id}`}</strong>
                       <p>{topup.user?.email ?? '-'}</p>
@@ -2596,14 +2606,10 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
                       ) : null}
                     </div>
                     <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+                    <div className="ops-cell">
+                      <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
+                    </div>
                     <div className="ops-actions">
-                      <div className="ops-cell">
-                        <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
-                        <span>
-                          {topup.payment_provider ?? '—'}
-                          {topup.payment_session_id ? ` · ${topup.payment_session_id.slice(0, 18)}…` : ''}
-                        </span>
-                      </div>
                       {canRefund ? (
                         <button
                           className="secondary-button mini-button danger-text"
@@ -2646,10 +2652,6 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
                 <Badge variant={statusVariant(refund.status)}>{statusLabel(refund.status)}</Badge>
                 <div className="ops-cell">
                   <strong>{formatDateTime(refund.created_at)}</strong>
-                  <span>
-                    {refund.payment_provider ?? '—'}
-                    {refund.provider_refund_id ? ` · ${refund.provider_refund_id.slice(0, 18)}…` : ''}
-                  </span>
                 </div>
               </div>
             ))}
@@ -2817,7 +2819,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff, pe
 function invoiceTypeLabel(type) {
   if (type === 'monthly') return 'Lunara';
   if (type === 'session') return 'Sesiune';
-  if (type === 'wallet_topup') return 'Alimentare wallet';
+  if (type === 'wallet_topup') return 'Alimentare';
   return type || '-';
 }
 
@@ -3000,7 +3002,7 @@ function UserDetailModal({
               ) : isPrepayAccount ? (
                 <>
                   <div className="billing-stat">
-                    <span>Sold wallet</span>
+                    <span>Sold</span>
                     <strong>{formatMoney(user.wallet_balance)}</strong>
                   </div>
                   <div className="billing-stat">
@@ -3050,7 +3052,7 @@ function UserDetailModal({
               <>
                 <div className="detail-section">
                   <h3>Alimentare manuala</h3>
-                  <p className="detail-empty">Adauga sold in wallet fara card (test / compensare).</p>
+                  <p className="detail-empty">Adauga sold in cont fara card (test / compensare).</p>
                   {creditError ? <div className="error-banner">{creditError}</div> : null}
                   <form
                     onSubmit={(event) => {
@@ -3082,13 +3084,13 @@ function UserDetailModal({
                   </form>
                 </div>
                 <div className="detail-section">
-                  <h3>Alimentari wallet</h3>
+                  <h3>Alimentari</h3>
                   {walletTopups.length === 0 ? (
                     <p className="detail-empty">Nicio alimentare inca.</p>
                   ) : (
                     <div className="detail-table">
                       {walletTopups.map((topup) => (
-                        <div className="detail-row" key={topup.id}>
+                        <div className="detail-row detail-row-split" key={topup.id}>
                           <div>
                             <strong>{formatMoney(topup.amount)}</strong>
                             <p>{formatDateTime(topup.paid_at ?? topup.created_at)}</p>
@@ -3097,7 +3099,6 @@ function UserDetailModal({
                             ) : null}
                           </div>
                           <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
-                          <span>{topup.payment_provider ?? '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -3110,13 +3111,12 @@ function UserDetailModal({
                   ) : (
                     <div className="detail-table">
                       {walletRefunds.map((refund) => (
-                        <div className="detail-row" key={refund.id}>
+                        <div className="detail-row detail-row-split" key={refund.id}>
                           <div>
                             <strong>-{formatMoney(refund.amount)}</strong>
                             <p>{formatDateTime(refund.created_at)}</p>
                           </div>
                           <Badge variant={statusVariant(refund.status)}>{statusLabel(refund.status)}</Badge>
-                          <span>{refund.payment_provider ?? '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -3130,7 +3130,7 @@ function UserDetailModal({
                 <h3>Facturi (arhiva)</h3>
                 <div className="detail-table">
                   {invoices.map((invoice) => (
-                    <div className="detail-row" key={invoice.id}>
+                    <div className="detail-row detail-row-invoice" key={invoice.id}>
                       <div>
                         <strong>{invoice.invoice_number ?? `#${invoice.id}`}</strong>
                         <p>
@@ -3162,7 +3162,7 @@ function UserDetailModal({
               ) : (
                 <div className="detail-table">
                   {sessions.map((session) => (
-                    <div className="detail-row" key={session.id}>
+                    <div className="detail-row detail-row-3" key={session.id}>
                       <div>
                         <strong>{session.station?.name ?? `Statia #${session.station_id}`}</strong>
                         <p>
@@ -3294,20 +3294,36 @@ function StationDetailModal({
                           <span>{formatKwh(connector.telemetry.power_kw, 2)} kW</span>
                         )}
                       </div>
+                      {(connector.error_code && connector.error_code !== 'NoError') || connector.blocking_fault ? (
+                        <p className={`request-meta connector-card-foot ${connector.blocking_fault ? 'is-fault' : ''}`}>
+                          {connector.blocking_fault ? 'Eroare electrica · ' : ''}
+                          {connector.error_code || connector.last_fault_code}
+                          {connector.info ? ` · ${connector.info}` : ''}
+                        </p>
+                      ) : null}
                       {(connector.local_id_tag || connector.has_active_session) && (
                         <p className="request-meta connector-card-foot">
-                          {connector.local_id_tag ? `RFID ${connector.local_id_tag}` : ''}
-                          {connector.has_active_session ? ' · incarcare activa' : ''}
+                          {[connector.local_id_tag ? `RFID ${connector.local_id_tag}` : null, connector.has_active_session ? 'incarcare activa' : null]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </p>
                       )}
                       {effectiveOcppConnectionStatus(station) === 'connected' && (
                         <button
                           className="secondary-button mini-button danger-text"
+                          disabled={Boolean(connector.command_in_progress) || Boolean(connector.blocking_fault)}
                           onClick={() => onHardResetConnector(station, connector.id)}
+                          title={
+                            connector.blocking_fault
+                              ? 'Eroare electrica activa — verifica hardware-ul'
+                              : connector.command_in_progress
+                                ? 'Comanda OCPP in curs — asteapta confirmarea'
+                                : 'Hard Reset port'
+                          }
                           type="button"
                         >
                           <RotateCcw size={14} />
-                          Hard Reset
+                          {connector.command_in_progress ? 'In curs...' : 'Hard Reset'}
                         </button>
                       )}
                     </article>
@@ -3420,33 +3436,33 @@ function StationDetailModal({
           </>
         )}
 
+        {effectiveOcppConnectionStatus(station) === 'connected' && (
+          <div className="station-detail-ops">
+            <button className="secondary-button" onClick={() => onRefreshStatus(station)} type="button">
+              <RefreshCw size={16} />
+              Refresh status
+            </button>
+            <button className="secondary-button" onClick={() => onUnlockConnector(station)} type="button">
+              <Unlock size={16} />
+              Unlock
+            </button>
+            <button className="secondary-button danger-text" onClick={() => onHardResetConnector(station)} type="button">
+              <RotateCcw size={16} />
+              Hard Reset
+            </button>
+            {activeSessions.length > 0 && (
+              <button className="secondary-button danger-icon" onClick={() => onStopActiveSession(station)} type="button">
+                <Square size={16} />
+                Stop sesiune
+              </button>
+            )}
+            <button className="secondary-button" onClick={() => onDiagnostics(station)} type="button">
+              <ClipboardList size={16} />
+              Diagnostics
+            </button>
+          </div>
+        )}
         <div className="modal-actions station-detail-actions">
-          {effectiveOcppConnectionStatus(station) === 'connected' && (
-            <>
-              <button className="secondary-button" onClick={() => onRefreshStatus(station)} type="button">
-                <RefreshCw size={16} />
-                Refresh status
-              </button>
-              <button className="secondary-button" onClick={() => onUnlockConnector(station)} type="button">
-                <Unlock size={16} />
-                Unlock
-              </button>
-              <button className="secondary-button danger-text" onClick={() => onHardResetConnector(station)} type="button">
-                <RotateCcw size={16} />
-                Hard Reset
-              </button>
-              {activeSessions.length > 0 && (
-                <button className="secondary-button danger-icon" onClick={() => onStopActiveSession(station)} type="button">
-                  <Square size={16} />
-                  Stop sesiune
-                </button>
-              )}
-              <button className="secondary-button" onClick={() => onDiagnostics(station)} type="button">
-                <ClipboardList size={16} />
-                Diagnostics
-              </button>
-            </>
-          )}
           <button className="secondary-button" onClick={onClose} type="button">Inchide</button>
         </div>
       </div>
@@ -3811,7 +3827,7 @@ function WalletRefundModal({ topup, error, saving, onClose, onSubmit }) {
           <p className="field-hint full-field">
             {isCardProvider
               ? `Returnezi pe card (provider: ${provider}). Poti returna partial sau total, maxim ${formatMoney(maxRefund)}.`
-              : `Debitezi soldul wallet (fara retur pe card). Maxim ${formatMoney(maxRefund)}.`}
+              : `Debitezi soldul contului (fara retur pe card). Maxim ${formatMoney(maxRefund)}.`}
             {walletBalance < refundableAmount
               ? ' Soldul utilizatorului limiteaza suma (a cheltuit o parte din alimentare).'
               : ''}
@@ -3848,7 +3864,7 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
             <h2>{title}</h2>
             <p>
               {isStation
-                ? 'Adauga un punct de incarcare'
+                ? (isEdit ? 'Modifica datele punctului de incarcare' : 'Adauga un punct de incarcare')
                 : 'Alege planul: Serviciu, Personal sau Client'}
             </p>
           </div>
@@ -3907,9 +3923,9 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
               />
             </label>
             {entity?.id ? (
-              <label>
+              <label className="checkbox-field">
                 <input name="clear_ocpp_auth_password" type="checkbox" value="1" />
-                {' '}Șterge parola OCPP (revine la identity-only)
+                Sterge parola OCPP (revine la identity-only)
               </label>
             ) : null}
             <label>

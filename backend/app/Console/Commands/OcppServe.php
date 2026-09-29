@@ -574,6 +574,7 @@ class OcppServe extends Command
         }
 
         $connectorId = $rawConnectorId;
+        $errorCode = (string) ($payload['errorCode'] ?? 'NoError');
         $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
         $connectorState = array_filter([
             'connectorId' => $connectorId,
@@ -586,6 +587,22 @@ class OcppServe extends Command
                 ? $this->parseOcppTime($payload['timestamp'])->toIso8601String()
                 : now()->toIso8601String(),
         ], fn ($value) => $value !== null && $value !== '');
+
+        if ($errorCode !== '' && $errorCode !== 'NoError') {
+            $connectorState['last_fault_at'] = now()->toIso8601String();
+            $connectorState['last_fault_code'] = $errorCode;
+            if (in_array($errorCode, OcppCommand::NON_AUTO_RECOVERY_ERROR_CODES, true)) {
+                \Illuminate\Support\Facades\Log::warning('ocpp.connector.fault', [
+                    'station_id' => $station->id,
+                    'ocpp_identity' => $station->ocpp_identity,
+                    'connector_id' => $connectorId,
+                    'status' => $ocppStatus,
+                    'error_code' => $errorCode,
+                    'info' => $payload['info'] ?? null,
+                    'vendor_error_code' => $payload['vendorErrorCode'] ?? null,
+                ]);
+            }
+        }
 
         $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
         $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], $connectorState);
@@ -608,7 +625,9 @@ class OcppServe extends Command
             app(OcppService::class)->queueMeterValuesTrigger($station->fresh(), $connectorId, true);
         }
 
-        if (in_array($ocppStatus, ['SuspendedEV', 'SuspendedEVSE'], true)) {
+        $blockingFault = in_array($errorCode, OcppCommand::NON_AUTO_RECOVERY_ERROR_CODES, true);
+
+        if (! $blockingFault && in_array($ocppStatus, ['SuspendedEV', 'SuspendedEVSE'], true)) {
             $this->maybeRecoverSuspendedConnector($station->fresh(), $connectorId);
         }
 
@@ -1053,6 +1072,28 @@ class OcppServe extends Command
                 'acknowledged_at' => now(),
             ]);
 
+            if (in_array($status, [OcppCommand::STATUS_REJECTED, OcppCommand::STATUS_FAILED], true)) {
+                $command->failPendingDependents(
+                    'Comanda parinte a esuat: ' . $command->action . ' (' . $status . ')'
+                );
+            }
+
+            if ($status === OcppCommand::STATUS_ACCEPTED && $command->action === 'Reset') {
+                $delaySeconds = max(1, (int) config('services.ocpp.remote_start_after_recovery_seconds', 10));
+                $command->releaseDelayedDependents(now()->addSeconds($delaySeconds));
+            }
+
+            if (
+                $status === OcppCommand::STATUS_ACCEPTED
+                && $command->action === 'ChangeAvailability'
+                && ($command->payload['type'] ?? null) === 'Operative'
+            ) {
+                // Unlock dependents that were held only on Operative (no Reset in chain).
+                $command->releaseDelayedDependents(now()->addSeconds(
+                    max(1, (int) config('services.ocpp.remote_start_after_recovery_seconds', 10))
+                ));
+            }
+
             if ($command->action === 'RemoteStartTransaction' && $status === OcppCommand::STATUS_ACCEPTED) {
                 $connectorId = (int) ($command->payload['connectorId'] ?? 0);
                 if ($connectorId > 0) {
@@ -1149,6 +1190,10 @@ class OcppServe extends Command
                 'error_message' => $errorCode . ': ' . $description,
                 'acknowledged_at' => now(),
             ]);
+
+            $command->failPendingDependents(
+                'Comanda parinte a esuat: ' . $command->action . ' (' . $errorCode . ')'
+            );
 
             // A failed ReserveNow leaves the reservation stuck in "pending" with the
             // booking fee charged. Roll it back so the slot frees up and the fee is refunded.

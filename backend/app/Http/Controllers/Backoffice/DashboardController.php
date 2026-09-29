@@ -550,8 +550,10 @@ class DashboardController extends Controller
         $liveSummaries = collect($station->liveStatus()['connectors'] ?? [])
             ->keyBy('id');
 
+        $ocppService = $this->ocppService;
+
         return collect($station->expectedConnectorIds())
-            ->map(function (int $connectorId) use ($rawConnectors, $liveSummaries, $station) {
+            ->map(function (int $connectorId) use ($rawConnectors, $liveSummaries, $station, $ocppService) {
                 $connector = $rawConnectors[$connectorId] ?? ['connectorId' => $connectorId];
                 $summary = $liveSummaries->get($connectorId, []);
                 $liveMeter = is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : [];
@@ -565,6 +567,11 @@ class DashboardController extends Controller
                     'can_start' => (bool) ($summary['can_start'] ?? false),
                     'error_code' => $connector['errorCode'] ?? null,
                     'info' => $connector['info'] ?? null,
+                    'vendor_error_code' => $connector['vendorErrorCode'] ?? null,
+                    'last_fault_code' => $connector['last_fault_code'] ?? null,
+                    'last_fault_at' => $connector['last_fault_at'] ?? null,
+                    'blocking_fault' => $ocppService->connectorHasBlockingFault($station, $connectorId),
+                    'command_in_progress' => $ocppService->hasInFlightConnectorCommands($station->id, $connectorId),
                     'timestamp' => $connector['timestamp'] ?? null,
                     'local_id_tag' => $station->localIdTagForConnector($connectorId),
                     'has_active_session' => $station->hasActiveSessionOnConnector($connectorId),

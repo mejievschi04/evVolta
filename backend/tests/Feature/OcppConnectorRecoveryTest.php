@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\ChargingSession;
 use App\Models\OcppCommand;
 use App\Models\Station;
-use App\Models\User;
 use App\Services\OcppService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -53,20 +52,97 @@ class OcppConnectorRecoveryTest extends TestCase
         $commandIds = app(OcppService::class)->recoverConnectorForRemoteStart($station, 2, $session);
 
         $this->assertCount(4, $commandIds);
-        $this->assertDatabaseHas('ocpp_commands', [
-            'station_id' => $station->id,
-            'action' => 'ChangeAvailability',
+
+        $inoperative = OcppCommand::query()->findOrFail($commandIds[0]);
+        $operative = OcppCommand::query()->findOrFail($commandIds[1]);
+        $reset = OcppCommand::query()->findOrFail($commandIds[2]);
+        $remoteStart = OcppCommand::query()->findOrFail($commandIds[3]);
+
+        $this->assertSame('ChangeAvailability', $inoperative->action);
+        $this->assertSame('Inoperative', $inoperative->payload['type']);
+        $this->assertNull($inoperative->depends_on_command_id);
+
+        $this->assertSame('ChangeAvailability', $operative->action);
+        $this->assertSame('Operative', $operative->payload['type']);
+        $this->assertSame($inoperative->id, $operative->depends_on_command_id);
+
+        $this->assertSame('Reset', $reset->action);
+        $this->assertSame($operative->id, $reset->depends_on_command_id);
+
+        $this->assertSame('RemoteStartTransaction', $remoteStart->action);
+        $this->assertSame($reset->id, $remoteStart->depends_on_command_id);
+        $this->assertTrue($remoteStart->available_at->greaterThan(now()->addMonths(6)));
+
+        $readyIds = OcppCommand::query()
+            ->where('station_id', $station->id)
+            ->readyToSend()
+            ->pluck('id')
+            ->all();
+
+        $this->assertSame([$inoperative->id], $readyIds);
+    }
+
+    public function test_operative_ready_only_after_inoperative_accepted(): void
+    {
+        $station = Station::query()->create([
+            'name' => 'Chain station',
+            'location' => 'Test',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'chain-station',
+            'ocpp_identity' => 'chain-station',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
         ]);
-        $this->assertDatabaseHas('ocpp_commands', [
-            'station_id' => $station->id,
-            'action' => 'Reset',
+
+        Config::set('services.ocpp.soft_reset_on_start_reject', false);
+
+        $ids = app(OcppService::class)->recoverConnectorForRemoteStart($station, 1, null, 'stuck', true);
+        $this->assertCount(2, $ids);
+
+        $inoperative = OcppCommand::query()->findOrFail($ids[0]);
+        $operative = OcppCommand::query()->findOrFail($ids[1]);
+
+        $this->assertFalse(
+            OcppCommand::query()->readyToSend()->whereKey($operative->id)->exists()
+        );
+
+        $inoperative->update([
+            'status' => OcppCommand::STATUS_ACCEPTED,
+            'acknowledged_at' => now(),
         ]);
-        $this->assertDatabaseHas('ocpp_commands', [
-            'station_id' => $station->id,
-            'charging_session_id' => $session->id,
-            'action' => 'RemoteStartTransaction',
-            'status' => OcppCommand::STATUS_PENDING,
+
+        $this->assertTrue(
+            OcppCommand::query()->readyToSend()->whereKey($operative->id)->exists()
+        );
+    }
+
+    public function test_recover_skips_when_leakage_fault_present(): void
+    {
+        $station = Station::query()->create([
+            'name' => 'Fault station',
+            'location' => 'Test',
+            'status' => Station::STATUS_OFFLINE,
+            'qr_code' => 'fault-station',
+            'ocpp_identity' => 'fault-station',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => [
+                        'connectorId' => 1,
+                        'status' => 'Faulted',
+                        'errorCode' => 'LeakageRcmuError',
+                    ],
+                ],
+            ],
         ]);
+
+        $commandIds = app(OcppService::class)->recoverConnectorForRemoteStart($station, 1, null, 'stuck', true);
+
+        $this->assertSame([], $commandIds);
+        $this->assertTrue(app(OcppService::class)->connectorHasBlockingFault($station, 1));
     }
 
     public function test_recover_connector_is_rate_limited(): void
@@ -121,5 +197,25 @@ class OcppConnectorRecoveryTest extends TestCase
         $commandIds = app(OcppService::class)->recoverConnectorForRemoteStart($station, 2, null, 'remote_start_rejected', true);
 
         $this->assertNotEmpty($commandIds);
+    }
+
+    public function test_in_flight_commands_block_second_recovery(): void
+    {
+        $station = Station::query()->create([
+            'name' => 'Busy station',
+            'location' => 'Test',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'busy-station',
+            'ocpp_identity' => 'busy-station',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+        ]);
+
+        $first = app(OcppService::class)->recoverConnectorForRemoteStart($station, 2, null, 'manual', true);
+        $this->assertNotEmpty($first);
+
+        $second = app(OcppService::class)->recoverConnectorForRemoteStart($station, 2, null, 'manual', true);
+        $this->assertSame([], $second);
     }
 }

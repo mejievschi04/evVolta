@@ -72,7 +72,8 @@ class OcppService
     public function requeueRemoteStartForSession(
         Station|int $station,
         ChargingSession $session,
-        int $delaySeconds = 2
+        int $delaySeconds = 2,
+        ?int $dependsOnCommandId = null
     ): ?OcppCommand {
         if ($this->isSimulatorMode()) {
             return null;
@@ -123,7 +124,8 @@ class OcppService
             $station,
             $action,
             $payload,
-            now()->addSeconds(max(1, $delaySeconds))
+            now()->addSeconds(max(1, $delaySeconds)),
+            $dependsOnCommandId
         );
         $command->update(['charging_session_id' => $session->id]);
 
@@ -287,21 +289,26 @@ class OcppService
 
         $stop = $this->stopTransaction($station, null);
         $commandIds[] = (int) $stop['command_id'];
+        $previousId = (int) $stop['command_id'];
 
-        $commandIds[] = $this->queueOutboundCommand($station, 'ChangeAvailability', [
+        $inoperative = $this->queueOutboundCommand($station, 'ChangeAvailability', [
             'connectorId' => $connectorId,
             'type' => 'Inoperative',
-        ])->id;
+        ], null, $previousId);
+        $commandIds[] = $inoperative->id;
 
-        $commandIds[] = $this->queueOutboundCommand($station, 'ChangeAvailability', [
+        $operative = $this->queueOutboundCommand($station, 'ChangeAvailability', [
             'connectorId' => $connectorId,
             'type' => 'Operative',
-        ], now()->addSeconds(2))->id;
+        ], null, $inoperative->id);
+        $commandIds[] = $operative->id;
+        $previousId = $operative->id;
 
         if ($softReset) {
-            $commandIds[] = $this->queueOutboundCommand($station, 'Reset', [
+            $reset = $this->queueOutboundCommand($station, 'Reset', [
                 'type' => 'Soft',
-            ], now()->addSeconds(4))->id;
+            ], null, $previousId);
+            $commandIds[] = $reset->id;
         }
 
         return [
@@ -486,28 +493,44 @@ class OcppService
             return [];
         }
 
+        if ($this->connectorHasBlockingFault($station, $connectorId)) {
+            return [];
+        }
+
         $cooldownSeconds = $force ? 45 : 90;
 
         if (! $force && $this->hasRecentConnectorRecovery($station->id, $connectorId, $cooldownSeconds)) {
             return [];
         }
 
+        if ($this->hasInFlightConnectorCommands($station->id, $connectorId)) {
+            return [];
+        }
+
         $commandIds = $this->queueConnectorAvailabilityCycle($station, $connectorId);
+        $previousId = (int) end($commandIds);
 
         if (config('services.ocpp.soft_reset_on_start_reject', true) || $reason === 'manual') {
-            $commandIds[] = $this->queueOutboundCommand($station, 'Reset', [
+            $reset = $this->queueOutboundCommand($station, 'Reset', [
                 'type' => 'Soft',
-            ], now()->addSeconds(4))->id;
+            ], null, $previousId);
+            $commandIds[] = $reset->id;
+            $previousId = $reset->id;
         }
 
         if ($session && ! $session->end_time && ! $session->ocpp_transaction_id) {
+            $delaySeconds = (int) config('services.ocpp.remote_start_after_recovery_seconds', 10);
+            // Hold until parent is accepted; OcppServe releases available_at after Reset/Operative ACK.
             $retry = $this->requeueRemoteStartForSession(
                 $station,
                 $session->fresh(),
-                (int) config('services.ocpp.remote_start_after_recovery_seconds', 10)
+                max(1, $delaySeconds),
+                $previousId
             );
 
             if ($retry) {
+                // Keep blocked until parent ACK, then serve sets available_at = now + delay.
+                $retry->update(['available_at' => now()->addYears(1)]);
                 $commandIds[] = $retry->id;
             }
         }
@@ -531,6 +554,20 @@ class OcppService
 
         if ($connectorId <= 0) {
             throw new RuntimeException('Conector invalid.', 422);
+        }
+
+        if ($this->hasInFlightConnectorCommands($station->id, $connectorId)) {
+            throw new RuntimeException(
+                'O comanda OCPP este deja in curs pe acest conector. Asteapta confirmarea inainte de un nou reset.',
+                409
+            );
+        }
+
+        if ($this->connectorHasBlockingFault($station, $connectorId)) {
+            throw new RuntimeException(
+                'Conectorul raporteaza o eroare electrica (ex. LeakageRcmuError). Verifica hardware-ul inainte de reset.',
+                422
+            );
         }
 
         $sessionForRetry = (
@@ -588,10 +625,26 @@ class OcppService
             );
         }
 
+        if ($this->hasInFlightConnectorCommands($station->id, $connectorId)) {
+            throw new RuntimeException(
+                'O comanda OCPP este deja in curs pe acest conector. Asteapta confirmarea inainte de Hard Reset.',
+                409
+            );
+        }
+
+        if ($this->connectorHasBlockingFault($station, $connectorId)) {
+            throw new RuntimeException(
+                'Conectorul raporteaza o eroare electrica (ex. LeakageRcmuError). Verifica hardware-ul inainte de Hard Reset.',
+                422
+            );
+        }
+
         $commandIds = $this->queueConnectorAvailabilityCycle($station, $connectorId);
-        $commandIds[] = $this->queueOutboundCommand($station, 'Reset', [
+        $previousId = (int) end($commandIds);
+        $reset = $this->queueOutboundCommand($station, 'Reset', [
             'type' => 'Hard',
-        ], now()->addSeconds(4))->id;
+        ], null, $previousId);
+        $commandIds[] = $reset->id;
 
         return [
             'status' => 'queued',
@@ -632,21 +685,54 @@ class OcppService
             ->exists();
     }
 
+    public function hasInFlightConnectorCommands(int $stationId, ?int $connectorId = null): bool
+    {
+        $query = OcppCommand::query()
+            ->where('station_id', $stationId)
+            ->whereIn('action', ['ChangeAvailability', 'Reset', 'UnlockConnector'])
+            ->whereIn('status', [
+                OcppCommand::STATUS_PENDING,
+                OcppCommand::STATUS_SENT,
+            ]);
+
+        if ($connectorId !== null && $connectorId > 0) {
+            $query->where(function ($inner) use ($connectorId) {
+                $inner->where('action', 'Reset')
+                    ->orWhere('payload->connectorId', $connectorId);
+            });
+        }
+
+        return $query->exists();
+    }
+
+    public function connectorHasBlockingFault(Station $station, int $connectorId): bool
+    {
+        $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
+        $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+        $connector = is_array($connectors[$connectorId] ?? null) ? $connectors[$connectorId] : [];
+        $errorCode = (string) ($connector['errorCode'] ?? 'NoError');
+
+        return $errorCode !== ''
+            && $errorCode !== 'NoError'
+            && in_array($errorCode, OcppCommand::NON_AUTO_RECOVERY_ERROR_CODES, true);
+    }
+
     /**
      * @return list<int>
      */
     private function queueConnectorAvailabilityCycle(Station $station, int $connectorId): array
     {
-        return [
-            $this->queueOutboundCommand($station, 'ChangeAvailability', [
-                'connectorId' => $connectorId,
-                'type' => 'Inoperative',
-            ])->id,
-            $this->queueOutboundCommand($station, 'ChangeAvailability', [
-                'connectorId' => $connectorId,
-                'type' => 'Operative',
-            ], now()->addSeconds(2))->id,
-        ];
+        $inoperative = $this->queueOutboundCommand($station, 'ChangeAvailability', [
+            'connectorId' => $connectorId,
+            'type' => 'Inoperative',
+        ]);
+
+        $operative = $this->queueOutboundCommand($station, 'ChangeAvailability', [
+            'connectorId' => $connectorId,
+            'type' => 'Operative',
+        ], null, $inoperative->id);
+
+        return [$inoperative->id, $operative->id];
     }
 
     public function syncConnectorStateBeforeStart(Station|int $station): Station
@@ -827,10 +913,12 @@ class OcppService
         Station $station,
         string $action,
         array $payload,
-        ?\DateTimeInterface $availableAt = null
+        ?\DateTimeInterface $availableAt = null,
+        ?int $dependsOnCommandId = null
     ): OcppCommand {
         return OcppCommand::query()->create([
             'station_id' => $station->id,
+            'depends_on_command_id' => $dependsOnCommandId,
             'message_uid' => (string) Str::uuid(),
             'action' => $action,
             'status' => OcppCommand::STATUS_PENDING,

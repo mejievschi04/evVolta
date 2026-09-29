@@ -360,6 +360,12 @@ button {
   box-shadow: 0 0 22px rgba(228, 255, 33, 0.28);
 }
 
+.primary-button svg,
+.secondary-button svg,
+.icon-button svg {
+  flex-shrink: 0;
+}
+
 .icon-button {
   width: 42px;
   color: #f2ffc3;
@@ -1319,6 +1325,42 @@ button {
   gap: 8px;
 }
 
+.ops-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgba(7, 9, 5, 0.72);
+}
+
+.ops-segmented button {
+  min-height: 26px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  color: #d8e7b8;
+  font-size: 11px;
+  font-weight: 800;
+  background: transparent;
+}
+
+.ops-segmented button.active {
+  color: var(--neon);
+  background: rgba(228, 255, 33, 0.14);
+}
+
+.ops-filter-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border-soft);
+}
+
+.ops-head-actions {
+  text-align: right;
+}
+
 .ops-result-count,
 .sessions-result-count {
   margin-left: auto;
@@ -1368,11 +1410,20 @@ button {
   transform: translateY(-1px);
 }
 
+.ops-list-head.ops-row,
+.ops-list-head.ops-row:hover {
+  min-height: 0;
+  padding: 0 16px 4px;
+  border-color: transparent;
+  background: none;
+  transform: none;
+}
+
 .ops-row,
 .ops-list-head.ops-row-4,
 .table-row.four {
   display: grid;
-  grid-template-columns: minmax(200px, 1.4fr) minmax(110px, 0.7fr) minmax(110px, 0.7fr) minmax(160px, auto);
+  grid-template-columns: minmax(200px, 1.4fr) minmax(110px, 0.7fr) minmax(110px, 0.7fr) minmax(160px, 1fr);
   align-items: center;
   gap: 14px;
 }
@@ -1380,9 +1431,35 @@ button {
 .ops-row-5,
 .ops-list-head.ops-row-5 {
   display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(100px, 0.7fr) minmax(90px, 0.6fr) minmax(110px, 0.7fr) minmax(140px, auto);
+  grid-template-columns: minmax(180px, 1.3fr) minmax(100px, 0.7fr) minmax(90px, 0.6fr) minmax(110px, 0.7fr) minmax(140px, 1fr);
   align-items: center;
   gap: 14px;
+}
+
+.ops-row-invoices,
+.ops-list-head.ops-row-invoices {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) minmax(90px, 0.6fr) minmax(96px, 0.6fr) minmax(90px, 0.6fr) 272px;
+  align-items: center;
+  gap: 14px;
+}
+
+.ops-list-head.ops-row-invoices > span:nth-child(4),
+.ops-row-invoices > .ops-amount {
+  text-align: right;
+}
+
+.ops-list-head.ops-row-invoices > span:last-child {
+  text-align: right;
+}
+
+.ops-row > .badge {
+  justify-self: start;
+}
+
+.icon-button.mini-icon {
+  width: 32px;
+  min-height: 32px;
 }
 
 .sessions-ops-head,
@@ -1469,7 +1546,9 @@ button {
 
 .ops-actions .mini-button,
 .session-ops-actions .mini-button {
+  gap: 6px;
   min-height: 32px;
+  white-space: nowrap;
 }
 
 .ops-row-user,
@@ -1517,7 +1596,8 @@ button {
 }
 
 .report-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   padding: 18px;
   border-radius: 14px;
@@ -1547,7 +1627,22 @@ button {
 }
 
 .report-card .primary-button {
-  justify-self: start;
+  align-self: flex-start;
+  margin-top: auto;
+}
+
+.report-card .settings-grid label {
+  min-width: 0;
+}
+
+.report-card .settings-grid input {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+}
+
+.report-card .settings-grid input::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
 }
 
 .stations-card-grid {
@@ -1593,14 +1688,21 @@ button {
 }
 
 .station-card-modern .station-card-actions-main {
-  flex: 1;
+  flex-wrap: nowrap;
   min-width: 0;
 }
 
 .station-card-modern .station-card-actions-main .secondary-button.mini-button {
-  flex: 1;
+  flex: 1 1 0;
   justify-content: center;
-  min-width: 88px;
+  min-width: 0;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.station-card-modern .station-card-actions-icons .icon-button {
+  width: 34px;
+  min-height: 34px;
 }
 
 .station-card-icon {
@@ -1613,20 +1715,48 @@ button {
   background: linear-gradient(145deg, #f8ff7a, var(--neon));
 }
 
+.station-card-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.station-card-main .station-name-link {
+  justify-self: start;
+  max-width: 100%;
+}
+
 .station-card-main strong {
+  display: block;
+  overflow: hidden;
   color: #ffffff;
   font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .station-card-location,
 .station-card-identity {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 2px;
+  min-width: 0;
+  margin: 0;
   color: #9eb08a;
   font-size: 11px;
   font-weight: 700;
+}
+
+.station-card-location svg,
+.station-card-identity svg {
+  flex-shrink: 0;
+}
+
+.station-card-location span,
+.station-card-identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .station-card-badges {
@@ -1703,12 +1833,9 @@ button {
 }
 
 .station-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding-top: 6px;
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -1770,8 +1897,11 @@ button {
   margin-bottom: 16px;
 }
 
-.ocpp-url {
-  font-size: 12px;
+.ocpp-url,
+.billing-stat strong.ocpp-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.4;
   word-break: break-all;
 }
 
@@ -1840,6 +1970,32 @@ button {
   font-size: 11px;
 }
 
+.connector-card-foot.is-fault {
+  color: #ff8ea0;
+}
+
+.connector-card-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.connector-card-compact > .connector-card-head,
+.connector-card-compact > .connector-metrics,
+.connector-card-compact > .connector-card-foot {
+  margin: 0;
+}
+
+.connector-card-compact > .mini-button {
+  align-self: flex-start;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.connector-card-compact > :has(+ .mini-button) {
+  margin-bottom: 6px;
+}
+
 .meta-grid-compact {
   margin-top: 10px;
   font-size: 12px;
@@ -1874,9 +2030,23 @@ button {
   grid-template-columns: minmax(140px, 1fr) auto;
 }
 
+.station-detail-ops {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.station-detail-ops .secondary-button {
+  justify-content: center;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
 .station-detail-actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .meta-grid {
@@ -2031,6 +2201,12 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.view-toggle .secondary-button.active-filter {
+  border-color: rgba(228, 255, 33, 0.55);
+  color: var(--neon);
+  background: rgba(228, 255, 33, 0.1);
 }
 
 .stations-map-wrap {
@@ -2529,6 +2705,10 @@ button {
   font-size: 13px;
 }
 
+.detail-section > .detail-empty:not(:last-child) {
+  margin-bottom: 14px;
+}
+
 .detail-table {
   display: grid;
   gap: 8px;
@@ -2543,6 +2723,40 @@ button {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: rgba(7, 9, 5, 0.78);
+}
+
+.detail-row.detail-row-split {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.detail-row.detail-row-3 {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.detail-row.detail-row-invoice {
+  grid-template-columns: minmax(0, 1fr) 84px 96px 190px;
+}
+
+.detail-row-invoice > span:not(.badge) {
+  text-align: right;
+}
+
+.detail-row-invoice > .badge {
+  justify-self: center;
+}
+
+.detail-row-invoice > .row-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .detail-row.detail-row-invoice {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .detail-row-invoice > .row-actions {
+    grid-column: 1 / -1;
+  }
 }
 
 .detail-row p {
@@ -2644,6 +2858,26 @@ button {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: rgba(7, 9, 5, 0.9);
+}
+
+.settings-grid label.checkbox-field {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.settings-grid input[type='checkbox'],
+.settings-grid input[type='radio'] {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--neon);
 }
 
 .settings-grid input:focus,
@@ -3032,7 +3266,7 @@ button {
 
 .tariff-showcase {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -3140,6 +3374,7 @@ button {
 
 .tariff-summary-strip {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -3165,6 +3400,7 @@ button {
 
 .tariff-summary-icon {
   display: grid;
+  flex-shrink: 0;
   place-items: center;
   width: 36px;
   height: 36px;
@@ -3174,7 +3410,7 @@ button {
   box-shadow: 0 0 18px rgba(228, 255, 33, 0.2);
 }
 
-.tariff-summary-item span {
+.tariff-summary-item > div > span {
   display: block;
   color: #b8c98d;
   font-size: 12px;
@@ -3277,6 +3513,7 @@ button {
   .session-ops-row,
   .ops-row,
   .ops-row-5,
+  .ops-row-invoices,
   .ops-row-user,
   .table-row,
   .table-row.four,
@@ -3420,6 +3657,7 @@ button {
   .session-ops-row,
   .ops-row,
   .ops-row-5,
+  .ops-row-invoices,
   .ops-row-user,
   .table-row,
   .table-row.four,
@@ -3454,15 +3692,6 @@ button {
 
   .stations-control-bar {
     grid-template-columns: 1fr;
-  }
-
-  .station-card-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .station-card-actions-icons {
-    justify-content: flex-end;
   }
 
   .station-card-badges {
