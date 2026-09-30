@@ -48,6 +48,31 @@ class SessionLiveStreamTest extends TestCase
             ->assertJsonStructure(['stream_version']);
     }
 
+    public function test_live_endpoint_reports_completion_when_session_was_closed_elsewhere(): void
+    {
+        $user = User::factory()->create();
+        $station = Station::query()->create([
+            'name' => 'VOLTA 1',
+            'location' => 'Depou',
+            'status' => Station::STATUS_AVAILABLE,
+        ]);
+
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'start_time' => now()->subMinutes(30),
+            'end_time' => now(),
+            'kwh_consumed' => 4.5,
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->getJson("/api/sessions/{$session->id}/live")
+            ->assertOk()
+            ->assertJsonPath('session_completed.session.id', $session->id)
+            ->assertJsonPath('can_resume', false);
+    }
+
     public function test_live_endpoint_forbids_other_users(): void
     {
         $owner = User::factory()->create();

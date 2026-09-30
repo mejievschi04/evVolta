@@ -143,6 +143,12 @@ class SessionController extends Controller
             'can_resume' => $station
                 && ! $session->end_time
                 && app(ChargingResumeService::class)->connectorCanResume($station, $connectorId),
+            ...($session->end_time ? [
+                'session_completed' => [
+                    'session' => $session,
+                    'invoice' => $session->invoice()->first(),
+                ],
+            ] : []),
             'connector_status' => $station?->connectorOcppStatus($connectorId),
         ];
     }

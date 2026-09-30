@@ -67,7 +67,7 @@ class ChargingResumeService
         $status = $station->connectorOcppStatus($resolvedConnectorId);
         if (! in_array($status, self::RESUMABLE_STATUSES, true)) {
             throw new RuntimeException(
-                'Portul nu este in pauza (SuspendedEV). Status actual: ' . ($status ?: 'necunoscut') . '.',
+                'Incarcarea nu este in pauza pe acest port. Status actual: ' . self::connectorStatusLabel($status) . '.',
                 422
             );
         }
@@ -263,5 +263,22 @@ class ChargingResumeService
         }
 
         return null;
+    }
+
+    private static function connectorStatusLabel(?string $status): string
+    {
+        return match ($status) {
+            'Available' => 'liber',
+            'Preparing' => 'masina conectata',
+            'Charging' => 'se incarca',
+            'SuspendedEV' => 'pauza (masina)',
+            'SuspendedEVSE' => 'pauza (statie)',
+            'Finishing' => 'incarcare oprita',
+            'Reserved' => 'rezervat',
+            'Unavailable' => 'indisponibil',
+            'Faulted' => 'eroare port',
+            null, '' => 'necunoscut',
+            default => $status,
+        };
     }
 }

@@ -108,7 +108,7 @@ class BackofficeWalletTopupsTest extends TestCase
             ->assertJsonPath('data.wallet_refunds', []);
     }
 
-    public function test_backoffice_can_credit_user_wallet_manually(): void
+    public function test_backoffice_cannot_credit_user_wallet_manually(): void
     {
         config(['billing.prepaid_wallet_enabled' => true]);
 
@@ -122,18 +122,10 @@ class BackofficeWalletTopupsTest extends TestCase
             ->postJson('/backoffice/users/' . $customer->id . '/wallet-credit', [
                 'amount' => 500,
             ])
-            ->assertOk()
-            ->assertJsonPath('credited', 500)
-            ->assertJsonPath('user.wallet_balance', 500);
+            ->assertNotFound();
 
-        $this->assertSame(500.0, (float) $customer->fresh()->wallet_balance);
-
-        $this->assertDatabaseHas('wallet_topups', [
-            'user_id' => $customer->id,
-            'amount' => 500,
-            'status' => 'paid',
-            'payment_provider' => 'manual',
-        ]);
+        $this->assertSame(0.0, (float) $customer->fresh()->wallet_balance);
+        $this->assertDatabaseMissing('wallet_topups', ['user_id' => $customer->id]);
     }
 
     public function test_wallet_topups_lists_refunds_after_backoffice_refund(): void

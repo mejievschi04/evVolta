@@ -287,53 +287,6 @@ class WalletService
             ->afterCommit();
     }
 
-    /**
-     * @return array{topup_id: int, credited: float, wallet_balance: float, currency: string}
-     */
-    public function creditManualTopup(User $user, float $amount): array
-    {
-        if (! $this->enabled()) {
-            throw new RuntimeException('Wallet prepay nu este activ.', 422);
-        }
-
-        if (! $user->usesCardPayment()) {
-            throw new RuntimeException('Contul nu foloseste wallet prepay.', 422);
-        }
-
-        $amount = round($amount, 2);
-
-        if ($amount < self::MIN_BUDGET_AMOUNT) {
-            throw new RuntimeException(
-                sprintf('Minim %.2f MDL.', self::MIN_BUDGET_AMOUNT),
-                422
-            );
-        }
-
-        if ($amount > self::MAX_BUDGET_AMOUNT) {
-            throw new RuntimeException(
-                sprintf('Maxim %.2f MDL.', self::MAX_BUDGET_AMOUNT),
-                422
-            );
-        }
-
-        $topup = WalletTopup::query()->create([
-            'user_id' => $user->id,
-            'amount' => $amount,
-            'currency' => $user->currency ?? 'MDL',
-            'status' => 'pending',
-            'payment_provider' => 'manual',
-        ]);
-
-        $this->creditTopup($topup);
-
-        return [
-            'topup_id' => $topup->id,
-            'credited' => $amount,
-            'wallet_balance' => $this->balance($user->fresh()),
-            'currency' => $user->currency ?? 'MDL',
-        ];
-    }
-
     public function refundableBalance(User $user): float
     {
         if (! $this->enabled() || ! $user->usesCardPayment()) {

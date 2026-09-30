@@ -112,7 +112,7 @@ class ChargingResumeTest extends TestCase
                 'connector_id' => 1,
             ])
             ->assertStatus(422)
-            ->assertJsonFragment(['message' => 'Portul nu este in pauza (SuspendedEV). Status actual: Charging.']);
+            ->assertJsonFragment(['message' => 'Incarcarea nu este in pauza pe acest port. Status actual: se incarca.']);
     }
 
     public function test_resume_after_stop_on_suspended_port_without_open_session(): void

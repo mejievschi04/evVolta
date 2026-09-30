@@ -1606,52 +1606,6 @@ class DashboardController extends Controller
         );
     }
 
-    public function creditUserWallet(
-        Request $request,
-        User $user,
-        WalletService $walletService,
-    ): JsonResponse|RedirectResponse {
-        $data = $request->validate([
-            'amount' => 'required|numeric|min:10|max:50000',
-        ]);
-
-        try {
-            $result = $walletService->creditManualTopup($user, (float) $data['amount']);
-        } catch (RuntimeException $exception) {
-            return $this->respondMutationError($request, $exception->getMessage(), (int) ($exception->getCode() ?: 422));
-        }
-
-        $this->auditLogService->record(
-            action: 'backoffice.user.wallet_credited',
-            actor: $this->backofficeActor(),
-            subjectType: User::class,
-            subjectId: $user->id,
-            metadata: [
-                'credited' => $result['credited'],
-                'wallet_balance' => $result['wallet_balance'],
-                'topup_id' => $result['topup_id'],
-            ],
-        );
-
-        return $this->respondMutation(
-            $request,
-            sprintf(
-                'Am alimentat contul lui %s cu %.2f %s.',
-                $user->email,
-                $result['credited'],
-                $result['currency'],
-            ),
-            [
-                'user' => [
-                    'id' => $user->id,
-                    'wallet_balance' => $result['wallet_balance'],
-                ],
-                'topup_id' => $result['topup_id'],
-                'credited' => $result['credited'],
-            ],
-        );
-    }
-
     public function storeUser(Request $request): JsonResponse|RedirectResponse
     {
         $data = $request->validate([

@@ -2829,9 +2829,6 @@ function UserDetailModal({
   error,
   onClose,
   onDownloadInvoice,
-  onCreditWallet,
-  creditSaving,
-  creditError,
   onUpdateUser,
   updateSaving,
   updateError,
@@ -2839,7 +2836,6 @@ function UserDetailModal({
   deleteSaving,
   deleteError,
 }) {
-  const [creditAmount, setCreditAmount] = useState('500');
   const [editForm, setEditForm] = useState({
     first_name: '',
     last_name: '',
@@ -3050,39 +3046,6 @@ function UserDetailModal({
 
             {isPrepayAccount ? (
               <>
-                <div className="detail-section">
-                  <h3>Alimentare manuala</h3>
-                  <p className="detail-empty">Adauga sold in cont fara card (test / compensare).</p>
-                  {creditError ? <div className="error-banner">{creditError}</div> : null}
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      onCreditWallet?.(user, creditAmount);
-                    }}
-                  >
-                    <div className="settings-grid">
-                      <label className="full-field">
-                        Suma (MDL)
-                        <input
-                          inputMode="decimal"
-                          min="10"
-                          name="amount"
-                          onChange={(event) => setCreditAmount(event.target.value)}
-                          placeholder="500"
-                          required
-                          step="0.01"
-                          type="number"
-                          value={creditAmount}
-                        />
-                      </label>
-                    </div>
-                    <div className="modal-actions">
-                      <button className="primary-button" disabled={creditSaving} type="submit">
-                        {creditSaving ? 'Se alimenteaza...' : 'Alimenteaza contul'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
                 <div className="detail-section">
                   <h3>Alimentari</h3>
                   {walletTopups.length === 0 ? (
@@ -4106,8 +4069,6 @@ export default function App() {
   const [userDetail, setUserDetail] = useState(null);
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const [userDetailError, setUserDetailError] = useState('');
-  const [userCreditSaving, setUserCreditSaving] = useState(false);
-  const [userCreditError, setUserCreditError] = useState('');
   const [userUpdateSaving, setUserUpdateSaving] = useState(false);
   const [userUpdateError, setUserUpdateError] = useState('');
   const [userDeleteSaving, setUserDeleteSaving] = useState(false);
@@ -4271,33 +4232,6 @@ export default function App() {
     setActionError('');
     setActionMessage('');
     setWalletRefundTopup(topup);
-  }
-
-  async function creditUserWallet(user, amount) {
-    const parsedAmount = Number(String(amount ?? '').replace(',', '.'));
-    if (!Number.isFinite(parsedAmount) || parsedAmount < 10) {
-      setUserCreditError('Suma minima este 10 MDL.');
-      return;
-    }
-
-    setUserCreditSaving(true);
-    setUserCreditError('');
-    setActionError('');
-    setActionMessage('');
-
-    try {
-      const payload = await mutateJson(`/backoffice/users/${user.id}/wallet-credit`, {
-        amount: parsedAmount,
-      });
-      setActionMessage(payload?.message || 'Cont alimentat.');
-      const detailPayload = await fetchJson(`/backoffice/users/${user.id}`);
-      setUserDetail(detailPayload.data);
-      await reload(true);
-    } catch (error) {
-      setUserCreditError(error.message || 'Alimentarea nu a reusit.');
-    } finally {
-      setUserCreditSaving(false);
-    }
   }
 
   async function updateUserAccount(user, values) {
@@ -4652,7 +4586,6 @@ export default function App() {
     sendInvoice,
     deleteInvoice,
     openWalletRefund,
-    creditUserWallet,
     updateUserAccount,
     saveSettings
   };
@@ -4745,18 +4678,14 @@ export default function App() {
         topup={walletRefundTopup}
       />
       <UserDetailModal
-        creditError={userCreditError}
-        creditSaving={userCreditSaving}
         detail={userDetail}
         error={userDetailError}
         loading={userDetailLoading}
         onClose={() => {
           setUserDetail(null);
           setUserDetailError('');
-          setUserCreditError('');
           setUserDeleteError('');
         }}
-        onCreditWallet={creditUserWallet}
         onDeleteUser={deleteUserAccount}
         deleteError={userDeleteError}
         deleteSaving={userDeleteSaving}
