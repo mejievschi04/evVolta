@@ -871,28 +871,46 @@ function formatDashboardPeriodLabel(periodInfo) {
   })}`;
 }
 
+function formatTrendValue(value, valueKey) {
+  if (!value) {
+    return '';
+  }
+
+  if (valueKey === 'sessions') {
+    return String(Math.round(value));
+  }
+
+  const digits = value >= 100 ? 0 : 1;
+
+  return new Intl.NumberFormat('ro-RO', { maximumFractionDigits: digits }).format(value);
+}
+
 function TrendBars({ items = [], valueKey = 'sessions', label = 'Sesiuni', granularity = 'day' }) {
   const peak = items.reduce((max, item) => Math.max(max, Number(item[valueKey] || 0)), 0);
   const hourly = granularity === 'hour';
   const barStyle = hourly
     ? undefined
     : { gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` };
+  const total = items.reduce((sum, item) => sum + Number(item[valueKey] || 0), 0);
 
   return (
     <div className="trend-chart">
       <div className="trend-chart-head">
         <span>{label}</span>
-        <strong>{formatNumber(items.reduce((sum, item) => sum + Number(item[valueKey] || 0), 0))} total</strong>
+        <strong>{formatNumber(total)} total</strong>
       </div>
       <div className={`trend-bars${hourly ? ' trend-bars-hourly' : ''}`} style={barStyle}>
         {items.map((item) => {
           const value = Number(item[valueKey] || 0);
-          const height = peak ? Math.max((value / peak) * 100, value ? 10 : 0) : 0;
+          const height = peak && value ? Math.max((value / peak) * 100, 8) : 0;
 
           return (
             <div className="trend-bar-col" key={item.date} title={`${item.label}: ${formatNumber(value)}`}>
-              <div className="trend-bar-track">
-                <span className="trend-bar-fill" style={{ height: `${height}%` }} />
+              <span className={`trend-bar-value${value ? '' : ' is-zero'}`}>
+                {formatTrendValue(value, valueKey)}
+              </span>
+              <div className="trend-bar-plot">
+                {height ? <span className="trend-bar-fill" style={{ height: `${height}%` }} /> : null}
               </div>
               <small>{item.label}</small>
             </div>
@@ -1178,10 +1196,10 @@ function DashboardView({ dashboard: initialDashboard, loading: parentLoading, ac
           value={formatCurrency(periodStats?.revenue)}
         />
         <StatCard
-          helper={`${formatNumber(analytics?.revenue?.unpaidInvoices)} facturi neplatite`}
-          icon={Receipt}
-          label="Restanta totala"
-          value={formatCurrency(analytics?.revenue?.unpaidTotal)}
+          helper="Disponibil in conturile clientilor"
+          icon={Wallet}
+          label="Sold in conturi"
+          value={formatCurrency(analytics?.users?.walletBalanceTotal)}
         />
       </section>
 
@@ -2090,14 +2108,11 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
   ]));
 
   const summary = useMemo(() => {
-    const paid = rows.filter((invoice) => invoice.status === 'paid');
-    const unpaid = rows.filter((invoice) => invoice.status !== 'paid');
-    const total = unpaid.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
+    const total = rows.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
 
     return {
-      paid: paid.length,
-      unpaid: unpaid.length,
-      outstanding: total
+      count: rows.length,
+      total
     };
   }, [rows]);
 
@@ -2107,9 +2122,8 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
       emptyTitle="Nu exista facturi"
       icon={Receipt}
       kpis={[
-        { label: 'Platite', value: formatNumber(summary.paid), tone: 'success' },
-        { label: 'Neplatite', value: formatNumber(summary.unpaid), tone: 'warning' },
-        { label: 'Restanta', value: formatMoney(summary.outstanding), tone: 'danger' }
+        { label: 'Facturi', value: formatNumber(summary.count) },
+        { label: 'Total', value: formatMoney(summary.total), tone: 'success' }
       ]}
       loading={loading}
       noResults={rows.length > 0 && visibleRows.length === 0}
@@ -3013,16 +3027,6 @@ function UserDetailModal({
               ) : (
                 <>
                   <div className="billing-stat">
-                    <span>Datorie curenta</span>
-                    <strong className={billing.outstanding_balance > 0 ? 'debt-value' : ''}>
-                      {formatMoney(billing.outstanding_balance)}
-                    </strong>
-                  </div>
-                  <div className="billing-stat">
-                    <span>Facturi neplatite</span>
-                    <strong>{formatNumber(billing.unpaid_invoices_count)}</strong>
-                  </div>
-                  <div className="billing-stat">
                     <span>Total facturat</span>
                     <strong>{formatMoney(billing.total_billed)}</strong>
                   </div>
@@ -3153,7 +3157,7 @@ function UserDetailModal({
             <div className="detail-section detail-section-danger">
               <h3>Stergere cont</h3>
               <p className="detail-empty">
-                Sterge definitiv contul utilizatorului. Soldul trebuie sa fie zero, fara incarcare activa sau facturi neplatite.
+                Sterge definitiv contul utilizatorului. Soldul trebuie sa fie zero si sa nu existe o incarcare activa.
               </p>
               {deleteError ? <div className="error-banner">{deleteError}</div> : null}
               <div className="modal-actions">
@@ -4623,7 +4627,7 @@ export default function App() {
           <div className="topbar-actions">
             <div className="quick-metrics">
               <TopMetric label="Active" value={formatNumber(dashboardStats?.activeSessions)} icon={Activity} />
-              <TopMetric label="Neplatite" value={formatNumber(dashboardStats?.unpaidInvoices)} icon={CircleDollarSign} />
+              <TopMetric label="Alimentari azi" value={formatNumber(dashboardStats?.walletTopupsPaidToday)} icon={Wallet} />
               <TopMetric label="Online" value={formatNumber(dashboardStats?.availableStations)} icon={RadioTower} />
             </div>
             <span className="operator" title={operatorName}>{initialsFrom(operatorName)}</span>
