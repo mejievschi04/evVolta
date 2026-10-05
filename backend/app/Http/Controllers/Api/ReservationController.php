@@ -67,9 +67,11 @@ class ReservationController extends Controller
                 (int) $payload['duration_minutes'],
             );
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() ?: 500);
+            ], $this->httpStatusFor($exception, 500));
         }
 
         return response()->json([
@@ -83,9 +85,11 @@ class ReservationController extends Controller
         try {
             $result = $this->reservationService->cancel($request->user(), $reservation);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() ?: 500);
+            ], $this->httpStatusFor($exception, 500));
         }
 
         return response()->json([
@@ -103,9 +107,11 @@ class ReservationController extends Controller
         try {
             $plugState = $this->reservationService->verifyPlugForReservation($reservation);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() ?: 500);
+            ], $this->httpStatusFor($exception, 500));
         }
 
         return response()->json(['data' => $plugState]);

@@ -218,9 +218,11 @@ class StationController extends Controller
                 $retryRemoteStart
             );
         } catch (\RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() ?: 422);
+            ], $this->httpStatusFor($exception, 422));
         }
 
         return response()->json([
@@ -261,9 +263,11 @@ class StationController extends Controller
         try {
             $result = $this->ocppService->unlockConnector($station, $connectorId);
         } catch (\RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() ?: 422);
+            ], $this->httpStatusFor($exception, 422));
         }
 
         return response()->json([

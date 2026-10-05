@@ -794,9 +794,9 @@ class DashboardController extends Controller
         try {
             $result = app(OcppService::class)->requestDiagnostics($station);
         } catch (RuntimeException $exception) {
-            $status = $exception->getCode() >= 400 && $exception->getCode() < 600
-                ? (int) $exception->getCode()
-                : 422;
+            $this->rethrowIfInfrastructure($exception);
+
+            $status = $this->httpStatusFor($exception, 422);
 
             return response()->json(['message' => $exception->getMessage()], $status);
         }
@@ -858,10 +858,12 @@ class DashboardController extends Controller
                 ],
             ]);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return $this->respondMutationError(
                 $request,
                 $exception->getMessage(),
-                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+                $this->httpStatusFor($exception, 422)
             );
         }
     }
@@ -889,10 +891,12 @@ class DashboardController extends Controller
         try {
             $result = $this->ocppService->unlockConnector($station, $connectorId);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return $this->respondMutationError(
                 $request,
                 $exception->getMessage(),
-                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+                $this->httpStatusFor($exception, 422)
             );
         }
 
@@ -925,10 +929,12 @@ class DashboardController extends Controller
         try {
             $result = $this->ocppService->hardResetConnector($station, $connectorId);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return $this->respondMutationError(
                 $request,
                 $exception->getMessage(),
-                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+                $this->httpStatusFor($exception, 422)
             );
         }
 
@@ -999,10 +1005,12 @@ class DashboardController extends Controller
                 return $stopResult;
             });
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return $this->respondMutationError(
                 $request,
                 $exception->getMessage(),
-                $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422
+                $this->httpStatusFor($exception, 422)
             );
         }
 
@@ -1161,10 +1169,12 @@ class DashboardController extends Controller
                 return $stopResult;
             });
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => $exception->getMessage(),
-                ], $exception->getCode() >= 400 ? $exception->getCode() : 422);
+                ], $this->httpStatusFor($exception, 422));
             }
 
             return back()->withErrors([
@@ -1259,10 +1269,12 @@ class DashboardController extends Controller
                 $session->delete();
             });
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => $exception->getMessage(),
-                ], $exception->getCode() >= 400 ? $exception->getCode() : 422);
+                ], $this->httpStatusFor($exception, 422));
             }
 
             return back()->withErrors([
@@ -1570,7 +1582,9 @@ class DashboardController extends Controller
         try {
             $result = $walletService->refundTopup($topup, $amount);
         } catch (RuntimeException $exception) {
-            return $this->respondMutationError($request, $exception->getMessage(), (int) ($exception->getCode() ?: 422));
+            $this->rethrowIfInfrastructure($exception);
+
+            return $this->respondMutationError($request, $exception->getMessage(), $this->httpStatusFor($exception, 422));
         }
 
         $topup = $topup->fresh(['user']);
@@ -1756,10 +1770,12 @@ class DashboardController extends Controller
                 'backoffice.user.deleted',
             );
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return $this->respondMutationError(
                 $request,
                 $exception->getMessage(),
-                (int) ($exception->getCode() ?: 422),
+                $this->httpStatusFor($exception, 422),
             );
         }
 

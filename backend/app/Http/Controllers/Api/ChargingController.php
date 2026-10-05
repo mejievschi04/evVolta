@@ -360,6 +360,8 @@ class ChargingController extends Controller
                 ];
             });
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             $stationModel = isset($payload['station_id'])
                 ? Station::query()->find($payload['station_id'])
                 : null;
@@ -375,7 +377,7 @@ class ChargingController extends Controller
                 'message' => $exception->getMessage(),
                 'requires_connector_selection' => $needsPortChoice,
                 'connectors' => $candidates,
-            ], $exception->getCode() ?: 500);
+            ], $this->httpStatusFor($exception, 500));
         }
 
         $connectorId = (int) ($session['session']->ocpp_connector_id ?: 1);
@@ -475,9 +477,11 @@ class ChargingController extends Controller
                 isset($payload['connector_id']) ? (int) $payload['connector_id'] : null,
             );
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() >= 400 && $exception->getCode() < 600 ? (int) $exception->getCode() : 422);
+            ], $this->httpStatusFor($exception, 422));
         }
 
         return response()->json([
@@ -569,9 +573,11 @@ class ChargingController extends Controller
                 );
             }
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() ?: 500);
+            ], $this->httpStatusFor($exception, 500));
         }
 
         $presentedSession = $result['status'] === 'completed'

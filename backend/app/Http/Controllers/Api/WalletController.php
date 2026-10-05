@@ -115,6 +115,8 @@ class WalletController extends Controller
                 (string) $request->ip()
             );
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             $topup->delete();
 
             return response()->json([
@@ -180,6 +182,8 @@ class WalletController extends Controller
         try {
             $info = $maibPaymentService->getPaymentInfo((string) $topup->payment_session_id);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
             ], 422);

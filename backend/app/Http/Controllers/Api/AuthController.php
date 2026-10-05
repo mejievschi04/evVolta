@@ -189,9 +189,11 @@ class AuthController extends Controller
             $identity = $this->socialAuthService->verifyGoogleIdToken($data['id_token']);
             $user = $this->socialAuthService->findOrCreateUser('google', $identity);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() >= 400 ? $exception->getCode() : 401);
+            ], $this->httpStatusFor($exception, 401));
         }
 
         return $this->completeSocialLogin($request, $user, 'google', $this->wantsRemember($request, $data));
@@ -213,9 +215,11 @@ class AuthController extends Controller
             );
             $user = $this->socialAuthService->findOrCreateUser('apple', $identity);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() >= 400 ? $exception->getCode() : 401);
+            ], $this->httpStatusFor($exception, 401));
         }
 
         return $this->completeSocialLogin($request, $user, 'apple', $this->wantsRemember($request, $data));
@@ -403,9 +407,11 @@ class AuthController extends Controller
         try {
             $this->userDeletionService->delete($user, $user, 'auth.account_deleted');
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() >= 400 ? $exception->getCode() : 422);
+            ], $this->httpStatusFor($exception, 422));
         }
 
         try {
@@ -427,9 +433,11 @@ class AuthController extends Controller
         try {
             $payload = $this->userPrivacyExportService->build($user, $user);
         } catch (RuntimeException $exception) {
+            $this->rethrowIfInfrastructure($exception);
+
             return response()->json([
                 'message' => $exception->getMessage(),
-            ], $exception->getCode() >= 400 ? $exception->getCode() : 422);
+            ], $this->httpStatusFor($exception, 422));
         }
 
         return response()->json(
