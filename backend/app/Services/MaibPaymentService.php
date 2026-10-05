@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\MaibUncertainResponseException;
 use App\Models\User;
 use App\Models\WalletTopup;
 use Illuminate\Http\Request;
@@ -318,6 +319,13 @@ class MaibPaymentService
 
         if ($response->status() === 401 && ! $retried) {
             throw new RuntimeException('Autentificare MAIB esuata.', 401);
+        }
+
+        if ($response->serverError() && strtoupper($method) !== 'GET') {
+            throw new MaibUncertainResponseException(
+                sprintf('MAIB a raspuns cu eroare de server (HTTP %d); rezultatul cererii este incert.', $response->status()),
+                503
+            );
         }
 
         if (! $response->successful() || ($body['ok'] ?? false) !== true) {

@@ -15,3 +15,9 @@ app(Schedule::class)
     ->command('privacy:purge-expired')
     ->timezone('Europe/Chisinau')
     ->dailyAt('03:20');
+
+// Plasa de siguranta daca callback-ul MAIB nu ajunge si clientul nu revine in aplicatie.
+app(Schedule::class)
+    ->command('wallet:reconcile-topups')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

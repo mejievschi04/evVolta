@@ -526,12 +526,61 @@ class WalletService
     }
 
     /**
+     * Inchide manual un retur ramas incert (pending / needs_review), dupa verificarea
+     * in portalul MAIB. completed: banii au ajuns pe card, debitarea wallet-ului ramane.
+     * failed: returul nu s-a facut, suma revine in wallet si pe alimentare.
+     */
+    public function resolveUncertainRefund(WalletRefund $refund, bool $refundedAtProvider, ?string $providerRefundId = null): WalletRefund
+    {
+        return DB::transaction(function () use ($refund, $refundedAtProvider, $providerRefundId): WalletRefund {
+            $refund = WalletRefund::query()->lockForUpdate()->findOrFail($refund->id);
+
+            if (! in_array($refund->status, ['pending', 'needs_review'], true)) {
+                throw new RuntimeException(
+                    sprintf('Returul #%d este deja %s.', $refund->id, $refund->status),
+                    422
+                );
+            }
+
+            if ($refundedAtProvider) {
+                $refund->update([
+                    'status' => 'completed',
+                    'provider_refund_id' => $providerRefundId ?: $refund->provider_refund_id,
+                ]);
+
+                return $refund->fresh();
+            }
+
+            $topup = WalletTopup::query()->lockForUpdate()->find($refund->wallet_topup_id);
+            $user = User::query()->lockForUpdate()->find($refund->user_id);
+            $amount = round((float) $refund->amount, 2);
+
+            if ($topup) {
+                $topup->update([
+                    'amount_refunded' => round(max(0, (float) $topup->amount_refunded - $amount), 2),
+                ]);
+            }
+
+            if ($user) {
+                $user->increment('wallet_balance', $amount);
+            }
+
+            $refund->update(['status' => 'failed']);
+
+            return $refund->fresh();
+        });
+    }
+
+    /**
      * True when the provider may have accepted the refund despite the client error
      * (timeout / dropped connection). Auto-restoring wallet would double-credit.
      */
     private function isAmbiguousProviderError(\Throwable $exception): bool
     {
-        if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
+        if (
+            $exception instanceof \Illuminate\Http\Client\ConnectionException
+            || $exception instanceof \App\Exceptions\MaibUncertainResponseException
+        ) {
             return true;
         }
 
