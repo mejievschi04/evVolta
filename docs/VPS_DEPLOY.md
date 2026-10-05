@@ -198,14 +198,16 @@ Vezi [`backend/docs/MAIB_SETUP.md`](../backend/docs/MAIB_SETUP.md): Callback, Su
 | Serviciu | Comanda |
 |----------|---------|
 | OCPP gateway | `sudo systemctl status evvolta-ocpp` |
+| Queue worker (emailuri) | `sudo systemctl status evvolta-queue` |
 | nginx | `sudo systemctl status nginx` |
 | PHP-FPM | `sudo systemctl status php8.3-fpm` |
 
 Loguri OCPP: `journalctl -u evvolta-ocpp -f`
+Loguri queue: `journalctl -u evvolta-queue -f`
 
 ## Cron
 
-Scheduler Laravel (facturi lunare) — configurat de `vps-bootstrap.sh` pentru user `www-data`:
+Scheduler Laravel (rezervari, reconciliere alimentari MAIB, curatare date) — configurat de `vps-bootstrap.sh` pentru user `www-data`:
 
 ```
 * * * * * cd /var/www/evvolta/backend && php artisan schedule:run

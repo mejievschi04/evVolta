@@ -112,9 +112,16 @@ render_systemd_ocpp \
   "${APP_ROOT}" \
   "${OCPP_PORT}"
 
+echo "==> systemd evvolta-queue (emailuri facturi / confirmari)"
+render_systemd_queue \
+  "${APP_ROOT}/deploy/systemd/evvolta-queue.service" \
+  "/etc/systemd/system/evvolta-queue.service" \
+  "${APP_ROOT}"
+
 systemctl daemon-reload
-systemctl enable evvolta-ocpp
+systemctl enable evvolta-ocpp evvolta-queue
 systemctl restart evvolta-ocpp
+systemctl restart evvolta-queue
 
 nginx -t
 systemctl reload nginx

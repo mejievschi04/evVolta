@@ -55,7 +55,7 @@ render_nginx_site() {
   sed \
     -e "s|ocpp.volta.md|${domain}|g" \
     -e "s|/var/www/evvolta|${app_root}|g" \
-    -e "s|127.0.0.1:9000|127.0.0.1:${ocpp_port}|g" \
+    -e "s|127.0.0.1:9010|127.0.0.1:${ocpp_port}|g" \
     -e "s|unix:/run/php/php8.3-fpm.sock|unix:${php_socket}|g" \
     "${template}" > "${output}"
 }
@@ -68,8 +68,16 @@ render_systemd_ocpp() {
 
   sed \
     -e "s|/var/www/evvolta|${app_root}|g" \
-    -e "s|--port=9000|--port=${ocpp_port}|g" \
+    -e "s|--port=9010|--port=${ocpp_port}|g" \
     "${template}" > "${output}"
+}
+
+render_systemd_queue() {
+  local template="${1}"
+  local output="${2}"
+  local app_root="${3}"
+
+  sed -e "s|/var/www/evvolta|${app_root}|g" "${template}" > "${output}"
 }
 
 install_evvolta_cron() {

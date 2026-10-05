@@ -1,0 +1,20 @@
+[Unit]
+Description=Volta Laravel queue worker (emailuri facturi si confirmari alimentare)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/evvolta/backend
+# --max-time: worker-ul se reporneste curat o data pe ora (memorie, cod nou dupa deploy)
+ExecStart=/usr/bin/php artisan queue:work --sleep=1 --tries=3 --timeout=120 --max-time=3600
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=evvolta-queue
+
+[Install]
+WantedBy=multi-user.target

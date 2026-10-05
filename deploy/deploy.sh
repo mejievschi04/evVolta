@@ -36,7 +36,17 @@ echo "==> Permissions"
 sudo chown -R www-data:www-data "${BACKEND_DIR}/storage" "${BACKEND_DIR}/bootstrap/cache"
 
 echo "==> Services"
+if [ ! -f /etc/systemd/system/evvolta-queue.service ]; then
+  # VPS-uri instalate inainte de worker: il instalam o data, altfel emailurile raman in coada.
+  echo "==> Instalez evvolta-queue (lipsea)"
+  sed -e "s|/var/www/evvolta|${APP_ROOT}|g" \
+    "${APP_ROOT}/deploy/systemd/evvolta-queue.service" \
+    | sudo tee /etc/systemd/system/evvolta-queue.service > /dev/null
+  sudo systemctl daemon-reload
+  sudo systemctl enable evvolta-queue
+fi
 sudo systemctl restart evvolta-ocpp
+sudo systemctl restart evvolta-queue
 sudo systemctl reload php8.3-fpm
 sudo systemctl reload nginx
 
