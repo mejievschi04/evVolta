@@ -126,7 +126,7 @@ class AuthController extends Controller
         $user = Auth::guard('api')->user();
 
         if ($user->isAdmin()) {
-            Auth::guard('api')->logout();
+            Auth::guard('api')->logout(true);
 
             $this->auditLogService->record(
                 action: 'auth.login_blocked_admin',
@@ -144,7 +144,7 @@ class AuthController extends Controller
         }
 
         if ($user->isAnonymized()) {
-            Auth::guard('api')->logout();
+            Auth::guard('api')->logout(true);
 
             return response()->json([
                 'message' => 'Contul a fost sters.',
@@ -240,7 +240,7 @@ class AuthController extends Controller
         /** @var \App\Models\User|null $user */
         $user = Auth::guard('api')->user();
 
-        Auth::guard('api')->logout();
+        Auth::guard('api')->logout(true);
 
         if ($user) {
             $this->auditLogService->record(
@@ -262,7 +262,7 @@ class AuthController extends Controller
         $user = Auth::guard('api')->user();
 
         if ($user->isAdmin()) {
-            Auth::guard('api')->logout();
+            Auth::guard('api')->logout(true);
 
             return response()->json([
                 'message' => 'Contul de administrator se foloseste doar in backoffice.',
@@ -374,7 +374,7 @@ class AuthController extends Controller
         $user = Auth::guard('api')->user();
 
         if ($user->isAdmin()) {
-            Auth::guard('api')->logout();
+            Auth::guard('api')->logout(true);
 
             return response()->json([
                 'message' => 'Contul de administrator se foloseste doar in backoffice.',
@@ -415,7 +415,7 @@ class AuthController extends Controller
         }
 
         try {
-            Auth::guard('api')->logout();
+            Auth::guard('api')->logout(true);
         } catch (\Throwable) {
             // Token may already be invalid after account deletion.
         }

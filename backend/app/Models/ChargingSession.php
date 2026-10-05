@@ -40,6 +40,12 @@ class ChargingSession extends Model
         'ocpp_stop_context' => 'array',
     ];
 
+    /**
+     * Tarif deja calculat de cine serializeaza sesiunea (evita o interogare per sesiune
+     * in liste). Proprietate declarata: nu e atribut Eloquent, nu se salveaza.
+     */
+    public ?float $presentationPricePerKwh = null;
+
     protected $appends = [
         'telemetry',
         'kwh_delivered',
@@ -102,7 +108,8 @@ class ChargingSession extends Model
         $live = is_array($this->live_metrics) ? $this->live_metrics : [];
         $kwhDelivered = app(SessionEnergyService::class)->telemetryKwhDelivered($this);
         $this->loadMissing('user');
-        $pricePerKwh = app(TariffService::class)->pricePerKwhForUser($this->user);
+        $pricePerKwh = $this->presentationPricePerKwh
+            ?? app(TariffService::class)->pricePerKwhForUser($this->user);
 
         return [
             'kwh_consumed' => $kwhDelivered,

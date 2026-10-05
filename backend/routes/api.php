@@ -55,6 +55,7 @@ Route::middleware('auth:api')->group(function () {
         Route::post('/charging/resume', [ChargingController::class, 'resume']);
         Route::post('/charging/stop', [ChargingController::class, 'stop']);
         Route::get('/sessions', [SessionController::class, 'index']);
+        Route::get('/sessions/active', [SessionController::class, 'active']);
         Route::get('/sessions/{session}/live', [SessionController::class, 'live']);
         Route::get('/sessions/{session}/stream', [SessionController::class, 'stream']);
         Route::get('/payments/config', [PaymentController::class, 'config']);

@@ -24,16 +24,63 @@ class SessionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $this->reconcileOpenSessions($request);
+
+        // Plasa de siguranta pentru facturi lipsa doar pe sesiunile recente: decontarea
+        // ruleaza deja in finalizeStop, iar re-decontarea intregului istoric la fiecare
+        // apel facea ~16 interogari/sesiune (cu lock-uri) si depasea timeout-ul aplicatiei.
+        $ensureInvoiceSince = now()->subDays(7);
+
+        $sessions = $this->sessionPresentationService->presentManyForUser(
+            ChargingSession::query()
+                ->with(['station', 'invoice', 'user'])
+                ->where('user_id', $request->user()->id)
+                ->latest('start_time')
+                ->get(),
+            fn (ChargingSession $session): bool => ! $session->invoice
+                && (bool) $session->end_time?->greaterThan($ensureInvoiceSince),
+        );
+
+        return response()->json($sessions);
+    }
+
+    /**
+     * Doar sesiunile deschise ale clientului (acelasi format ca index), pentru
+     * reimprospatarea frecventa din aplicatie fara a incarca istoricul.
+     */
+    public function active(Request $request): JsonResponse
+    {
+        $this->reconcileOpenSessions($request);
+
+        $sessions = $this->sessionPresentationService->presentManyForUser(
+            ChargingSession::query()
+                ->with(['station', 'invoice', 'user'])
+                ->where('user_id', $request->user()->id)
+                ->whereNull('end_time')
+                ->latest('start_time')
+                ->get(),
+            fn (): bool => false,
+        );
+
+        return response()->json($sessions);
+    }
+
+    /**
+     * Inchide sesiunile abandonate / eliberate inainte de a raspunde, ca aplicatia
+     * sa nu vada o incarcare care s-a terminat deja pe statie.
+     */
+    private function reconcileOpenSessions(Request $request): void
+    {
         $this->chargingStopService->reconcileAllOpenSessionsForUser($request->user());
 
-        $sessions = ChargingSession::query()
+        $openSessions = ChargingSession::query()
             ->with('station')
             ->where('user_id', $request->user()->id)
-            ->latest('start_time')
+            ->whereNull('end_time')
             ->get();
 
-        foreach ($sessions as $session) {
-            if ($session->end_time || ! $session->station) {
+        foreach ($openSessions as $session) {
+            if (! $session->station) {
                 continue;
             }
 
@@ -44,15 +91,6 @@ class SessionController extends Controller
                 $this->chargingStopService->finalizeStop($session, $station, 'ocpp');
             }
         }
-
-        $sessions = ChargingSession::query()
-            ->with(['station', 'invoice'])
-            ->where('user_id', $request->user()->id)
-            ->latest('start_time')
-            ->get()
-            ->map(fn (ChargingSession $session) => $this->sessionPresentationService->presentForUser($session, ensureInvoice: true));
-
-        return response()->json($sessions);
     }
 
     public function live(Request $request, ChargingSession $session): JsonResponse
