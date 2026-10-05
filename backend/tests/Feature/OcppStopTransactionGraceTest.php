@@ -94,6 +94,29 @@ class OcppStopTransactionGraceTest extends TestCase
         $this->assertSame(4.0, (float) $session->kwh_consumed, 'Fallback uses last MeterValues register');
     }
 
+    public function test_sweep_closes_only_the_released_transaction_not_a_newer_pending_start(): void
+    {
+        [$station, $session] = $this->chargingSession();
+        $this->statusNotification($station, 'Finishing');
+        $this->travel(61)->seconds();
+
+        $pending = ChargingSession::query()->create([
+            'user_id' => $session->user_id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'start_time' => now(),
+            'start_source' => 'app',
+            'kwh_consumed' => 0,
+        ]);
+
+        $this->setClients($station->fresh());
+        $this->resetSweepThrottle();
+        $this->invoke('finalizeReleasedSessions');
+
+        $this->assertNotNull($session->fresh()->end_time, 'Released transaction must be closed');
+        $this->assertNull($pending->fresh()->end_time, 'Newer pending app start must be left alone');
+    }
+
     public function test_app_stop_during_grace_waits_for_station(): void
     {
         [$station, $session] = $this->chargingSession();

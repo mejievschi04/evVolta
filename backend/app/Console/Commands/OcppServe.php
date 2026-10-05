@@ -1463,16 +1463,33 @@ class OcppServe extends Command
                         continue;
                     }
 
-                    $closed = $stopService->maybeAutoFinalizeOnStationStatus($fresh, $connectorId, $status);
-
-                    if ($closed) {
-                        Log::warning('OCPP session finalized without StopTransaction', [
-                            'station' => $fresh->ocpp_identity,
-                            'session_id' => $closed->id,
-                            'connector_id' => $connectorId,
-                            'connector_status' => $status,
-                        ]);
+                    // Strict sesiunea cu tranzactie verificata aici, nu „ultima de pe port”
+                    // (aceea poate fi o pornire noua din aplicatie, inca fara tranzactie).
+                    if (! $stopService->shouldAutoFinalizeOnConnectorRelease($session->fresh(), $fresh, $status)) {
+                        continue;
                     }
+
+                    $stopService->finalizeStop(
+                        $session,
+                        $fresh,
+                        'ocpp',
+                        null,
+                        null,
+                        null,
+                        app(OcppSessionDebugService::class)->buildStopContext(
+                            $fresh,
+                            $session,
+                            'ReleasedWithoutStopTransaction:' . $status,
+                            ['connector_id' => $connectorId]
+                        )
+                    );
+
+                    Log::warning('OCPP session finalized without StopTransaction', [
+                        'station' => $fresh->ocpp_identity,
+                        'session_id' => $session->id,
+                        'connector_id' => $connectorId,
+                        'connector_status' => $status,
+                    ]);
                 }
             } catch (Throwable $exception) {
                 Log::error('OCPP released-session sweep failed', [
