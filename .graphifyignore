@@ -4,3 +4,13 @@ backend_mvp_src
 graphify-out.backup-*
 backoffice/node_modules
 backoffice/dist
+node_modules
+.expo
+dist
+.wrangler
+.graphify-venv
+!mobile/
+mobile/android
+mobile/ios
+mobile/node_modules
+mobile/.expo
