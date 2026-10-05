@@ -45,6 +45,15 @@ class ChargingStopService
 
         if ($this->isGatewayMode()) {
             if ($this->connectorAlreadyReleased($station, $session)) {
+                if ($this->awaitingStopTransaction($session, $station)) {
+                    return [
+                        'status' => 'stopping',
+                        'message' => 'Statia a oprit incarcarea. Asteptam confirmarea finala a contorului.',
+                        'session' => $session->fresh(),
+                        'station' => $station->fresh(),
+                    ];
+                }
+
                 return $this->finalizeStop($session, $station, $stopSource);
             }
 
@@ -191,10 +200,43 @@ class ChargingStopService
         return round($minutes * 0.12, 2);
     }
 
-    public function shouldAutoFinalizeOnConnectorRelease(
+    /**
+     * Conectorul tocmai a fost eliberat, dar statia inca n-a trimis StopTransaction
+     * (cu contorul final). Asteptam o fereastra scurta ca sa nu facturam din ultima
+     * citire MeterValues si sa pierdem energia livrata dupa ea.
+     */
+    public function awaitingStopTransaction(
         ChargingSession $session,
         Station $station,
         ?string $connectorStatus = null
+    ): bool {
+        if (! $this->isGatewayMode() || $session->end_time || ! $session->ocpp_transaction_id) {
+            return false;
+        }
+
+        $connectorId = (int) ($session->ocpp_connector_id ?: 1);
+        $status = $connectorStatus ?? $station->connectorOcppStatus($connectorId);
+
+        if (! in_array($status, ['Available', 'Finishing'], true)) {
+            return false;
+        }
+
+        $releasedAt = $station->connectorReleasedAt($connectorId);
+
+        if (! $releasedAt) {
+            return false;
+        }
+
+        $grace = max(0, (int) config('services.ocpp.stop_transaction_grace_seconds', 60));
+
+        return $releasedAt->greaterThan(now()->subSeconds($grace));
+    }
+
+    public function shouldAutoFinalizeOnConnectorRelease(
+        ChargingSession $session,
+        Station $station,
+        ?string $connectorStatus = null,
+        bool $waitForStopTransaction = true,
     ): bool {
         if ($session->end_time) {
             return false;
@@ -208,6 +250,10 @@ class ChargingStopService
         }
 
         if ($this->pendingRemoteStop($session)) {
+            return false;
+        }
+
+        if ($waitForStopTransaction && $this->awaitingStopTransaction($session, $station, $status)) {
             return false;
         }
 
@@ -414,8 +460,10 @@ class ChargingStopService
                 || $session->start_time->lessThanOrEqualTo(now()->subMinutes(2));
         }
 
+        // Pornire noua pe acelasi port: inchidem acum sesiunea veche, fara sa asteptam
+        // StopTransaction — altfel noul StartTransaction ar reseta kWh-ii deja livrati.
         return in_array($status, ['Available'], true)
-            && $this->shouldAutoFinalizeOnConnectorRelease($session, $station, $status);
+            && $this->shouldAutoFinalizeOnConnectorRelease($session, $station, $status, false);
     }
 
     public function sessionIsCurrentlyCharging(ChargingSession $session, Station $station): bool
@@ -469,12 +517,7 @@ class ChargingStopService
     {
         return OcppCommand::query()
             ->where('charging_session_id', $session->id)
-            ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])
-            ->whereIn('status', [
-                OcppCommand::STATUS_PENDING,
-                OcppCommand::STATUS_SENT,
-                OcppCommand::STATUS_ACCEPTED,
-            ])
+            ->awaitingRemoteStop()
             ->latest('id')
             ->first();
     }

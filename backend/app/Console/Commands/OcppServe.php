@@ -34,6 +34,16 @@ class OcppServe extends Command
     /** @var array<string, list<float>> station identity => handshake timestamps (unix) */
     private array $handshakeAttempts = [];
 
+    private float $lastCommandExpiryAt = 0;
+
+    private float $lastReleasedSweepAt = 0;
+
+    /** Limita pentru un mesaj OCPP (inclusiv reasamblat din fragmente). */
+    private const MAX_MESSAGE_BYTES = 1048576;
+
+    /** Limita pentru date netrimise inca catre o statie (socket blocat). */
+    private const MAX_OUTBOX_BYTES = 4194304;
+
     public function handle(BillingService $billingService): int
     {
         $host = $this->option('host') ?: config('services.ocpp.host', '0.0.0.0');
@@ -70,6 +80,9 @@ class OcppServe extends Command
             $this->readClients($billingService);
             $this->scheduleActiveSessionTelemetry();
             $this->flushPendingCommands();
+            $this->expireUnansweredCommands();
+            $this->flushOutboxes();
+            $this->finalizeReleasedSessions();
             usleep(50000);
         }
     }
@@ -91,16 +104,32 @@ class OcppServe extends Command
             'boot_received' => false,
             'station' => null,
             'last_command_poll_at' => 0,
+            'message_fragment' => '',
+            'fragment_opcode' => null,
+            'close_code' => null,
+            'closing_at' => null,
+            'outbox' => '',
         ];
     }
 
     private function readClients(BillingService $billingService): void
     {
-        foreach ($this->clients as $id => $client) {
-            $chunk = @fread($client['socket'], 8192);
+        foreach (array_keys($this->clients) as $id) {
+            // Clientul poate fi inchis intre timp (supersede / close) in aceeasi iteratie.
+            if (! isset($this->clients[$id])) {
+                continue;
+            }
+
+            if (! is_resource($this->clients[$id]['socket'])) {
+                $this->disconnectClient($id);
+                continue;
+            }
+
+            $socket = $this->clients[$id]['socket'];
+            $chunk = @fread($socket, 8192);
 
             if ($chunk === '' || $chunk === false) {
-                if (feof($client['socket'])) {
+                if (feof($socket)) {
                     $this->disconnectClient($id);
                 }
 
@@ -111,12 +140,23 @@ class OcppServe extends Command
 
             if (! $this->clients[$id]['handshaken']) {
                 $this->performHandshake($id);
-                continue;
+
+                // Handshake respins sau incomplet. Daca a reusit, procesam imediat
+                // cadrele venite in acelasi pachet TCP (ex. BootNotification).
+                if (! isset($this->clients[$id]) || ! $this->clients[$id]['handshaken']) {
+                    continue;
+                }
             }
 
-            foreach ($this->decodeFrames($this->clients[$id]['buffer']) as $message) {
+            foreach ($this->decodeFrames($this->clients[$id]['buffer'], $id) as $message) {
                 $this->handleOcppMessage($id, $message, $billingService);
+
+                if (! isset($this->clients[$id])) {
+                    break;
+                }
             }
+
+            $this->disconnectIfClosing($id);
         }
     }
 
@@ -185,7 +225,7 @@ class OcppServe extends Command
 
         $response .= "\r\n";
 
-        @fwrite($this->clients[$clientId]['socket'], $response);
+        $this->queueRaw($clientId, $response);
 
         $station->update([
             'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
@@ -373,6 +413,21 @@ class OcppServe extends Command
             return;
         }
 
+        // Copia din memorie poate fi veche (API-ul, backoffice-ul si comenzile scriu in
+        // acelasi rand). Fiecare mesaj lucreaza pe starea curenta din baza de date.
+        try {
+            $fresh = $station->fresh();
+            if ($fresh) {
+                $station = $fresh;
+                $this->clients[$clientId]['station'] = $fresh;
+            }
+        } catch (Throwable $exception) {
+            Log::warning('OCPP station refresh failed', [
+                'station_id' => $station->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+
         try {
             $messageType = $message[0] ?? null;
 
@@ -467,50 +522,52 @@ class OcppServe extends Command
     private function onBootNotification(int $clientId, Station $station, array $payload): array
     {
         $serial = trim((string) ($payload['chargePointSerialNumber'] ?? $payload['chargeBoxSerialNumber'] ?? ''));
-        $existing = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
-        $configuration = array_merge($existing, array_filter([
-            'chargePointVendor' => $payload['chargePointVendor'] ?? null,
-            'chargePointModel' => $payload['chargePointModel'] ?? null,
-            'chargePointSerialNumber' => $payload['chargePointSerialNumber'] ?? null,
-            'chargeBoxSerialNumber' => $payload['chargeBoxSerialNumber'] ?? null,
-            'firmwareVersion' => $payload['firmwareVersion'] ?? null,
-        ]));
 
-        $model = strtolower((string) ($configuration['chargePointModel'] ?? ''));
-        if (str_contains($model, '1060') || str_contains($model, 'eu1060')) {
-            $configuration['NumberOfConnectors'] = 2;
-        }
+        $station->updateOcppConfigurationAtomically(function (array $existing, Station $locked) use ($payload, $serial): array {
+            $configuration = array_merge($existing, array_filter([
+                'chargePointVendor' => $payload['chargePointVendor'] ?? null,
+                'chargePointModel' => $payload['chargePointModel'] ?? null,
+                'chargePointSerialNumber' => $payload['chargePointSerialNumber'] ?? null,
+                'chargeBoxSerialNumber' => $payload['chargeBoxSerialNumber'] ?? null,
+                'firmwareVersion' => $payload['firmwareVersion'] ?? null,
+            ]));
 
-        $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
-        $connectorCount = max(1, (int) ($configuration['NumberOfConnectors'] ?? 1));
-        for ($connectorId = 1; $connectorId <= $connectorCount; $connectorId++) {
-            $connectors[$connectorId] = array_merge(
-                ['connectorId' => $connectorId],
-                $connectors[$connectorId] ?? []
-            );
-        }
-        $configuration['connectors'] = $connectors;
-
-        $updates = [
-            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
-            'last_heartbeat_at' => now(),
-            'last_ocpp_message_at' => now(),
-            'ocpp_configuration' => $configuration,
-        ];
-
-        if ($serial !== '') {
-            $currentQr = trim((string) ($station->qr_code ?? ''));
-            if ($currentQr === '' || str_starts_with(strtolower($currentQr), 'station:')) {
-                $updates['qr_code'] = $serial;
+            $model = strtolower((string) ($configuration['chargePointModel'] ?? ''));
+            if (str_contains($model, '1060') || str_contains($model, 'eu1060')) {
+                $configuration['NumberOfConnectors'] = 2;
             }
 
-            $currentIdentity = trim((string) ($station->ocpp_identity ?? ''));
-            if ($currentIdentity === '' || str_starts_with(strtolower($currentIdentity), 'volta-')) {
-                $updates['ocpp_identity'] = $serial;
+            $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+            $connectorCount = max(1, (int) ($configuration['NumberOfConnectors'] ?? 1));
+            for ($connectorId = 1; $connectorId <= $connectorCount; $connectorId++) {
+                $connectors[$connectorId] = array_merge(
+                    ['connectorId' => $connectorId],
+                    $connectors[$connectorId] ?? []
+                );
             }
-        }
+            $configuration['connectors'] = $connectors;
 
-        $station->update($updates);
+            $updates = [
+                'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+                'last_heartbeat_at' => now(),
+                'last_ocpp_message_at' => now(),
+                'ocpp_configuration' => $configuration,
+            ];
+
+            if ($serial !== '') {
+                $currentQr = trim((string) ($locked->qr_code ?? ''));
+                if ($currentQr === '' || str_starts_with(strtolower($currentQr), 'station:')) {
+                    $updates['qr_code'] = $serial;
+                }
+
+                $currentIdentity = trim((string) ($locked->ocpp_identity ?? ''));
+                if ($currentIdentity === '' || str_starts_with(strtolower($currentIdentity), 'volta-')) {
+                    $updates['ocpp_identity'] = $serial;
+                }
+            }
+
+            return $updates;
+        });
         $this->clients[$clientId]['boot_received'] = true;
         app(OcppService::class)->pushMeterSampleIntervalConfig($station->fresh());
         $this->retryPendingRemoteStarts($station->fresh());
@@ -575,7 +632,6 @@ class OcppServe extends Command
 
         $connectorId = $rawConnectorId;
         $errorCode = (string) ($payload['errorCode'] ?? 'NoError');
-        $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
         $connectorState = array_filter([
             'connectorId' => $connectorId,
             'status' => $ocppStatus ?: null,
@@ -604,17 +660,34 @@ class OcppServe extends Command
             }
         }
 
-        $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
-        $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], $connectorState);
-        $configuration['connectors'] = $connectors;
-        $configuration['connector'] = $connectors[$connectorId];
+        $station->updateOcppConfigurationAtomically(function (array $configuration, Station $locked) use ($connectorId, $connectorState, $ocppStatus): array {
+            $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+            $previousConnector = $connectors[$connectorId] ?? [];
+            $connectors[$connectorId] = array_merge($previousConnector, $connectorState);
 
-        $station->update([
-            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
-            'status' => Station::aggregateStationStatus($connectors, $station->status ?: Station::STATUS_OFFLINE),
-            'last_ocpp_message_at' => now(),
-            'ocpp_configuration' => $configuration,
-        ]);
+            // Retinem cand conectorul a fost eliberat prima data (ora serverului), ca sa asteptam
+            // StopTransaction cu contorul final inainte de inchiderea automata a sesiunii.
+            $releasedStatuses = ['Available', 'Finishing'];
+            if (in_array($ocppStatus, $releasedStatuses, true)) {
+                $wasReleased = in_array($previousConnector['status'] ?? null, $releasedStatuses, true)
+                    && ! empty($previousConnector['released_at']);
+                if (! $wasReleased) {
+                    $connectors[$connectorId]['released_at'] = now()->toIso8601String();
+                }
+            } else {
+                unset($connectors[$connectorId]['released_at']);
+            }
+
+            $configuration['connectors'] = $connectors;
+            $configuration['connector'] = $connectors[$connectorId];
+
+            return [
+                'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+                'status' => Station::aggregateStationStatus($connectors, $locked->status ?: Station::STATUS_OFFLINE),
+                'last_ocpp_message_at' => now(),
+                'ocpp_configuration' => $configuration,
+            ];
+        });
 
         if (in_array($ocppStatus, Station::VEHICLE_CONNECTED_STATUSES, true)) {
             $this->activatePendingSessionForConnector($station, $connectorId);
@@ -788,6 +861,20 @@ class OcppServe extends Command
         }
 
         if (! $session) {
+            // Incarcarea clientilor porneste doar din aplicatie (cu buget blocat din wallet).
+            // O pornire locala cu tag-ul unui client, fara sesiune din aplicatie, ar livra
+            // energie fara hold si fara oprire automata la buget.
+            if (! config('services.ocpp.allow_local_user_start', false)) {
+                Log::warning('OCPP StartTransaction rejected: no app session for user tag', [
+                    'station' => $station->ocpp_identity,
+                    'connector_id' => $connectorId,
+                    'user_id' => $user->id,
+                    'id_tag' => $idTag,
+                ]);
+
+                return ['transactionId' => 0, 'idTagInfo' => ['status' => 'Invalid']];
+            }
+
             $session = ChargingSession::query()->create([
                 'user_id' => $user->id,
                 'station_id' => $station->id,
@@ -873,7 +960,6 @@ class OcppServe extends Command
             && SessionEnergyService::usesSessionRelativeRegister($session)
             && $energyService->looksLikeLifetimeRegisterFlash($session, $meterKwh);
 
-        $configuration = $station->ocpp_configuration ?? [];
         $liveMeter = array_filter([
             'power_kw' => $metrics['power_kw'],
             'current_a' => $metrics['current_a'],
@@ -885,18 +971,22 @@ class OcppServe extends Command
         ], static fn ($value) => $value !== null && $value !== '');
 
         if ($connectorId > 0) {
-            $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
-            $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], [
-                'connectorId' => $connectorId,
-                'live_meter' => $liveMeter,
-            ]);
-            $configuration['connectors'] = $connectors;
-        }
+            $station->updateOcppConfigurationAtomically(function (array $configuration) use ($connectorId, $liveMeter): array {
+                $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+                $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], [
+                    'connectorId' => $connectorId,
+                    'live_meter' => $liveMeter,
+                ]);
+                $configuration['connectors'] = $connectors;
 
-        $station->update([
-            'last_ocpp_message_at' => now(),
-            'ocpp_configuration' => $configuration,
-        ]);
+                return [
+                    'last_ocpp_message_at' => now(),
+                    'ocpp_configuration' => $configuration,
+                ];
+            });
+        } else {
+            $station->update(['last_ocpp_message_at' => now()]);
+        }
 
         if ($session) {
             $session->rememberReportedTransactionId($transactionId);
@@ -983,8 +1073,15 @@ class OcppServe extends Command
             && ! $session->end_time
             && ! $session->ocpp_transaction_id
             && ($transactionId === '' || $transactionId === '0')
-            && in_array($reason, ['SoftReset', 'HardReset', 'Reboot'], true)
         ) {
+            // Tranzactia 0 nu a fost acceptata de noi (ex. card local respins). Sesiunea gasita
+            // n-a primit niciodata StartTransaction, deci nu e ea cea oprita — nu o inchidem.
+            Log::info('OCPP StopTransaction for unassigned transaction ignored', [
+                'station' => $station->ocpp_identity,
+                'connector_id' => $connectorId,
+                'reason' => $reason !== '' ? $reason : null,
+                'pending_session_id' => $session->id,
+            ]);
             $station->update(['last_ocpp_message_at' => now()]);
 
             return ['idTagInfo' => ['status' => 'Accepted']];
@@ -1026,6 +1123,9 @@ class OcppServe extends Command
                 'transaction_id' => $transactionId !== '' ? $transactionId : '0',
                 'reason' => $reason !== '' ? $reason : null,
                 'session_id' => $session->id,
+                // Pentru audit: diferenta dintre contorul final si ce s-a facturat.
+                'meter_stop_kwh_reported' => $meterStop,
+                'meter_stop_kwh_billed' => $session->meter_stop_kwh,
             ]);
         } else {
             Log::warning('OCPP StopTransaction ignored: no matching session', [
@@ -1286,6 +1386,7 @@ class OcppServe extends Command
             if (
                 ! $client['handshaken']
                 || ! ($client['boot_received'] ?? false)
+                || ($client['close_code'] ?? null) !== null
                 || ! $station
                 || microtime(true) - $client['last_command_poll_at'] < $pollInterval
             ) {
@@ -1308,13 +1409,105 @@ class OcppServe extends Command
                     $command->action,
                     json_encode($payload, JSON_UNESCAPED_SLASHES)
                 ));
-                $this->send($id, [2, $command->message_uid, $command->action, $payload]);
+                if (! $this->send($id, [2, $command->message_uid, $command->action, $payload])) {
+                    // Socket mort: comanda ramane pending si pleaca la reconectare.
+                    $this->disconnectClient($id);
+
+                    continue 2;
+                }
+
                 $command->update([
                     'status' => OcppCommand::STATUS_SENT,
                     'sent_at' => now(),
                 ]);
                 $this->recordMessage($station, 'outbound', $command->message_uid, $command->action, $command->payload ?? [], OcppCommand::STATUS_SENT);
             }
+        }
+    }
+
+    /**
+     * Inchide sesiunile cu tranzactie OCPP al caror conector e eliberat, dupa ce
+     * fereastra de asteptare pentru StopTransaction a expirat fara ca acesta sa vina.
+     */
+    private function finalizeReleasedSessions(): void
+    {
+        $now = microtime(true);
+
+        if ($now - $this->lastReleasedSweepAt < 10) {
+            return;
+        }
+
+        $this->lastReleasedSweepAt = $now;
+        $stopService = app(ChargingStopService::class);
+
+        foreach ($this->clients as $client) {
+            $station = $client['station'] ?? null;
+
+            if (! ($client['handshaken'] ?? false) || ! $station instanceof Station) {
+                continue;
+            }
+
+            try {
+                $sessions = ChargingSession::query()
+                    ->where('station_id', $station->id)
+                    ->whereNull('end_time')
+                    ->whereNotNull('ocpp_transaction_id')
+                    ->get();
+
+                foreach ($sessions as $session) {
+                    $fresh = $station->fresh();
+                    $connectorId = max(1, (int) ($session->ocpp_connector_id ?: 1));
+                    $status = $fresh->connectorOcppStatus($connectorId);
+
+                    if (! in_array($status, ['Available', 'Finishing'], true)) {
+                        continue;
+                    }
+
+                    $closed = $stopService->maybeAutoFinalizeOnStationStatus($fresh, $connectorId, $status);
+
+                    if ($closed) {
+                        Log::warning('OCPP session finalized without StopTransaction', [
+                            'station' => $fresh->ocpp_identity,
+                            'session_id' => $closed->id,
+                            'connector_id' => $connectorId,
+                            'connector_status' => $status,
+                        ]);
+                    }
+                }
+            } catch (Throwable $exception) {
+                Log::error('OCPP released-session sweep failed', [
+                    'station_id' => $station->id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    private function expireUnansweredCommands(): void
+    {
+        $now = microtime(true);
+
+        if ($now - $this->lastCommandExpiryAt < 5) {
+            return;
+        }
+
+        $this->lastCommandExpiryAt = $now;
+        $timeout = max(10, (int) config('services.ocpp.command_response_timeout_seconds', 60));
+
+        try {
+            $failed = OcppCommand::failUnanswered(
+                sprintf('Timeout: statia nu a raspuns in %d secunde.', $timeout),
+                null,
+                now()->subSeconds($timeout)
+            );
+        } catch (Throwable $exception) {
+            Log::error('OCPP command expiry failed', ['error' => $exception->getMessage()]);
+
+            return;
+        }
+
+        if ($failed > 0) {
+            $this->warn("OCPP: {$failed} comanda/comenzi fara raspuns marcate failed (timeout).");
         }
     }
 
@@ -1370,6 +1563,8 @@ class OcppServe extends Command
                     'ocpp_connection_status' => Station::OCPP_CONNECTION_DISCONNECTED,
                     'status' => Station::STATUS_OFFLINE,
                 ]);
+            // Raspunsul (CallResult) vine doar pe socketul pe care s-a trimis comanda.
+            OcppCommand::failUnanswered('Conexiunea cu statia s-a inchis inainte de raspuns.', $stationId);
             $this->info("OCPP station disconnected: {$station->ocpp_identity}");
         }
     }
@@ -1389,9 +1584,112 @@ class OcppServe extends Command
         }
     }
 
-    private function send(int $clientId, array $message): void
+    /**
+     * Pune cadrul in coada de iesire a clientului si incearca sa-l scrie imediat.
+     * False doar cand socketul e mort sau coada a depasit limita.
+     */
+    private function send(int $clientId, array $message): bool
     {
-        @fwrite($this->clients[$clientId]['socket'], $this->encodeFrame(json_encode($message, JSON_UNESCAPED_SLASHES)));
+        return $this->queueRaw($clientId, $this->encodeFrame(json_encode($message, JSON_UNESCAPED_SLASHES)));
+    }
+
+    private function queueRaw(int $clientId, string $bytes): bool
+    {
+        if (! isset($this->clients[$clientId]) || ! is_resource($this->clients[$clientId]['socket'])) {
+            return false;
+        }
+
+        $this->clients[$clientId]['outbox'] = ($this->clients[$clientId]['outbox'] ?? '') . $bytes;
+
+        if (strlen($this->clients[$clientId]['outbox']) > self::MAX_OUTBOX_BYTES) {
+            Log::warning('OCPP outbox overflow, closing socket', ['client_id' => $clientId]);
+            $this->clients[$clientId]['outbox'] = '';
+            $this->markClosing($clientId, 1008);
+
+            return false;
+        }
+
+        return $this->flushOutbox($clientId);
+    }
+
+    /**
+     * Scrie cat permite socketul non-blocant; restul ramane in coada pentru bucla urmatoare.
+     */
+    private function flushOutbox(int $clientId): bool
+    {
+        $socket = $this->clients[$clientId]['socket'] ?? null;
+
+        if (! is_resource($socket)) {
+            return false;
+        }
+
+        $pending = $this->clients[$clientId]['outbox'] ?? '';
+
+        while ($pending !== '') {
+            $written = @fwrite($socket, $pending);
+
+            if ($written === false) {
+                $this->clients[$clientId]['outbox'] = '';
+                $this->markClosing($clientId, 1006);
+
+                return false;
+            }
+
+            if ($written === 0) {
+                break;
+            }
+
+            $pending = (string) substr($pending, $written);
+        }
+
+        $this->clients[$clientId]['outbox'] = $pending;
+
+        return true;
+    }
+
+    private function flushOutboxes(): void
+    {
+        foreach (array_keys($this->clients) as $id) {
+            if (! isset($this->clients[$id])) {
+                continue;
+            }
+
+            if (($this->clients[$id]['outbox'] ?? '') !== '') {
+                $this->flushOutbox($id);
+            }
+
+            $this->disconnectIfClosing($id);
+        }
+    }
+
+    /**
+     * Inchide clientul marcat cu close_code dupa ce coada de iesire s-a golit
+     * (raspunsul la Close trebuie sa ajunga la statie inainte de fclose).
+     */
+    private function disconnectIfClosing(int $clientId): void
+    {
+        if (! isset($this->clients[$clientId]) || ($this->clients[$clientId]['close_code'] ?? null) === null) {
+            return;
+        }
+
+        $socketDead = ! is_resource($this->clients[$clientId]['socket']);
+        $outboxEmpty = ($this->clients[$clientId]['outbox'] ?? '') === '';
+        // Statia nu mai citeste: nu asteptam la nesfarsit sa plece raspunsul la Close.
+        $closingTooLong = microtime(true) - (float) ($this->clients[$clientId]['closing_at'] ?? 0) > 5;
+
+        if ($socketDead || $outboxEmpty || $closingTooLong) {
+            $this->disconnectClient($clientId);
+        }
+    }
+
+    private function markClosing(int $clientId, int $code): void
+    {
+        if (! isset($this->clients[$clientId]) || ($this->clients[$clientId]['close_code'] ?? null) !== null) {
+            return;
+        }
+
+        $this->clients[$clientId]['close_code'] = $code;
+        $this->clients[$clientId]['closing_at'] = microtime(true);
     }
 
     private function recordMessage(
@@ -1670,20 +1968,22 @@ class OcppServe extends Command
 
     private function clearConnectorLiveMeterEnergy(Station $station, int $connectorId): void
     {
-        $configuration = is_array($station->ocpp_configuration) ? $station->ocpp_configuration : [];
-        $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
-        $meter = is_array($connectors[$connectorId]['live_meter'] ?? null)
-            ? $connectors[$connectorId]['live_meter']
-            : null;
+        $station->updateOcppConfigurationAtomically(function (array $configuration) use ($connectorId): ?array {
+            $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+            $meter = is_array($connectors[$connectorId]['live_meter'] ?? null)
+                ? $connectors[$connectorId]['live_meter']
+                : null;
 
-        if ($meter === null || ! array_key_exists('energy_kwh', $meter)) {
-            return;
-        }
+            if ($meter === null || ! array_key_exists('energy_kwh', $meter)) {
+                return null;
+            }
 
-        unset($meter['energy_kwh']);
-        $connectors[$connectorId]['live_meter'] = $meter;
-        $configuration['connectors'] = $connectors;
-        $station->update(['ocpp_configuration' => $configuration]);
+            unset($meter['energy_kwh']);
+            $connectors[$connectorId]['live_meter'] = $meter;
+            $configuration['connectors'] = $connectors;
+
+            return ['ocpp_configuration' => $configuration];
+        });
     }
 
     private function activatePendingSessionForConnector(Station $station, int $connectorId): void
@@ -1774,13 +2074,30 @@ class OcppServe extends Command
         return Carbon::parse($value);
     }
 
-    private function decodeFrames(string &$buffer): array
+    /**
+     * Decodeaza cadrele WebSocket complete din buffer (RFC 6455) si intoarce mesajele text.
+     * Cu $clientId: raspunde la Ping, inchide la Close si reasambleaza mesajele fragmentate.
+     * Fara $clientId: doar cadre text complete (folosit in teste).
+     *
+     * @return list<string>
+     */
+    private function decodeFrames(string &$buffer, ?int $clientId = null): array
     {
         $messages = [];
 
         while (strlen($buffer) >= 2) {
-            $bytes = unpack('Cfirst/Csecond', substr($buffer, 0, 2));
-            $payloadLength = $bytes['second'] & 127;
+            if ($clientId !== null && ($this->clients[$clientId]['close_code'] ?? null) !== null) {
+                // Dupa Close nu mai procesam nimic de la acest client.
+                $buffer = '';
+                break;
+            }
+
+            $first = ord($buffer[0]);
+            $second = ord($buffer[1]);
+            $fin = ($first & 0x80) === 0x80;
+            $opcode = $first & 0x0F;
+            $masked = ($second & 0x80) === 0x80;
+            $payloadLength = $second & 0x7F;
             $offset = 2;
 
             if ($payloadLength === 126) {
@@ -1798,7 +2115,12 @@ class OcppServe extends Command
                 $offset = 10;
             }
 
-            $masked = ($bytes['second'] & 128) === 128;
+            if ($payloadLength < 0 || $payloadLength > self::MAX_MESSAGE_BYTES) {
+                $this->failConnection($clientId, 1009, 'frame too large: ' . $payloadLength);
+                $buffer = '';
+                break;
+            }
+
             $mask = '';
 
             if ($masked) {
@@ -1814,35 +2136,145 @@ class OcppServe extends Command
             }
 
             $payload = substr($buffer, $offset, $payloadLength);
-            $buffer = substr($buffer, $offset + $payloadLength);
+            $buffer = (string) substr($buffer, $offset + $payloadLength);
 
-            if ($masked) {
-                $decoded = '';
-                for ($i = 0; $i < $payloadLength; $i++) {
-                    $decoded .= $payload[$i] ^ $mask[$i % 4];
-                }
-                $payload = $decoded;
+            if ($masked && $payloadLength > 0) {
+                $payload = $payload ^ str_repeat($mask, intdiv($payloadLength, 4) + 1);
+                $payload = substr($payload, 0, $payloadLength);
             }
 
-            $messages[] = $payload;
+            if ($clientId === null) {
+                if ($opcode === 0x1 && $fin) {
+                    $messages[] = $payload;
+                }
+
+                continue;
+            }
+
+            $message = $this->handleFrame($clientId, $fin, $opcode, $payload);
+
+            if ($message !== null) {
+                $messages[] = $message;
+            }
         }
 
         return $messages;
     }
 
-    private function encodeFrame(string $payload): string
+    /**
+     * @return string|null mesaj text complet, daca acest cadru il finalizeaza
+     */
+    private function handleFrame(int $clientId, bool $fin, int $opcode, string $payload): ?string
+    {
+        $isControl = ($opcode & 0x08) === 0x08;
+
+        if ($isControl) {
+            if (! $fin || strlen($payload) > 125) {
+                $this->failConnection($clientId, 1002, 'invalid control frame');
+
+                return null;
+            }
+
+            if ($opcode === 0x9) {
+                $this->queueRaw($clientId, $this->encodeFrame($payload, 0xA));
+            } elseif ($opcode === 0x8) {
+                $code = strlen($payload) >= 2 ? unpack('n', substr($payload, 0, 2))[1] : 1000;
+                $this->queueRaw($clientId, $this->encodeFrame(strlen($payload) >= 2 ? substr($payload, 0, 2) : '', 0x8));
+                $this->markClosing($clientId, $code);
+            } elseif ($opcode !== 0xA) {
+                $this->failConnection($clientId, 1002, 'unknown control opcode ' . $opcode);
+            }
+
+            return null;
+        }
+
+        $fragmentOpcode = $this->clients[$clientId]['fragment_opcode'] ?? null;
+
+        if ($opcode === 0x0) {
+            if ($fragmentOpcode === null) {
+                $this->failConnection($clientId, 1002, 'continuation without start frame');
+
+                return null;
+            }
+
+            $assembled = ($this->clients[$clientId]['message_fragment'] ?? '') . $payload;
+
+            if (strlen($assembled) > self::MAX_MESSAGE_BYTES) {
+                $this->failConnection($clientId, 1009, 'fragmented message too large');
+
+                return null;
+            }
+
+            if (! $fin) {
+                $this->clients[$clientId]['message_fragment'] = $assembled;
+
+                return null;
+            }
+
+            $this->clients[$clientId]['message_fragment'] = '';
+            $this->clients[$clientId]['fragment_opcode'] = null;
+
+            return $fragmentOpcode === 0x1 ? $assembled : null;
+        }
+
+        if ($opcode !== 0x1 && $opcode !== 0x2) {
+            $this->failConnection($clientId, 1002, 'unknown data opcode ' . $opcode);
+
+            return null;
+        }
+
+        if ($fragmentOpcode !== null) {
+            $this->failConnection($clientId, 1002, 'new data frame inside fragmented message');
+
+            return null;
+        }
+
+        if (! $fin) {
+            $this->clients[$clientId]['message_fragment'] = $payload;
+            $this->clients[$clientId]['fragment_opcode'] = $opcode;
+
+            return null;
+        }
+
+        // OCPP-J foloseste doar cadre text; cadrele binare sunt ignorate.
+        return $opcode === 0x1 ? $payload : null;
+    }
+
+    private function failConnection(?int $clientId, int $code, string $reason): void
+    {
+        if ($clientId === null || ! isset($this->clients[$clientId])) {
+            return;
+        }
+
+        $station = $this->clients[$clientId]['station'] ?? null;
+        Log::warning('OCPP websocket protocol error', [
+            'station' => $station instanceof Station ? $station->ocpp_identity : null,
+            'code' => $code,
+            'reason' => $reason,
+        ]);
+
+        $alreadyClosing = ($this->clients[$clientId]['close_code'] ?? null) !== null;
+        $this->markClosing($clientId, $code);
+
+        if (! $alreadyClosing) {
+            $this->queueRaw($clientId, $this->encodeFrame(pack('n', $code), 0x8));
+        }
+    }
+
+    private function encodeFrame(string $payload, int $opcode = 0x1): string
     {
         $length = strlen($payload);
+        $head = chr(0x80 | $opcode);
 
         if ($length <= 125) {
-            return chr(129) . chr($length) . $payload;
+            return $head . chr($length) . $payload;
         }
 
         if ($length <= 65535) {
-            return chr(129) . chr(126) . pack('n', $length) . $payload;
+            return $head . chr(126) . pack('n', $length) . $payload;
         }
 
-        return chr(129) . chr(127) . pack('NN', 0, $length) . $payload;
+        return $head . chr(127) . pack('NN', 0, $length) . $payload;
     }
 
     private function commandResultStatus(?OcppCommand $command, array $payload): string

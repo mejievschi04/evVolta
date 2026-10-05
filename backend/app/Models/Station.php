@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Station extends Model
 {
@@ -357,6 +359,28 @@ class Station extends Model
         $connectorId ??= $this->defaultConnectorId($connectors);
 
         return $connectors[$connectorId]['status'] ?? null;
+    }
+
+    /**
+     * Momentul (ora serverului) cand conectorul a trecut prima data in Finishing/Available
+     * dupa o stare activa. Null daca nu e eliberat sau nu se stie.
+     */
+    public function connectorReleasedAt(?int $connectorId = null): ?Carbon
+    {
+        $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
+        $connectors = $this->normalizedConnectors($configuration);
+        $connectorId ??= $this->defaultConnectorId($connectors);
+        $value = $connectors[$connectorId]['released_at'] ?? null;
+
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function isVehicleConnectedStatus(?string $status): bool
@@ -776,29 +800,63 @@ class Station extends Model
         return isset($tags[$connectorId]) ? (string) $tags[$connectorId] : null;
     }
 
+    /**
+     * Read-modify-write atomic pe randul statiei: citeste configuratia curenta sub lock,
+     * aplica modificarea si salveaza. Gateway-ul si API-ul scriu in acelasi JSON din
+     * procese diferite; fara lock, o scriere dintr-o copie veche o sterge pe cealalta.
+     *
+     * @param  callable(array<string, mixed> $configuration, Station $locked): ?array<string, mixed>  $mutator
+     *         intoarce atributele de salvat (de regula include 'ocpp_configuration') sau null
+     */
+    public function updateOcppConfigurationAtomically(callable $mutator): void
+    {
+        $locked = DB::transaction(function () use ($mutator): ?self {
+            $locked = static::query()->whereKey($this->getKey())->lockForUpdate()->first();
+
+            if (! $locked) {
+                return null;
+            }
+
+            $configuration = is_array($locked->ocpp_configuration) ? $locked->ocpp_configuration : [];
+            $attributes = $mutator($configuration, $locked);
+
+            if ($attributes !== null && $attributes !== []) {
+                $locked->update($attributes);
+            }
+
+            return $locked;
+        });
+
+        if ($locked) {
+            // Instanta din memorie (ex. cea tinuta de gateway) vede starea salvata.
+            $this->setRawAttributes($locked->getAttributes(), true);
+        }
+    }
+
     public function updateConnectorOcppStatus(int $connectorId, string $status): void
     {
         if ($connectorId <= 0 || $status === '') {
             return;
         }
 
-        $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
-        $connectors = $this->normalizedConnectors($configuration);
+        $this->updateOcppConfigurationAtomically(function (array $configuration, self $locked) use ($connectorId, $status): array {
+            $connectors = $locked->normalizedConnectors($configuration);
 
-        $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], [
-            'connectorId' => $connectorId,
-            'status' => $status,
-            'timestamp' => now()->toIso8601String(),
-        ]);
+            $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], [
+                'connectorId' => $connectorId,
+                'status' => $status,
+                'timestamp' => now()->toIso8601String(),
+            ]);
 
-        $configuration['connectors'] = $connectors;
-        $configuration['connector'] = $connectors[$connectorId];
+            $configuration['connectors'] = $connectors;
+            $configuration['connector'] = $connectors[$connectorId];
 
-        $this->update([
-            'status' => self::aggregateStationStatus($connectors, $this->status ?: self::STATUS_OFFLINE),
-            'ocpp_configuration' => $configuration,
-            'last_ocpp_message_at' => now(),
-        ]);
+            return [
+                'status' => self::aggregateStationStatus($connectors, $locked->status ?: self::STATUS_OFFLINE),
+                'ocpp_configuration' => $configuration,
+                'last_ocpp_message_at' => now(),
+            ];
+        });
     }
 
     public function rememberLocalIdTag(int $connectorId, string $idTag): void
@@ -809,12 +867,18 @@ class Station extends Model
             return;
         }
 
-        $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
-        $tags = is_array($configuration['local_id_tags'] ?? null) ? $configuration['local_id_tags'] : [];
-        $tags[$connectorId] = $idTag;
-        $configuration['local_id_tags'] = $tags;
+        $this->updateOcppConfigurationAtomically(function (array $configuration) use ($connectorId, $idTag): ?array {
+            $tags = is_array($configuration['local_id_tags'] ?? null) ? $configuration['local_id_tags'] : [];
 
-        $this->update(['ocpp_configuration' => $configuration]);
+            if (($tags[$connectorId] ?? null) === $idTag) {
+                return null;
+            }
+
+            $tags[$connectorId] = $idTag;
+            $configuration['local_id_tags'] = $tags;
+
+            return ['ocpp_configuration' => $configuration];
+        });
     }
 
     /**
@@ -1015,29 +1079,28 @@ class Station extends Model
 
     public function markConnectorAvailable(?int $connectorId = null): void
     {
-        $configuration = is_array($this->ocpp_configuration) ? $this->ocpp_configuration : [];
-        $connectors = $this->normalizedConnectors($configuration);
-        $connectorId ??= $this->defaultConnectorId($connectors);
+        $this->updateOcppConfigurationAtomically(function (array $configuration, self $locked) use ($connectorId): array {
+            $connectors = $locked->normalizedConnectors($configuration);
+            $targetId = $connectorId ?? $locked->defaultConnectorId($connectors);
 
-        if ($connectorId <= 0) {
-            $this->update(['status' => self::STATUS_AVAILABLE]);
+            if ($targetId <= 0) {
+                return ['status' => self::STATUS_AVAILABLE];
+            }
 
-            return;
-        }
+            $connectors[$targetId] = array_merge($connectors[$targetId] ?? [], [
+                'connectorId' => $targetId,
+                'status' => 'Available',
+                'timestamp' => now()->toIso8601String(),
+            ]);
 
-        $connectors[$connectorId] = array_merge($connectors[$connectorId] ?? [], [
-            'connectorId' => $connectorId,
-            'status' => 'Available',
-            'timestamp' => now()->toIso8601String(),
-        ]);
+            $configuration['connectors'] = $connectors;
+            $configuration['connector'] = $connectors[$targetId];
 
-        $configuration['connectors'] = $connectors;
-        $configuration['connector'] = $connectors[$connectorId];
-
-        $this->update([
-            'status' => self::aggregateStationStatus($connectors, self::STATUS_AVAILABLE),
-            'ocpp_configuration' => $configuration,
-        ]);
+            return [
+                'status' => self::aggregateStationStatus($connectors, self::STATUS_AVAILABLE),
+                'ocpp_configuration' => $configuration,
+            ];
+        });
     }
 
     /**

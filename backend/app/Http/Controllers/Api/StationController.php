@@ -147,12 +147,7 @@ class StationController extends Controller
 
         $hasPendingStop = OcppCommand::query()
             ->where('charging_session_id', $activeSession->id)
-            ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])
-            ->whereIn('status', [
-                OcppCommand::STATUS_PENDING,
-                OcppCommand::STATUS_SENT,
-                OcppCommand::STATUS_ACCEPTED,
-            ])
+            ->awaitingRemoteStop()
             ->exists();
 
         if (! $hasPendingStop) {

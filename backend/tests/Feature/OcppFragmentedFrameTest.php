@@ -13,8 +13,6 @@ class OcppFragmentedFrameTest extends TestCase
 
     public function test_decode_frames_reassembles_fragmented_boot_notification(): void
     {
-        $this->markTestSkipped('OcppServe frame decode internals were refactored.');
-
         $bootMessage = json_encode([
             2,
             'boot-frag',
@@ -27,9 +25,6 @@ class OcppFragmentedFrameTest extends TestCase
 
         $command = app(OcppServe::class);
         $reflection = new ReflectionClass($command);
-        if (! $reflection->hasProperty('clients')) {
-            $this->markTestSkipped('OcppServe client buffer internals were refactored.');
-        }
         $clientsProperty = $reflection->getProperty('clients');
         $clientsProperty->setAccessible(true);
         $clientsProperty->setValue($command, [
@@ -47,8 +42,8 @@ class OcppFragmentedFrameTest extends TestCase
             . $this->encodeMaskedTextFrame($secondPart, true, true);
         $decoded = $decodeFrames->invokeArgs($command, [&$buffer, 1]);
 
-        $this->assertCount(1, $decoded['messages']);
-        $this->assertSame($bootMessage, $decoded['messages'][0]);
+        $this->assertCount(1, $decoded);
+        $this->assertSame($bootMessage, $decoded[0]);
     }
 
     private function encodeMaskedTextFrame(string $payload, bool $fin, bool $continuation = false): string

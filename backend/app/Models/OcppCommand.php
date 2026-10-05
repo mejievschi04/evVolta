@@ -92,6 +92,71 @@ class OcppCommand extends Model
             });
     }
 
+    /**
+     * RemoteStop inca in desfasurare: in coada, trimis, sau acceptat recent.
+     * Un Accepted fara StopTransaction ulterior nu trebuie sa blocheze sesiunea la nesfarsit.
+     */
+    public function scopeAwaitingRemoteStop($query)
+    {
+        $acceptedWindow = max(30, (int) config('services.ocpp.remote_stop_accepted_window_seconds', 180));
+
+        return $query
+            ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])
+            ->where(function ($inner) use ($acceptedWindow) {
+                $inner->whereIn('status', [self::STATUS_PENDING, self::STATUS_SENT])
+                    ->orWhere(function ($accepted) use ($acceptedWindow) {
+                        $accepted->where('status', self::STATUS_ACCEPTED)
+                            ->where('acknowledged_at', '>=', now()->subSeconds($acceptedWindow));
+                    });
+            });
+    }
+
+    /**
+     * Marcheaza ca esuate comenzile trimise la care statia nu a mai raspuns
+     * (timeout sau conexiune inchisa) si esueaza in lant comenzile dependente.
+     */
+    public static function failUnanswered(
+        string $reason,
+        ?int $stationId = null,
+        ?\DateTimeInterface $sentBefore = null,
+    ): int {
+        $query = self::query()->where('status', self::STATUS_SENT);
+
+        if ($stationId !== null) {
+            $query->where('station_id', $stationId);
+        }
+
+        if ($sentBefore !== null) {
+            $query->where(fn ($inner) => $inner
+                ->whereNull('sent_at')
+                ->orWhere('sent_at', '<', $sentBefore));
+        }
+
+        $failed = 0;
+
+        foreach ($query->get() as $command) {
+            $updated = self::query()
+                ->whereKey($command->id)
+                ->where('status', self::STATUS_SENT)
+                ->update([
+                    'status' => self::STATUS_FAILED,
+                    'error_message' => $reason,
+                    'acknowledged_at' => now(),
+                ]);
+
+            if ($updated === 0) {
+                continue;
+            }
+
+            $command->failPendingDependents(
+                'Comanda parinte a esuat: ' . $command->action . ' (' . $reason . ')'
+            );
+            $failed++;
+        }
+
+        return $failed;
+    }
+
     public function scopeOrderByDispatchPriority($query)
     {
         $quoted = implode("','", self::HIGH_PRIORITY_ACTIONS);
