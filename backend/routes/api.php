@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\MaibCallbackController;
 use App\Http\Controllers\LegalController;
+use App\Http\Controllers\Api\AppConfigController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChargingController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -21,6 +22,7 @@ Route::post('/password/forgot', [PasswordResetController::class, 'forgot'])->mid
 // HTML form opened from the reset email (token in the URL authorizes the change).
 Route::get('/password/reset/{token}', [PasswordResetController::class, 'showResetForm'])->middleware('throttle:30,1');
 Route::post('/password/reset', [PasswordResetController::class, 'reset'])->middleware('throttle:password-reset');
+Route::get('/app/config', [AppConfigController::class, 'show'])->middleware('throttle:60,1');
 Route::get('/legal', [LegalController::class, 'config']);
 Route::get('/legal/terms', [LegalController::class, 'terms']);
 Route::get('/legal/privacy', [LegalController::class, 'privacy']);
