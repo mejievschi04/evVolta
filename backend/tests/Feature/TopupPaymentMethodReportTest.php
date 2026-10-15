@@ -61,7 +61,8 @@ class TopupPaymentMethodReportTest extends TestCase
         $this->withSession(['backoffice_user_id' => $admin->id])
             ->get('/backoffice/reports/wallet-topups?from=2026-10-15&to=2026-10-15')
             ->assertOk()
-            ->assertHeader('Content-Type', 'application/pdf');
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->assertHeader('Content-Disposition', 'attachment; filename="raport-alimentari-20261015-20261015.xlsx"');
     }
 
     private function topup(User $user, string $status, ?string $method = null, ?string $paidAtUtc = null, float $amount = 100): WalletTopup

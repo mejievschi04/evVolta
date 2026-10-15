@@ -40,7 +40,10 @@ class ReportController extends Controller
             LocalTime::day($data['to'])->endOfDay(),
         );
 
-        return $this->pdfResponse($report['pdf'], $report['filename']);
+        return response($report['content'], 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $report['filename'] . '"',
+        ]);
     }
 
     private function pdfResponse(string $pdf, string $filename): Response

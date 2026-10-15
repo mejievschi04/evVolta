@@ -225,6 +225,6 @@ class ReportsAndInvoicePdfTest extends TestCase
         ])
             ->get('/backoffice/reports/wallet-topups?from=' . now()->format('Y-m-d') . '&to=' . now()->format('Y-m-d'))
             ->assertOk()
-            ->assertHeader('Content-Type', 'application/pdf');
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     }
 }

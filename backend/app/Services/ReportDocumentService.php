@@ -6,6 +6,11 @@ use App\Models\ChargingSession;
 use App\Models\Station;
 use App\Models\WalletTopup;
 use Barryvdh\DomPDF\Facade\Pdf;
+use OpenSpout\Common\Entity\Cell;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
+use OpenSpout\Writer\XLSX\Options;
+use OpenSpout\Writer\XLSX\Writer;
 use App\Support\LocalTime;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -33,83 +38,97 @@ class ReportDocumentService
     }
 
     /**
-     * @return array{pdf: string, filename: string}
+     * Top-up report as an Excel workbook: one row per payment, real date and number cells.
+     *
+     * @return array{content: string, filename: string}
      */
     public function walletTopups(Carbon $from, Carbon $to): array
     {
         $from = LocalTime::of($from)->startOfDay();
         $to = LocalTime::of($to)->endOfDay();
         $rows = $this->topupRows($from, $to);
+        $seller = $this->seller();
 
-        $totalAmount = round((float) $rows->sum('amount'), 2);
+        $bold = (new Style())->setFontBold();
+        $title = (new Style())->setFontBold()->setFontSize(14);
+        $header = (new Style())->setFontBold()->setBackgroundColor('F3F4F6');
+        $money = (new Style())->setFormat('#,##0.00');
+        $moneyBold = (new Style())->setFontBold()->setFormat('#,##0.00');
+        $date = (new Style())->setFormat('dd.mm.yyyy hh:mm');
 
-        $bodyRows = $rows->values()->map(function (array $row, int $index) {
-            $userLabel = e($row['user_name']);
-            if ($row['user_email'] !== '') {
-                $userLabel .= '<br><span class="muted">'.e($row['user_email']).'</span>';
-            }
+        $options = new Options();
+        $options->setColumnWidth(6, 1);
+        $options->setColumnWidth(18, 2);
+        $options->setColumnWidth(26, 3);
+        $options->setColumnWidth(30, 4);
+        $options->setColumnWidth(14, 5);
+        $options->setColumnWidth(14, 6);
 
-            return sprintf(
-                '<tr><td class="center">%d</td><td>%s</td><td>%s</td><td>%s</td><td class="num">%s</td></tr>',
-                $index + 1,
-                e($row['paid_at']),
-                $userLabel,
-                e($row['method']),
-                $this->money($row['amount'])
-            );
-        })->implode('');
+        $path = tempnam(sys_get_temp_dir(), 'topups');
+        $writer = new Writer($options);
+        $writer->openToFile($path);
 
-        if ($bodyRows === '') {
-            $bodyRows = '<tr><td colspan="5" class="empty">Nicio alimentare in interval.</td></tr>';
+        $writer->addRow(Row::fromValues([mb_strtoupper($seller['name'])], $bold));
+        $writer->addRow(Row::fromValues([$seller['idno'] !== '' ? 'Cod fiscal (IDNO): '.$seller['idno'] : '']));
+        $writer->addRow(Row::fromValues([]));
+        $writer->addRow(Row::fromValues(['RAPORT ALIMENTARI CONT'], $title));
+        $writer->addRow(Row::fromValues([sprintf(
+            'Perioada: %s – %s · Generat: %s · V CHARGE',
+            $from->format('d.m.Y'),
+            $to->format('d.m.Y'),
+            LocalTime::now()->format('d.m.Y H:i')
+        )]));
+        $writer->addRow(Row::fromValues([]));
+        $writer->addRow(Row::fromValues(['Nr.', 'Data achitarii', 'Client', 'E-mail', 'Metoda', 'Suma (MDL)'], $header));
+
+        foreach ($rows->values() as $index => $row) {
+            $writer->addRow(new Row([
+                Cell::fromValue($index + 1),
+                Cell::fromValue($row['paid_at_local'], $date),
+                Cell::fromValue($row['user_name']),
+                Cell::fromValue($row['user_email']),
+                Cell::fromValue($row['method']),
+                Cell::fromValue($row['amount'], $money),
+            ]));
         }
 
-        $byMethod = $rows->groupBy('method')
-            ->map(fn (Collection $group, string $method) => sprintf(
-                '%s: <strong>%s MDL</strong> (%s)',
-                e($method),
-                $this->money(round((float) $group->sum('amount'), 2)),
-                $this->int($group->count())
-            ))
-            ->sortKeys()
-            ->implode(' · ');
-        $methodsNote = $byMethod !== '' ? '<p class="totals-note">'.$byMethod.'</p>' : '';
-        $count = $this->int($rows->count());
+        if ($rows->isEmpty()) {
+            $writer->addRow(Row::fromValues(['Nicio alimentare in interval.']));
+        }
 
-        $periodLabel = $from->format('d.m.Y') . ' – ' . $to->format('d.m.Y');
-        $html = $this->wrapReportHtml(
-            'Raport alimentari cont',
-            $periodLabel,
-            body: <<<HTML
-<table>
-  <thead>
-    <tr>
-      <th class="center">Nr.</th>
-      <th>Data achitarii</th>
-      <th>Client</th>
-      <th>Metoda</th>
-      <th class="num">Suma (MDL)</th>
-    </tr>
-  </thead>
-  <tbody>
-    {$bodyRows}
-    <tr class="grand">
-      <td colspan="4"><strong>Suma totala ({$count} alimentari)</strong></td>
-      <td class="num"><strong>{$this->money($totalAmount)}</strong></td>
-    </tr>
-  </tbody>
-</table>
-{$methodsNote}
-HTML,
-            companyHeader: $this->companyHeader(),
-        );
+        // Labels start in column A (text flows over the empty cells): some viewers stop at rows starting later.
+        $writer->addRow(new Row([
+            Cell::fromValue(sprintf('Suma totala (%d alimentari)', $rows->count()), $bold),
+            Cell::fromValue(''),
+            Cell::fromValue(''),
+            Cell::fromValue(''),
+            Cell::fromValue(''),
+            Cell::fromValue(round((float) $rows->sum('amount'), 2), $moneyBold),
+        ]));
+
+        $byMethod = $rows->groupBy('method')->sortKeys();
+        if ($byMethod->isNotEmpty()) {
+            $writer->addRow(Row::fromValues([]));
+            $writer->addRow(Row::fromValues(['Pe metode de plata', '', '', '', 'Alimentari', 'Suma (MDL)'], $header));
+            foreach ($byMethod as $method => $group) {
+                $writer->addRow(new Row([
+                    Cell::fromValue((string) $method),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue($group->count()),
+                    Cell::fromValue(round((float) $group->sum('amount'), 2), $money),
+                ]));
+            }
+        }
+
+        $writer->close();
+        $content = (string) file_get_contents($path);
+        @unlink($path);
 
         return [
-            'pdf' => Pdf::loadHTML($html)->setPaper('a4', 'portrait')->output(),
-            'filename' => sprintf(
-                'raport-alimentari-%s-%s.pdf',
-                $from->format('Ymd'),
-                $to->format('Ymd')
-            ),
+            'content' => $content,
+            'filename' => sprintf('raport-alimentari-%s-%s.xlsx', $from->format('Ymd'), $to->format('Ymd')),
         ];
     }
 
@@ -188,6 +207,8 @@ HTML,
             ->map(fn (WalletTopup $topup) => [
                 'id' => (int) $topup->id,
                 'paid_at' => LocalTime::of($topup->paid_at)->format('d.m.Y H:i'),
+                // Local wall-clock time as a naive date: Excel cells carry no timezone.
+                'paid_at_local' => new \DateTimeImmutable(LocalTime::of($topup->paid_at)->format('Y-m-d H:i:s')),
                 'user_name' => (string) ($topup->user?->name ?? ($topup->user_id ? 'User #'.$topup->user_id : 'Fara utilizator')),
                 'user_email' => (string) ($topup->user?->email ?? ''),
                 'method' => WalletTopup::paymentMethodLabel($topup->payment_method),
@@ -256,19 +277,20 @@ HTML
 
     /**
      * Same seller identity as on invoices (INVOICE_SELLER_* / LEGAL_COMPANY_*).
+     *
+     * @return array{name: string, idno: string}
      */
-    private function companyHeader(): string
+    private function seller(): array
     {
-        $seller = app(InvoiceFiscalCalculator::class)->sellerSnapshot();
-        $name = e(mb_strtoupper($seller['seller_name'] !== '' ? $seller['seller_name'] : (string) config('legal.company_name', 'Volta SRL')));
-        $idno = $seller['seller_idno'] !== '' ? $seller['seller_idno'] : (string) config('legal.company_idno', '');
+        $snapshot = app(InvoiceFiscalCalculator::class)->sellerSnapshot();
 
-        return '<div class="company"><strong>'.$name.'</strong>'
-            .($idno !== '' ? '<br>Cod fiscal (IDNO): '.e($idno) : '')
-            .'</div>';
+        return [
+            'name' => $snapshot['seller_name'] !== '' ? $snapshot['seller_name'] : (string) config('legal.company_name', 'Volta SRL'),
+            'idno' => $snapshot['seller_idno'] !== '' ? $snapshot['seller_idno'] : (string) config('legal.company_idno', ''),
+        ];
     }
 
-    private function wrapReportHtml(string $title, string $periodLabel, string $body, string $companyHeader = ''): string
+    private function wrapReportHtml(string $title, string $periodLabel, string $body): string
     {
         $safeTitle = e($title);
         $safePeriod = e($periodLabel);
@@ -293,11 +315,9 @@ HTML
     .totals-note { margin-top: 14px; line-height: 1.6; }
     .muted { color: #6b7280; font-size: 10px; }
     .empty { text-align: center; color: #6b7280; }
-    .company { margin-bottom: 12px; font-size: 12px; line-height: 1.5; }
   </style>
 </head>
 <body>
-  {$companyHeader}
   <h1>{$safeTitle}</h1>
   <p class="meta">Perioada: {$safePeriod} · Generat: {$generated} · V CHARGE</p>
   {$body}

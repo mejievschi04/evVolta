@@ -12,6 +12,7 @@
         "firebase/php-jwt": "^7.0",
         "laravel/framework": "^13.0",
         "laravel/tinker": "^3.0",
+        "openspout/openspout": "^4.28",
         "tymon/jwt-auth": "^2.3"
     },
     "require-dev": {
