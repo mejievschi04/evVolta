@@ -38,7 +38,8 @@ class AuthController extends Controller
         $data = $request->validate([
             'first_name' => 'nullable|string|max:120',
             'last_name' => 'nullable|string|max:120',
-            'name' => 'nullable|string|max:255',
+            // Shown as "Nume Prenume" on top-up confirmations.
+            'name' => 'required_without_all:first_name,last_name|nullable|string|max:255|not_regex:/@/',
             'email' => 'required|email|max:255|unique:users,email',
             'phone' => 'nullable|string|max:40',
             'password' => ['required', 'string', Password::defaults()],
@@ -337,7 +338,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'first_name' => 'nullable|string|max:120',
             'last_name' => 'nullable|string|max:120',
-            'name' => 'nullable|string|max:255',
+            'name' => 'nullable|string|max:255|not_regex:/@/',
             'phone' => 'nullable|string|max:40',
             'email' => [
                 'sometimes',

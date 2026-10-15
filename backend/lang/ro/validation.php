@@ -31,6 +31,7 @@ return [
         'array' => ':Attribute trebuie sa aiba cel putin :min elemente.',
         'file' => ':Attribute trebuie sa aiba cel putin :min kilobytes.',
     ],
+    'not_regex' => ':Attribute nu are un format valid.',
     'numeric' => ':Attribute trebuie sa fie un numar.',
     'password' => [
         'letters' => ':Attribute trebuie sa contina cel putin o litera.',
@@ -40,13 +41,14 @@ return [
         'uncompromised' => ':Attribute a aparut intr-o scurgere de date. Alege alta parola.',
     ],
     'required' => 'Campul :attribute este obligatoriu.',
+    'required_without_all' => 'Campul :attribute este obligatoriu.',
     'string' => ':Attribute trebuie sa fie text.',
     'unique' => 'Exista deja un cont cu acest :attribute.',
 
     'attributes' => [
         'email' => 'e-mail',
         'password' => 'parola',
-        'name' => 'nume',
+        'name' => 'nume si prenume',
         'first_name' => 'prenume',
         'last_name' => 'nume',
         'phone' => 'telefon',

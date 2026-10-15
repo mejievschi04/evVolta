@@ -160,6 +160,17 @@ class User extends Authenticatable implements JWTSubject
         ];
     }
 
+    /**
+     * Whether the account has a real name (registration used to fall back to the email,
+     * and providers may not share a name).
+     */
+    public function hasRealName(): bool
+    {
+        $name = trim((string) $this->name);
+
+        return $name !== '' && ! str_contains($name, '@');
+    }
+
     public function usesPasswordForDeletion(): bool
     {
         return blank($this->google_id) && blank($this->apple_id);

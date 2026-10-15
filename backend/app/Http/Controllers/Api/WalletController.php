@@ -91,6 +91,14 @@ class WalletController extends Controller
             ], 422);
         }
 
+        // The top-up confirmation states the payer's name.
+        if (! $user->hasRealName()) {
+            return response()->json([
+                'message' => 'Completeaza numele si prenumele in Setari cont inainte de alimentare.',
+                'code' => 'name_required',
+            ], 422);
+        }
+
         $data = $request->validate([
             'amount' => 'required|numeric|min:'.WalletService::MIN_TOPUP_AMOUNT.'|max:50000',
         ], [

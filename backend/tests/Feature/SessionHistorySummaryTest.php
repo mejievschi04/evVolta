@@ -57,6 +57,13 @@ class SessionHistorySummaryTest extends TestCase
         $this->actingAs($user, 'api')->getJson('/api/sessions')->assertOk()->assertJsonCount(5);
         $this->actingAs($user, 'api')->getJson('/api/sessions?limit=2')->assertOk()->assertJsonCount(2);
 
+        $firstPage = collect($this->actingAs($user, 'api')->getJson('/api/sessions?limit=2')->json())->pluck('id');
+        $secondPage = collect($this->actingAs($user, 'api')->getJson('/api/sessions?limit=2&offset=2')->json())->pluck('id');
+        $lastPage = $this->actingAs($user, 'api')->getJson('/api/sessions?limit=2&offset=4')->json();
+        $this->assertCount(2, $secondPage);
+        $this->assertCount(1, $lastPage);
+        $this->assertEmpty($firstPage->intersect($secondPage), 'Pages must not overlap');
+
         $this->actingAs($user, 'api')->getJson('/api/sessions/summary')
             ->assertOk()
             ->assertJsonPath('sessions', 5)

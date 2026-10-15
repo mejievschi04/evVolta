@@ -26,7 +26,12 @@ class SessionController extends Controller
     {
         // Optional: newer apps ask for the latest N and take totals from /sessions/summary.
         // Without it the full history is returned, as older app versions compute totals from it.
-        $limit = $request->validate(['limit' => 'sometimes|integer|min:1|max:500'])['limit'] ?? null;
+        $paging = $request->validate([
+            'limit' => 'sometimes|integer|min:1|max:500',
+            'offset' => 'sometimes|integer|min:0',
+        ]);
+        $limit = $paging['limit'] ?? null;
+        $offset = $limit ? (int) ($paging['offset'] ?? 0) : 0;
 
         $this->reconcileOpenSessions($request);
 
@@ -40,7 +45,8 @@ class SessionController extends Controller
                 ->with(['station', 'invoice', 'user'])
                 ->where('user_id', $request->user()->id)
                 ->latest('start_time')
-                ->when($limit, fn ($query) => $query->limit((int) $limit))
+                ->orderByDesc('id')
+                ->when($limit, fn ($query) => $query->limit((int) $limit)->offset($offset))
                 ->get(),
             fn (ChargingSession $session): bool => ! $session->invoice
                 && (bool) $session->end_time?->greaterThan($ensureInvoiceSince),
