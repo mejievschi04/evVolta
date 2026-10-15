@@ -1,0 +1,4 @@
+{
+    "(and :count more error)": "(si inca o eroare)",
+    "(and :count more errors)": "(si inca :count erori)"
+}

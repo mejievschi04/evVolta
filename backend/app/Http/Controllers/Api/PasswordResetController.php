@@ -22,6 +22,8 @@ class PasswordResetController extends Controller
 
     public function forgot(Request $request): JsonResponse
     {
+        User::normalizeEmailInput($request);
+
         $data = $request->validate([
             'email' => 'required|email',
         ]);
@@ -49,6 +51,8 @@ class PasswordResetController extends Controller
 
     public function reset(Request $request): Response
     {
+        User::normalizeEmailInput($request);
+
         $validator = Validator::make($request->all(), [
             'token' => 'required|string',
             'email' => 'required|email',

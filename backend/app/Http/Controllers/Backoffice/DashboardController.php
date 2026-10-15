@@ -1576,6 +1576,8 @@ class DashboardController extends Controller
 
     public function storeUser(Request $request): JsonResponse|RedirectResponse
     {
+        User::normalizeEmailInput($request);
+
         $data = $request->validate([
             'first_name' => 'nullable|string|max:100',
             'last_name' => 'nullable|string|max:100',
@@ -1623,6 +1625,8 @@ class DashboardController extends Controller
 
     public function updateUser(Request $request, User $user): JsonResponse|RedirectResponse
     {
+        User::normalizeEmailInput($request);
+
         if ($user->isAdmin()) {
             abort(404);
         }

@@ -33,6 +33,7 @@ class ProfileApiTest extends TestCase
                 'first_name' => 'Ion',
                 'last_name' => 'Popescu',
                 'email' => 'ion@example.test',
+                'current_password' => 'password123',
                 'currency' => 'eur',
             ])
             ->assertOk()
@@ -72,5 +73,47 @@ class ProfileApiTest extends TestCase
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('email');
+    }
+
+    public function test_email_change_requires_current_password(): void
+    {
+        $user = User::query()->create([
+            'name' => 'Driver',
+            'email' => 'owner@example.test',
+            'password' => Hash::make('password123'),
+        ]);
+
+        foreach ([null, 'wrong-pass1'] as $currentPassword) {
+            $this->actingAs($user, 'api')
+                ->patchJson('/api/me', array_filter([
+                    'email' => 'attacker@example.test',
+                    'current_password' => $currentPassword,
+                ]))
+                ->assertUnprocessable()
+                ->assertJsonPath('message', 'Introdu parola curenta pentru a schimba e-mailul.');
+        }
+
+        // Sending the unchanged email (any case) needs no password.
+        $this->actingAs($user, 'api')
+            ->patchJson('/api/me', ['email' => 'Owner@Example.test', 'name' => 'Driver Two'])
+            ->assertOk();
+
+        $this->assertSame('owner@example.test', $user->fresh()->email);
+    }
+
+    public function test_social_account_cannot_change_email_from_app(): void
+    {
+        $user = User::query()->create([
+            'name' => 'Google User',
+            'email' => 'g@example.test',
+            'password' => Hash::make('random-'.uniqid()),
+            'google_id' => 'google-123',
+        ]);
+
+        $this->actingAs($user, 'api')
+            ->patchJson('/api/me', ['email' => 'other@example.test'])
+            ->assertUnprocessable();
+
+        $this->assertSame('g@example.test', $user->fresh()->email);
     }
 }

@@ -36,6 +36,8 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse|RedirectResponse
     {
+        User::normalizeEmailInput($request);
+
         $credentials = $request->validate([
             'email' => 'required|email',
             'password' => 'required|string',

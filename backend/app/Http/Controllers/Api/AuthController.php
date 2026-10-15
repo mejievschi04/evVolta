@@ -33,6 +33,8 @@ class AuthController extends Controller
 
     public function register(Request $request): JsonResponse
     {
+        User::normalizeEmailInput($request);
+
         $data = $request->validate([
             'first_name' => 'nullable|string|max:120',
             'last_name' => 'nullable|string|max:120',
@@ -95,6 +97,8 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
+        User::normalizeEmailInput($request);
+
         $credentials = $request->validate([
             'email' => 'required|email',
             'password' => 'required|string',
@@ -325,6 +329,8 @@ class AuthController extends Controller
 
     public function updateProfile(Request $request): JsonResponse
     {
+        User::normalizeEmailInput($request);
+
         $user = Auth::guard('api')->user();
         $previousEmail = $user->email;
 
@@ -340,7 +346,24 @@ class AuthController extends Controller
                 'max:255',
                 Rule::unique('users', 'email')->ignore($user->id),
             ],
+            'current_password' => 'nullable|string',
         ]);
+
+        // The email is where password-reset links go: changing it with only a (possibly stolen)
+        // token would let someone take the account over for good.
+        if (array_key_exists('email', $data) && $data['email'] !== $user->email) {
+            if (! $user->usesPasswordForDeletion()) {
+                return response()->json([
+                    'message' => 'E-mailul unui cont Google/Apple nu poate fi schimbat din aplicatie.',
+                ], 422);
+            }
+
+            if (! is_string($data['current_password'] ?? null) || ! Hash::check($data['current_password'], $user->password)) {
+                return response()->json([
+                    'message' => 'Introdu parola curenta pentru a schimba e-mailul.',
+                ], 422);
+            }
+        }
 
         $firstName = array_key_exists('first_name', $data) ? trim((string) $data['first_name']) : (string) $user->first_name;
         $lastName = array_key_exists('last_name', $data) ? trim((string) $data['last_name']) : (string) $user->last_name;

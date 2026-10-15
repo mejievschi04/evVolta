@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\StationFavorite;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -61,6 +62,30 @@ class User extends Authenticatable implements JWTSubject
             'wallet_balance' => 'float',
             'token_version' => 'integer',
         ];
+    }
+
+    /**
+     * Emails are compared exactly (PostgreSQL is case-sensitive), so they are always stored
+     * and looked up in one canonical form.
+     */
+    public static function normalizeEmail(mixed $email): mixed
+    {
+        return is_string($email) ? strtolower(trim($email)) : $email;
+    }
+
+    /**
+     * Lowercases the "email" input in place, before validation and credential checks.
+     */
+    public static function normalizeEmailInput(\Illuminate\Http\Request $request): void
+    {
+        if ($request->has('email')) {
+            $request->merge(['email' => self::normalizeEmail($request->input('email'))]);
+        }
+    }
+
+    protected function email(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => self::normalizeEmail($value));
     }
 
     protected static function booted(): void

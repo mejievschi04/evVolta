@@ -146,11 +146,13 @@ class ApiAuthSecurityTest extends TestCase
     {
         $user = $this->createAppUser([
             'email' => 'profile@example.test',
+            'password' => Hash::make('password123'),
         ]);
 
         $this->actingAs($user, 'api')
             ->patchJson('/api/me', [
                 'email' => 'profile-updated@example.test',
+                'current_password' => 'password123',
                 'name' => 'Updated Name',
             ])
             ->assertOk();
