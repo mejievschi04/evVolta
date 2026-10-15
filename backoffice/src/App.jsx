@@ -1930,7 +1930,7 @@ function ReportsView({ onDownloadReport }) {
 
           <article className="report-card">
             <h3>Raport alimentari cont</h3>
-            <p>Fiecare plata: data achitarii, cine a achitat, metoda (Card / MIA) si suma, cu suma totala.</p>
+            <p>Fiecare plata: data achitarii, clientul, metoda (Card / MIA) si suma, cu suma totala.</p>
             <div className="settings-grid">
               <label>
                 De la

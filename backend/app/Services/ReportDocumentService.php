@@ -79,13 +79,13 @@ class ReportDocumentService
         $html = $this->wrapReportHtml(
             'Raport alimentari cont',
             $periodLabel,
-            <<<HTML
+            body: <<<HTML
 <table>
   <thead>
     <tr>
       <th class="center">Nr.</th>
       <th>Data achitarii</th>
-      <th>Cine a achitat</th>
+      <th>Client</th>
       <th>Metoda</th>
       <th class="num">Suma (MDL)</th>
     </tr>
@@ -99,7 +99,8 @@ class ReportDocumentService
   </tbody>
 </table>
 {$methodsNote}
-HTML
+HTML,
+            companyHeader: $this->companyHeader(),
         );
 
         return [
@@ -253,7 +254,21 @@ HTML
         return Pdf::loadHTML($html)->setPaper('a4', 'landscape')->output();
     }
 
-    private function wrapReportHtml(string $title, string $periodLabel, string $body): string
+    /**
+     * Same seller identity as on invoices (INVOICE_SELLER_* / LEGAL_COMPANY_*).
+     */
+    private function companyHeader(): string
+    {
+        $seller = app(InvoiceFiscalCalculator::class)->sellerSnapshot();
+        $name = e(mb_strtoupper($seller['seller_name'] !== '' ? $seller['seller_name'] : (string) config('legal.company_name', 'Volta SRL')));
+        $idno = $seller['seller_idno'] !== '' ? $seller['seller_idno'] : (string) config('legal.company_idno', '');
+
+        return '<div class="company"><strong>'.$name.'</strong>'
+            .($idno !== '' ? '<br>Cod fiscal (IDNO): '.e($idno) : '')
+            .'</div>';
+    }
+
+    private function wrapReportHtml(string $title, string $periodLabel, string $body, string $companyHeader = ''): string
     {
         $safeTitle = e($title);
         $safePeriod = e($periodLabel);
@@ -278,9 +293,11 @@ HTML
     .totals-note { margin-top: 14px; line-height: 1.6; }
     .muted { color: #6b7280; font-size: 10px; }
     .empty { text-align: center; color: #6b7280; }
+    .company { margin-bottom: 12px; font-size: 12px; line-height: 1.5; }
   </style>
 </head>
 <body>
+  {$companyHeader}
   <h1>{$safeTitle}</h1>
   <p class="meta">Perioada: {$safePeriod} · Generat: {$generated} · V CHARGE</p>
   {$body}
