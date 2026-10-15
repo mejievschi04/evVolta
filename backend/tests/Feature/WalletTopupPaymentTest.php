@@ -42,6 +42,7 @@ class WalletTopupPaymentTest extends TestCase
             ]);
         $maib->shouldReceive('isCheckoutPaid')->once()->andReturn(true);
         $maib->shouldReceive('extractPaymentId')->once()->andReturn('pay-wallet-1');
+        $maib->shouldReceive('extractPaymentMethod')->once()->andReturn('MiaQr');
         $this->app->instance(MaibPaymentService::class, $maib);
 
         $this->actingAs($user, 'api')
@@ -53,6 +54,7 @@ class WalletTopupPaymentTest extends TestCase
 
         $this->assertSame(150.0, (float) $user->fresh()->wallet_balance);
         $this->assertSame('pay-wallet-1', $topup->fresh()->payment_intent_id);
+        $this->assertSame('MiaQr', $topup->fresh()->payment_method);
         $this->assertDatabaseMissing('invoices', ['wallet_topup_id' => $topup->id]);
     }
 

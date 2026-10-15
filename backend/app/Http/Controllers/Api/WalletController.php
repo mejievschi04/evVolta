@@ -210,6 +210,7 @@ class WalletController extends Controller
                 $topup,
                 $topup->payment_session_id,
                 $maibPaymentService->extractPaymentId($info),
+                $maibPaymentService->extractPaymentMethod($info),
             );
         }
 

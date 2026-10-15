@@ -152,6 +152,7 @@ class ReconcileWalletTopups extends Command
                 $topup,
                 $topup->payment_session_id,
                 $maibPaymentService->extractPaymentId($info),
+                $maibPaymentService->extractPaymentMethod($info),
             );
         } catch (Throwable $exception) {
             Log::error('wallet.topup.credit_failed', [

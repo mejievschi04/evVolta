@@ -39,69 +39,71 @@ class ReportDocumentService
     {
         $from = LocalTime::of($from)->startOfDay();
         $to = LocalTime::of($to)->endOfDay();
-        $rows = $this->topupDayAggregates($from, $to);
+        $rows = $this->topupRows($from, $to);
 
-        $totalTx = (int) $rows->sum('topups_count');
         $totalAmount = round((float) $rows->sum('amount'), 2);
-        $totalRefunded = round((float) $rows->sum('amount_refunded'), 2);
-        $totalNet = round($totalAmount - $totalRefunded, 2);
 
-        $bodyRows = $rows->map(function (array $row) {
-            $dateLabel = $row['date'] !== 'unknown'
-                ? Carbon::createFromFormat('Y-m-d', $row['date'])->format('d.m.Y')
-                : '-';
+        $bodyRows = $rows->values()->map(function (array $row, int $index) {
             $userLabel = e($row['user_name']);
             if ($row['user_email'] !== '') {
                 $userLabel .= '<br><span class="muted">'.e($row['user_email']).'</span>';
             }
 
             return sprintf(
-                '<tr><td>%s</td><td>%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%s</td></tr>',
-                e($dateLabel),
+                '<tr><td class="center">%d</td><td>%s</td><td>%s</td><td>%s</td><td class="num">%s</td></tr>',
+                $index + 1,
+                e($row['paid_at']),
                 $userLabel,
-                number_format($row['topups_count'], 0, '.', ' '),
-                number_format($row['amount'], 2, '.', ' '),
-                number_format($row['amount_refunded'], 2, '.', ' '),
-                number_format($row['net'], 2, '.', ' ')
+                e($row['method']),
+                $this->money($row['amount'])
             );
         })->implode('');
 
         if ($bodyRows === '') {
-            $bodyRows = '<tr><td colspan="6" class="empty">Nicio alimentare in interval.</td></tr>';
+            $bodyRows = '<tr><td colspan="5" class="empty">Nicio alimentare in interval.</td></tr>';
         }
+
+        $byMethod = $rows->groupBy('method')
+            ->map(fn (Collection $group, string $method) => sprintf(
+                '%s: <strong>%s MDL</strong> (%s)',
+                e($method),
+                $this->money(round((float) $group->sum('amount'), 2)),
+                $this->int($group->count())
+            ))
+            ->sortKeys()
+            ->implode(' · ');
+        $methodsNote = $byMethod !== '' ? '<p class="totals-note">'.$byMethod.'</p>' : '';
+        $count = $this->int($rows->count());
 
         $periodLabel = $from->format('d.m.Y') . ' – ' . $to->format('d.m.Y');
         $html = $this->wrapReportHtml(
-            'Raport alimentari',
+            'Raport alimentari cont',
             $periodLabel,
             <<<HTML
 <table>
   <thead>
     <tr>
-      <th>Data</th>
-      <th>Utilizator</th>
-      <th class="num">Tranzactii</th>
+      <th class="center">Nr.</th>
+      <th>Data achitarii</th>
+      <th>Cine a achitat</th>
+      <th>Metoda</th>
       <th class="num">Suma (MDL)</th>
-      <th class="num">Returnat</th>
-      <th class="num">Net (MDL)</th>
     </tr>
   </thead>
   <tbody>
     {$bodyRows}
     <tr class="grand">
-      <td colspan="2"><strong>Total</strong></td>
-      <td class="num"><strong>{$this->int($totalTx)}</strong></td>
+      <td colspan="4"><strong>Suma totala ({$count} alimentari)</strong></td>
       <td class="num"><strong>{$this->money($totalAmount)}</strong></td>
-      <td class="num"><strong>{$this->money($totalRefunded)}</strong></td>
-      <td class="num"><strong>{$this->money($totalNet)}</strong></td>
     </tr>
   </tbody>
 </table>
+{$methodsNote}
 HTML
         );
 
         return [
-            'pdf' => Pdf::loadHTML($html)->setPaper('a4', 'landscape')->output(),
+            'pdf' => Pdf::loadHTML($html)->setPaper('a4', 'portrait')->output(),
             'filename' => sprintf(
                 'raport-alimentari-%s-%s.pdf',
                 $from->format('Ymd'),
@@ -168,47 +170,27 @@ HTML
     }
 
     /**
-     * One row per calendar day × user (paid topups that day).
+     * One row per paid top-up, in payment order (local time).
      *
-     * @return Collection<int, array{date: string, user_id: int|null, user_name: string, user_email: string, topups_count: int, amount: float, amount_refunded: float, net: float}>
+     * @return Collection<int, array{id: int, paid_at: string, user_name: string, user_email: string, method: string, amount: float}>
      */
-    private function topupDayAggregates(Carbon $from, Carbon $to): Collection
+    private function topupRows(Carbon $from, Carbon $to): Collection
     {
-        $topups = WalletTopup::query()
+        return WalletTopup::query()
             ->with('user:id,name,email')
             ->where('status', 'paid')
             ->whereNotNull('paid_at')
             ->whereBetween('paid_at', [LocalTime::utc($from), LocalTime::utc($to)])
-            ->get();
-
-        $grouped = $topups->groupBy(function (WalletTopup $topup) {
-            $day = LocalTime::of($topup->paid_at)?->format('Y-m-d') ?? 'unknown';
-            $userId = (int) ($topup->user_id ?? 0);
-
-            return $day.'|'.$userId;
-        });
-
-        return $grouped->map(function (Collection $group, string $key) {
-            [$day, $userKey] = explode('|', $key, 2);
-            $userId = (int) $userKey;
-            $user = $group->first()?->user;
-            $amount = round((float) $group->sum('amount'), 2);
-            $refunded = round((float) $group->sum('amount_refunded'), 2);
-
-            return [
-                'date' => $day,
-                'user_id' => $userId > 0 ? $userId : null,
-                'user_name' => (string) ($user?->name ?? ($userId > 0 ? 'User #'.$userId : 'Fara utilizator')),
-                'user_email' => (string) ($user?->email ?? ''),
-                'topups_count' => $group->count(),
-                'amount' => $amount,
-                'amount_refunded' => $refunded,
-                'net' => round($amount - $refunded, 2),
-            ];
-        })
-            ->sortBy([
-                ['date', 'asc'],
-                ['user_name', 'asc'],
+            ->orderBy('paid_at')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (WalletTopup $topup) => [
+                'id' => (int) $topup->id,
+                'paid_at' => LocalTime::of($topup->paid_at)->format('d.m.Y H:i'),
+                'user_name' => (string) ($topup->user?->name ?? ($topup->user_id ? 'User #'.$topup->user_id : 'Fara utilizator')),
+                'user_email' => (string) ($topup->user?->email ?? ''),
+                'method' => WalletTopup::paymentMethodLabel($topup->payment_method),
+                'amount' => round((float) $topup->amount, 2),
             ])
             ->values();
     }

@@ -69,7 +69,7 @@ class LocalCalendarTest extends TestCase
         $rows = $this->topupRows(LocalTime::day('2026-10-15'), LocalTime::day('2026-10-15')->endOfDay());
 
         $this->assertCount(1, $rows);
-        $this->assertSame('2026-10-15', $rows[0]['date']);
+        $this->assertSame('15.10.2026 01:30', $rows[0]['paid_at']);
         $this->assertSame((float) $lateNight->amount, $rows[0]['amount']);
     }
 
@@ -130,7 +130,7 @@ class LocalCalendarTest extends TestCase
      */
     private function topupRows(Carbon $from, Carbon $to): array
     {
-        $method = new \ReflectionMethod(ReportDocumentService::class, 'topupDayAggregates');
+        $method = new \ReflectionMethod(ReportDocumentService::class, 'topupRows');
 
         return $method->invoke(app(ReportDocumentService::class), $from, $to)->all();
     }

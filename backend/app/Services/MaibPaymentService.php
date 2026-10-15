@@ -129,6 +129,17 @@ class MaibPaymentService
         return null;
     }
 
+    /**
+     * MAIB's paymentMethod for the executed payment ("Card", "MiaQr", ...).
+     */
+    public function extractPaymentMethod(array $checkout): ?string
+    {
+        $payment = $checkout['payment'] ?? null;
+        $method = is_array($payment) ? ($payment['paymentMethod'] ?? null) : null;
+
+        return is_string($method) && trim($method) !== '' ? mb_substr(trim($method), 0, 32) : null;
+    }
+
     public function extractRrn(array $checkout): ?string
     {
         $payment = $checkout['payment'] ?? null;

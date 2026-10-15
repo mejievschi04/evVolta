@@ -245,18 +245,23 @@ class WalletService
         WalletTopup $topup,
         ?string $paymentSessionId = null,
         ?string $paymentIntentId = null,
+        ?string $paymentMethod = null,
     ): void {
         $paidTopup = null;
         $balanceAfter = null;
         $justCredited = false;
 
-        DB::transaction(function () use ($topup, $paymentSessionId, $paymentIntentId, &$paidTopup, &$balanceAfter, &$justCredited): void {
+        DB::transaction(function () use ($topup, $paymentSessionId, $paymentIntentId, $paymentMethod, &$paidTopup, &$balanceAfter, &$justCredited): void {
             $locked = WalletTopup::query()
                 ->whereKey($topup->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
             if ($locked->status === 'paid') {
+                // Already credited (e.g. by app verification); only fill the method if it was missing.
+                if ($paymentMethod && ! $locked->payment_method) {
+                    $locked->update(['payment_method' => $paymentMethod]);
+                }
                 $paidTopup = $locked->fresh(['user']);
 
                 return;
@@ -268,6 +273,7 @@ class WalletService
                 'payment_provider' => $locked->payment_provider ?: 'maib',
                 'payment_session_id' => $paymentSessionId ?: $locked->payment_session_id,
                 'payment_intent_id' => $paymentIntentId ?: $locked->payment_intent_id,
+                'payment_method' => $paymentMethod ?: $locked->payment_method,
             ]);
 
             $user = User::query()

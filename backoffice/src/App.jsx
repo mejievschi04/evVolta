@@ -1929,8 +1929,8 @@ function ReportsView({ onDownloadReport }) {
           </article>
 
           <article className="report-card">
-            <h3>Raport alimentari</h3>
-            <p>Pe interval: fiecare zi × fiecare utilizator (tranzactii, suma, returnat, net).</p>
+            <h3>Raport alimentari cont</h3>
+            <p>Fiecare plata: data achitarii, cine a achitat, metoda (Card / MIA) si suma, cu suma totala.</p>
             <div className="settings-grid">
               <label>
                 De la

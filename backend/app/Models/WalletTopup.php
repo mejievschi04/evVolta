@@ -13,6 +13,7 @@ class WalletTopup extends Model
         'currency',
         'status',
         'payment_provider',
+        'payment_method',
         'payment_session_id',
         'payment_intent_id',
         'paid_at',
@@ -23,6 +24,21 @@ class WalletTopup extends Model
         'amount_refunded' => 'float',
         'paid_at' => 'datetime',
     ];
+
+    /**
+     * Report label for MAIB's paymentMethod ("Card", "MiaQr", ...).
+     */
+    public static function paymentMethodLabel(?string $method): string
+    {
+        $normalized = strtolower(trim((string) $method));
+
+        return match (true) {
+            $normalized === '' => 'Nespecificat',
+            str_contains($normalized, 'card') => 'Card',
+            str_contains($normalized, 'mia') => 'MIA',
+            default => (string) $method,
+        };
+    }
 
     public function refundableAmount(): float
     {

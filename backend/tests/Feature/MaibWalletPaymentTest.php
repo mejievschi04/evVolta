@@ -116,6 +116,7 @@ class MaibWalletPaymentTest extends TestCase
         $this->assertSame('paid', $topup->fresh()->status);
         $this->assertSame('5a4d27a4-79f5-426b-9403-cccdeee81747', $topup->fresh()->payment_session_id);
         $this->assertSame('379b31a3-8283-43d4-8a7b-eef8c0736a32', $topup->fresh()->payment_intent_id);
+        $this->assertSame('Card', $topup->fresh()->payment_method);
         Queue::assertPushed(SendWalletTopupConfirmationJob::class, 1);
 
         $this->postSignedMaibCallback($payload)->assertOk();
