@@ -38,6 +38,8 @@ class OcppServe extends Command
 
     private float $lastReleasedSweepAt = 0;
 
+    private float $lastUnstartedSweepAt = 0;
+
     /** Limita pentru un mesaj OCPP (inclusiv reasamblat din fragmente). */
     private const MAX_MESSAGE_BYTES = 1048576;
 
@@ -83,6 +85,7 @@ class OcppServe extends Command
             $this->expireUnansweredCommands();
             $this->flushOutboxes();
             $this->finalizeReleasedSessions();
+            $this->closeUnstartedSessions();
             usleep(50000);
         }
     }
@@ -884,6 +887,7 @@ class OcppServe extends Command
                 'ocpp_id_tag' => OcppService::idTagForUser($user),
                 'meter_start_kwh' => $meterStart,
                 'kwh_consumed' => 0,
+                'price_per_kwh' => app(\App\Services\TariffService::class)->snapshotPriceForNewSession($user),
             ]);
         }
 
@@ -1127,6 +1131,20 @@ class OcppServe extends Command
                 'meter_stop_kwh_reported' => $meterStop,
                 'meter_stop_kwh_billed' => $session->meter_stop_kwh,
             ]);
+        } elseif ($closedSession = $this->findClosedSessionForTransaction($station, $transactionId, $connectorId)) {
+            // findSessionForTransaction only matches open rows: a StopTransaction arriving after the
+            // session was already finalized (e.g. release sweep) lands here.
+            Log::info('OCPP StopTransaction ignored: session already closed', [
+                'station' => $station->ocpp_identity,
+                'connector_id' => $connectorId,
+                'transaction_id' => $transactionId,
+                'reason' => $reason !== '' ? $reason : null,
+                'session_id' => $closedSession->id,
+                'meter_stop_kwh_reported' => $meterStop,
+                'meter_stop_kwh_billed' => $closedSession->meter_stop_kwh,
+            ]);
+
+            $this->recordLateMeterStop($station, $closedSession, $meterStop, $transactionId, $reason);
         } else {
             Log::warning('OCPP StopTransaction ignored: no matching session', [
                 'station' => $station->ocpp_identity,
@@ -1221,40 +1239,6 @@ class OcppServe extends Command
                 );
             }
 
-            if ($command->action === 'ReserveNow') {
-                $reservationId = (int) ($command->payload['reservationId'] ?? 0);
-                $connectorId = (int) ($command->payload['connectorId'] ?? 0);
-                $reservation = \App\Models\Reservation::query()
-                    ->where('station_id', $station->id)
-                    ->where('ocpp_reservation_id', $reservationId)
-                    ->first();
-
-                if ($reservation) {
-                    if ($status === OcppCommand::STATUS_ACCEPTED) {
-                        app(\App\Services\ReservationService::class)->confirmReservation($reservation, $connectorId);
-                    } elseif ($status === OcppCommand::STATUS_REJECTED) {
-                        app(\App\Services\ReservationService::class)->handleOcppReserveFailed($reservation);
-                    }
-                }
-            }
-
-            if (
-                $command->action === 'CancelReservation'
-                && $status === OcppCommand::STATUS_ACCEPTED
-            ) {
-                $reservationId = (int) ($command->payload['reservationId'] ?? 0);
-                $reservation = \App\Models\Reservation::query()
-                    ->where('station_id', $station->id)
-                    ->where('ocpp_reservation_id', $reservationId)
-                    ->first();
-
-                if ($reservation && $connectorId = (int) $reservation->connector_id) {
-                    if ($station->connectorOcppStatus($connectorId) === 'Reserved') {
-                        $station->updateConnectorOcppStatus($connectorId, 'Available');
-                    }
-                }
-            }
-
             if (
                 in_array($command->action, ['RemoteStopTransaction', 'RequestStopTransaction'], true)
                 && $status === OcppCommand::STATUS_REJECTED
@@ -1294,20 +1278,6 @@ class OcppServe extends Command
             $command->failPendingDependents(
                 'Comanda parinte a esuat: ' . $command->action . ' (' . $errorCode . ')'
             );
-
-            // A failed ReserveNow leaves the reservation stuck in "pending" with the
-            // booking fee charged. Roll it back so the slot frees up and the fee is refunded.
-            if ($command->action === 'ReserveNow') {
-                $reservationId = (int) ($command->payload['reservationId'] ?? 0);
-                $reservation = \App\Models\Reservation::query()
-                    ->where('station_id', $station->id)
-                    ->where('ocpp_reservation_id', $reservationId)
-                    ->first();
-
-                if ($reservation) {
-                    app(\App\Services\ReservationService::class)->handleOcppReserveFailed($reservation);
-                }
-            }
         }
 
         $this->recordMessage($station, 'inbound', $uid, $command?->action . 'Error', [
@@ -1493,6 +1463,88 @@ class OcppServe extends Command
                 }
             } catch (Throwable $exception) {
                 Log::error('OCPP released-session sweep failed', [
+                    'station_id' => $station->id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Sesiunea a fost deja facturata (ex. inchisa dupa eliberarea portului) cand StopTransaction
+     * aduce contorul final. Daca difera de ce s-a facturat, lasa o urma vizibila in auditul din
+     * backoffice (prefix financiar, pastrat 365 de zile) ca operatorul sa poata regulariza.
+     */
+    private function recordLateMeterStop(
+        Station $station,
+        ChargingSession $session,
+        ?float $meterStop,
+        string $transactionId,
+        string $reason,
+    ): void {
+        $billed = $session->meter_stop_kwh;
+
+        if ($meterStop === null || ($billed !== null && abs($meterStop - (float) $billed) < 0.01)) {
+            return;
+        }
+
+        try {
+            app(\App\Services\AuditLogService::class)->record(
+                action: 'charging.meter_stop_late',
+                subjectType: ChargingSession::class,
+                subjectId: $session->id,
+                station: $station,
+                session: $session,
+                metadata: [
+                    'transaction_id' => $transactionId !== '' ? $transactionId : '0',
+                    'reason' => $reason !== '' ? $reason : null,
+                    'meter_stop_kwh_reported' => $meterStop,
+                    'meter_stop_kwh_billed' => $billed,
+                    'difference_kwh' => $billed !== null ? round($meterStop - (float) $billed, 3) : null,
+                    'kwh_billed' => $session->kwh_consumed,
+                ],
+            );
+        } catch (Throwable $exception) {
+            Log::error('OCPP late meter stop audit failed', [
+                'session_id' => $session->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Elibereaza porturile si bugetele tinute de sesiuni din aplicatie care n-au pornit niciodata.
+     */
+    private function closeUnstartedSessions(): void
+    {
+        $now = microtime(true);
+
+        if ($now - $this->lastUnstartedSweepAt < 30) {
+            return;
+        }
+
+        $this->lastUnstartedSweepAt = $now;
+        $stopService = app(ChargingStopService::class);
+
+        foreach ($this->clients as $client) {
+            $station = $client['station'] ?? null;
+
+            // Only stations connected right now: their connector status is current.
+            if (! ($client['handshaken'] ?? false) || ! $station instanceof Station) {
+                continue;
+            }
+
+            try {
+                $closed = $stopService->closeUnstartedSessions($station);
+
+                if ($closed > 0) {
+                    Log::warning('OCPP unstarted app sessions closed', [
+                        'station' => $station->ocpp_identity,
+                        'closed' => $closed,
+                    ]);
+                }
+            } catch (Throwable $exception) {
+                Log::error('OCPP unstarted-session sweep failed', [
                     'station_id' => $station->id,
                     'error' => $exception->getMessage(),
                 ]);
@@ -2065,6 +2117,24 @@ class OcppServe extends Command
                     $query->orWhere('id', (int) $transactionId);
                 }
             });
+
+        if ($connectorId > 0) {
+            $query->where('ocpp_connector_id', $connectorId);
+        }
+
+        return $query->latest('id')->first();
+    }
+
+    private function findClosedSessionForTransaction(Station $station, string $transactionId, int $connectorId = 0): ?ChargingSession
+    {
+        if ($transactionId === '' || $transactionId === '0') {
+            return null;
+        }
+
+        $query = ChargingSession::query()
+            ->where('station_id', $station->id)
+            ->whereNotNull('end_time')
+            ->where('ocpp_transaction_id', $transactionId);
 
         if ($connectorId > 0) {
             $query->where('ocpp_connector_id', $connectorId);

@@ -69,6 +69,9 @@ return [
 
     'timezone' => 'UTC',
 
+    // Timestamps stay in UTC; customer-facing documents show them in this zone.
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'Europe/Chisinau'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

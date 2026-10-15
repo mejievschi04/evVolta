@@ -16,7 +16,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
     Route::get('/', fn () => redirect()->route('backoffice.login'))->name('backoffice.root');
     Route::get('/csrf', fn () => response()->json(['token' => csrf_token()]))->name('backoffice.csrf');
     Route::get('/login', [BackofficeAuthController::class, 'showLogin'])->name('backoffice.login');
-    Route::post('/login', [BackofficeAuthController::class, 'login'])->middleware('throttle:auth')->name('backoffice.login.post');
+    Route::post('/login', [BackofficeAuthController::class, 'login'])->middleware('throttle:login')->name('backoffice.login.post');
 
     Route::middleware('backoffice.auth')->group(function () {
         Route::post('/logout', [BackofficeAuthController::class, 'logout'])->name('backoffice.logout');
@@ -37,7 +37,6 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::get('/stations/{station}/qr', [DashboardController::class, 'downloadStationQr'])->name('backoffice.stations.qr');
         Route::get('/sessions', [DashboardController::class, 'sessions'])->name('backoffice.sessions');
         Route::get('/sessions/{session}/ocpp-debug', [DashboardController::class, 'sessionOcppDebug'])->name('backoffice.sessions.ocpp_debug');
-        Route::get('/reservations', [DashboardController::class, 'reservations'])->name('backoffice.reservations');
         Route::post('/sessions/{session}/stop', [DashboardController::class, 'stopSession'])->name('backoffice.sessions.stop');
         Route::post('/sessions/{session}/delete', [DashboardController::class, 'deleteSession'])->name('backoffice.sessions.delete');
         Route::get('/users', [DashboardController::class, 'users'])->name('backoffice.users');

@@ -159,6 +159,83 @@ class OcppStopTransactionGraceTest extends TestCase
         ));
     }
 
+    public function test_late_stop_transaction_with_different_meter_is_audited(): void
+    {
+        [$station, $session] = $this->chargingSession();
+
+        $this->statusNotification($station, 'Finishing');
+        $this->setClients($station->fresh());
+        $this->travel(61)->seconds();
+        $this->resetSweepThrottle();
+        $this->invoke('finalizeReleasedSessions');
+        $this->assertSame(104.0, (float) $session->fresh()->meter_stop_kwh, 'Billed from last MeterValues');
+
+        // The real final meter arrives afterwards.
+        $this->invoke('onStopTransaction', $station->fresh(), [
+            'transactionId' => (int) $session->ocpp_transaction_id,
+            'connectorId' => 1,
+            'meterStop' => 105500,
+            'timestamp' => now()->toIso8601String(),
+            'reason' => 'EVDisconnected',
+        ], app(BillingService::class));
+
+        $audit = \App\Models\AuditLog::query()->where('action', 'charging.meter_stop_late')->first();
+        $this->assertNotNull($audit);
+        $this->assertSame($session->id, (int) $audit->subject_id);
+        $this->assertEqualsWithDelta(1.5, $audit->metadata['difference_kwh'], 0.001);
+        $this->assertSame(4.0, (float) $session->fresh()->kwh_consumed, 'Billing itself is not changed');
+    }
+
+    public function test_late_stop_transaction_matching_billed_meter_is_not_audited(): void
+    {
+        [$station, $session] = $this->chargingSession();
+
+        $this->statusNotification($station, 'Finishing');
+        $this->setClients($station->fresh());
+        $this->travel(61)->seconds();
+        $this->resetSweepThrottle();
+        $this->invoke('finalizeReleasedSessions');
+
+        $this->invoke('onStopTransaction', $station->fresh(), [
+            'transactionId' => (int) $session->ocpp_transaction_id,
+            'connectorId' => 1,
+            'meterStop' => 104000,
+            'timestamp' => now()->toIso8601String(),
+        ], app(BillingService::class));
+
+        $this->assertDatabaseMissing('audit_logs', ['action' => 'charging.meter_stop_late']);
+    }
+
+    public function test_gateway_loop_closes_unstarted_sessions_of_connected_stations(): void
+    {
+        $user = $this->createAppUser();
+        $station = Station::query()->create([
+            'name' => 'Statia Unstarted',
+            'location' => 'Test',
+            'status' => Station::STATUS_AVAILABLE,
+            'ocpp_identity' => 'UNST-' . bin2hex(random_bytes(3)),
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_ocpp_message_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 1,
+                'connectors' => [1 => ['connectorId' => 1, 'status' => 'Available']],
+            ],
+        ]);
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'start_time' => now()->subMinutes(20),
+            'start_source' => 'app',
+            'kwh_consumed' => 0,
+        ]);
+
+        $this->setClients($station->fresh());
+        $this->invoke('closeUnstartedSessions');
+
+        $this->assertSame('NeverStarted', $session->fresh()->ocpp_stop_reason);
+    }
+
     // --- helpers -----------------------------------------------------------
 
     /**

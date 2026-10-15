@@ -2,15 +2,17 @@
 
 namespace App\Mail;
 
-use App\Models\Invoice;
 use App\Models\WalletTopup;
 use Illuminate\Mail\Mailable;
 
 class WalletTopupConfirmationMail extends Mailable
 {
+    /**
+     * @param  array{amount: string, balance: string, name: string, email: string, paid_at: string}  $details
+     */
     public function __construct(
         public readonly WalletTopup $topup,
-        public readonly ?Invoice $invoice,
+        public readonly array $details,
         private readonly ?string $attachmentPdf = null,
         private readonly ?string $attachmentName = null,
     ) {
@@ -19,11 +21,7 @@ class WalletTopupConfirmationMail extends Mailable
     public function build(): self
     {
         $mail = $this
-            ->subject(
-                $this->invoice?->invoice_number
-                    ? 'Factura '.$this->invoice->invoice_number.' - alimentare V CHARGE'
-                    : 'Confirmare alimentare wallet-topup-'.$this->topup->id.' - V CHARGE'
-            )
+            ->subject('Confirmare suplinire cont - V CHARGE')
             ->view('emails.wallet-topup-confirmation');
 
         if ($this->attachmentPdf !== null && $this->attachmentName !== null) {

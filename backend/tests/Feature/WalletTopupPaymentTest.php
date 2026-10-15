@@ -53,13 +53,7 @@ class WalletTopupPaymentTest extends TestCase
 
         $this->assertSame(150.0, (float) $user->fresh()->wallet_balance);
         $this->assertSame('pay-wallet-1', $topup->fresh()->payment_intent_id);
-        $this->assertDatabaseHas('invoices', [
-            'user_id' => $user->id,
-            'wallet_topup_id' => $topup->id,
-            'invoice_type' => 'wallet_topup',
-            'status' => 'paid',
-            'total_amount' => 100,
-        ]);
+        $this->assertDatabaseMissing('invoices', ['wallet_topup_id' => $topup->id]);
     }
 
     public function test_verify_wallet_topup_is_idempotent_when_already_paid(): void

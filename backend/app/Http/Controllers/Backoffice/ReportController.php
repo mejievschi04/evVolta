@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Backoffice;
 
 use App\Http\Controllers\Controller;
 use App\Services\ReportDocumentService;
-use Carbon\Carbon;
+use App\Support\LocalTime;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -22,7 +22,7 @@ class ReportController extends Controller
         ]);
 
         $report = $this->reportDocumentService->stationsMonthly(
-            Carbon::createFromFormat('Y-m', $data['month'])->startOfMonth()
+            LocalTime::month($data['month'])
         );
 
         return $this->pdfResponse($report['pdf'], $report['filename']);
@@ -36,8 +36,8 @@ class ReportController extends Controller
         ]);
 
         $report = $this->reportDocumentService->walletTopups(
-            Carbon::createFromFormat('Y-m-d', $data['from'])->startOfDay(),
-            Carbon::createFromFormat('Y-m-d', $data['to'])->endOfDay(),
+            LocalTime::day($data['from']),
+            LocalTime::day($data['to'])->endOfDay(),
         );
 
         return $this->pdfResponse($report['pdf'], $report['filename']);

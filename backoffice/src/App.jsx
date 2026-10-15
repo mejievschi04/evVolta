@@ -42,7 +42,6 @@ const sections = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'stations', label: 'Statii', icon: Zap },
   { id: 'sessions', label: 'Sesiuni', icon: BatteryCharging },
-  { id: 'reservations', label: 'Rezervari', icon: Calendar },
   { id: 'clients', label: 'Utilizatori', icon: Users },
   { id: 'wallet', label: 'Alimentari', icon: Wallet },
   { id: 'invoices', label: 'Facturi', icon: Receipt },
@@ -55,7 +54,6 @@ const endpoints = {
   dashboard: '/backoffice/dashboard',
   stations: '/backoffice/stations',
   sessions: '/backoffice/sessions',
-  reservations: '/backoffice/reservations',
   clients: '/backoffice/users',
   wallet: '/backoffice/wallet-topups',
   invoices: '/backoffice/invoices',
@@ -66,7 +64,6 @@ const emptyData = {
   dashboard: null,
   stations: [],
   sessions: [],
-  reservations: [],
   clients: [],
   walletTopups: [],
   walletRefunds: [],
@@ -487,6 +484,7 @@ function statusLabel(status) {
     unpaid: 'Neplatita',
     pending: 'In asteptare',
     failed: 'Esuata',
+    expired: 'Expirata',
     approved: 'Aprobata',
     rejected: 'Respinsa'
   }[status] ?? status ?? '-';
@@ -1646,108 +1644,6 @@ const sessionStatusFilters = [
   { id: 'closed', label: 'Inchise' }
 ];
 
-const reservationStatusLabels = {
-  pending: 'In asteptare',
-  confirmed: 'Confirmata',
-  active: 'In folosinta',
-  completed: 'Finalizata',
-  cancelled: 'Anulata',
-  expired: 'Expirata',
-  no_show: 'Neprezentare'
-};
-
-function ReservationsView({ rows, loading }) {
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-
-  const summary = useMemo(() => {
-    const activeLike = rows.filter((item) => ['pending', 'confirmed', 'active'].includes(item.status));
-    const completed = rows.filter((item) => item.status === 'completed');
-    const cancelled = rows.filter((item) => ['cancelled', 'expired', 'no_show'].includes(item.status));
-
-    return {
-      activeLike: activeLike.length,
-      completed: completed.length,
-      cancelled: cancelled.length
-    };
-  }, [rows]);
-
-  const visibleRows = rows.filter((reservation) => {
-    if (statusFilter && reservation.status !== statusFilter) return false;
-
-    return matchesQuery(reservation, query, [
-      (item) => item.user?.name,
-      (item) => item.user?.email,
-      (item) => item.station?.name,
-      (item) => item.status,
-      (item) => reservationStatusLabels[item.status]
-    ]);
-  });
-
-  return (
-    <ListPanel
-      columns={['Utilizator / Statie', 'Interval', 'Status', 'Taxa']}
-      emptyDetail="Rezervarile apar aici dupa ce utilizatorii rezervă un slot."
-      emptyTitle="Nu exista rezervari"
-      filters={(
-        <>
-          <button
-            className={statusFilter === '' ? 'filter-chip active-filter' : 'filter-chip'}
-            onClick={() => setStatusFilter('')}
-            type="button"
-          >
-            Toate
-          </button>
-          {Object.entries(reservationStatusLabels).map(([id, label]) => (
-            <button
-              className={statusFilter === id ? 'filter-chip active-filter' : 'filter-chip'}
-              key={id}
-              onClick={() => setStatusFilter(id)}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </>
-      )}
-      icon={Calendar}
-      kpis={[
-        { label: 'Active / programate', value: formatNumber(summary.activeLike), tone: 'warning' },
-        { label: 'Finalizate', value: formatNumber(summary.completed), tone: 'success' },
-        { label: 'Anulate / expirate', value: formatNumber(summary.cancelled) }
-      ]}
-      loading={loading}
-      noResults={rows.length > 0 && visibleRows.length === 0}
-      onSearchChange={setQuery}
-      render={(reservation) => (
-        <>
-          <div className="ops-cell">
-            <strong>{reservation.user?.name ?? '-'}</strong>
-            <p>
-              {reservation.station?.name ?? '-'}
-              {reservation.connector_id ? ` · Port ${reservation.connector_id}` : ''}
-            </p>
-          </div>
-          <div className="ops-cell">
-            <strong>{formatDateTime(reservation.starts_at)}</strong>
-            <span>→ {formatDateTime(reservation.ends_at)}</span>
-          </div>
-          <Badge>{reservationStatusLabels[reservation.status] ?? reservation.status}</Badge>
-          <div className="ops-cell">
-            <span className="ops-muted">Gratuit</span>
-          </div>
-        </>
-      )}
-      resultCount={visibleRows.length}
-      rows={visibleRows}
-      rowClassName="ops-row ops-row-4"
-      searchValue={query}
-      subtitle="Sloturi rezervate si status"
-      title="Rezervari"
-    />
-  );
-}
-
 function SessionOpsRow({ session, onStop, onDelete, onDownloadInvoice, onDebug }) {
   const isActive = !session.end_time;
   const kwh = sessionKwhDelivered(session);
@@ -2149,9 +2045,11 @@ function InvoicesView({ rows, loading, onDownload, onSend, onDelete }) {
               <Send size={14} />
               Trimite
             </button>
-            <button className="icon-button mini-icon danger-icon" onClick={() => onDelete(invoice)} title="Sterge factura" type="button" aria-label="Sterge factura">
-              <X size={15} />
-            </button>
+            {invoice.status !== 'paid' && !invoice.source_session_id && !invoice.wallet_topup_id ? (
+              <button className="icon-button mini-icon danger-icon" onClick={() => onDelete(invoice)} title="Sterge factura" type="button" aria-label="Sterge factura">
+                <X size={15} />
+              </button>
+            ) : null}
           </div>
         </>
       )}
@@ -2480,7 +2378,8 @@ function AuditDetailModal({ detail, loading, error, onClose }) {
 const walletStatusFilters = [
   { id: '', label: 'Toate' },
   { id: 'paid', label: 'Platite' },
-  { id: 'pending', label: 'In asteptare' }
+  { id: 'pending', label: 'In asteptare' },
+  { id: 'expired', label: 'Expirate' }
 ];
 
 const walletViewFilters = [
@@ -3205,8 +3104,6 @@ function StationDetailModal({
   const connectors = detail.connectors ?? [];
   const activeSessions = detail.active_sessions ?? [];
   const diagnosticsCommands = detail.diagnostics_commands ?? [];
-  const reservationPolicy = detail.reservation_policy ?? {};
-  const upcomingReservations = detail.upcoming_reservations ?? [];
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -3294,36 +3191,6 @@ function StationDetailModal({
                         </button>
                       )}
                     </article>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="detail-section detail-section-tight">
-              <h3>Rezervari</h3>
-              <div className="detail-metrics-grid">
-                <DetailMetric
-                  label="Status"
-                  value={reservationPolicy.enabled ? 'Activate' : 'Dezactivate'}
-                />
-                <DetailMetric label="Durata max" value={`${reservationPolicy.max_duration_minutes ?? 0} min`} />
-                <DetailMetric label="Avans" value={`${reservationPolicy.advance_days ?? 0} zile`} />
-                <DetailMetric label="Grace" value={`${reservationPolicy.grace_minutes ?? 0} min`} />
-              </div>
-              {upcomingReservations.length === 0 ? (
-                <p className="detail-empty">Nicio rezervare viitoare.</p>
-              ) : (
-                <div className="detail-table session-detail-table">
-                  {upcomingReservations.map((reservation) => (
-                    <div className="detail-table-row" key={reservation.id}>
-                      <div>
-                        <strong>Port {reservation.connector_id}</strong>
-                        <p className="request-meta">
-                          {formatDateTime(reservation.starts_at)} → {formatDateTime(reservation.ends_at)}
-                        </p>
-                      </div>
-                      <Badge>{reservationStatusLabels[reservation.status] ?? reservation.status}</Badge>
-                    </div>
                   ))}
                 </div>
               )}
@@ -3921,32 +3788,6 @@ function ActionModal({ type, entity, error, saving, onClose, onSubmit }) {
                 <input readOnly value={entity.ocpp_connection_url} />
               </label>
             )}
-            <label>
-              Rezervari activate
-              <select name="reservations_enabled" defaultValue={entity?.reservations_enabled ? '1' : '0'}>
-                <option value="0">Nu</option>
-                <option value="1">Da</option>
-              </select>
-            </label>
-            <label>
-              Rezervare obligatorie la start
-              <select name="reservation_require_for_start" defaultValue={entity?.reservation_require_for_start ? '1' : '0'}>
-                <option value="0">Nu</option>
-                <option value="1">Da</option>
-              </select>
-            </label>
-            <label>
-              Durata max (minute)
-              <input defaultValue={entity?.reservation_max_duration_minutes ?? 30} name="reservation_max_duration_minutes" inputMode="numeric" />
-            </label>
-            <label>
-              Avans maxim (zile)
-              <input defaultValue={entity?.reservation_advance_days ?? 14} name="reservation_advance_days" inputMode="numeric" />
-            </label>
-            <label>
-              Grace period (minute)
-              <input defaultValue={entity?.reservation_grace_minutes ?? 20} name="reservation_grace_minutes" inputMode="numeric" />
-            </label>
           </div>
         ) : (
           <div className="settings-grid">
@@ -4026,7 +3867,6 @@ function ActiveView({ activeSection, data, loading, actions, onRefresh }) {
         onRefresh={onRefresh}
       />
     ),
-    reservations: <ReservationsView rows={data.reservations} loading={loading} />,
     clients: (
       <ClientsView
         rows={data.clients}

@@ -126,7 +126,7 @@ class BillingServiceTest extends TestCase
         $this->assertSame('session', $invoice->invoice_type);
     }
 
-    public function test_credit_topup_creates_wallet_invoice(): void
+    public function test_credit_topup_does_not_issue_wallet_invoice(): void
     {
         config(['billing.prepaid_wallet_enabled' => true]);
 
@@ -143,12 +143,7 @@ class BillingServiceTest extends TestCase
 
         app(WalletService::class)->creditTopup($topup->fresh(), 'cs_test_topup_invoice', 'pi_test_topup_invoice');
 
-        $this->assertDatabaseHas('invoices', [
-            'user_id' => $user->id,
-            'wallet_topup_id' => $topup->id,
-            'invoice_type' => 'wallet_topup',
-            'status' => 'paid',
-            'total_amount' => 250,
-        ]);
+        $this->assertSame(250.0, (float) $user->fresh()->wallet_balance);
+        $this->assertDatabaseMissing('invoices', ['wallet_topup_id' => $topup->id]);
     }
 }

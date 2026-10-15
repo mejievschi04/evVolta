@@ -47,7 +47,7 @@ class InvoiceController extends Controller
             'summary' => [
                 'billing_model' => 'prepay',
                 'currency' => $statistics['currency'],
-                'issue_schedule' => 'Primesti factura dupa fiecare plata: alimentare wallet sau sesiune incheiata.',
+                'issue_schedule' => 'Primesti factura dupa fiecare sesiune de incarcare incheiata.',
                 'paid_count' => $invoices->where('status', 'paid')->count(),
                 'unpaid_count' => $unpaid->count(),
                 'outstanding_amount' => round((float) $unpaid->sum('total_amount'), 2),

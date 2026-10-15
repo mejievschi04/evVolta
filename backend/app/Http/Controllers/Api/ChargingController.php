@@ -4,14 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChargingSession;
-use App\Models\Reservation;
 use App\Models\Station;
 use App\Services\AuditLogService;
 use App\Services\ChargingResumeService;
 use App\Services\ChargingStopService;
 use App\Services\OcppService;
-use App\Services\ReservationService;
 use App\Services\SessionPresentationService;
+use App\Services\TariffService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,7 +26,6 @@ class ChargingController extends Controller
         private readonly ChargingResumeService $chargingResumeService,
         private readonly WalletService $walletService,
         private readonly SessionPresentationService $sessionPresentationService,
-        private readonly ReservationService $reservationService,
     ) {
     }
 
@@ -116,8 +114,6 @@ class ChargingController extends Controller
 
                 $connectorId = $station->resolveStartConnectorIdForUser($user, $requestedConnector);
 
-                $this->reservationService->assertUserMayStart($user, $station, $connectorId);
-
                 if (! in_array($connectorId, $station->expectedConnectorIds(), true)) {
                     throw new RuntimeException('Conector invalid pentru aceasta statie.', 422);
                 }
@@ -126,7 +122,7 @@ class ChargingController extends Controller
                     $station = $this->ocppService->syncConnectorStateBeforeStart($station);
                 }
 
-                $this->reservationService->assertConnectorPlugged($station, $connectorId);
+                $this->ocppService->assertConnectorPlugged($station, $connectorId);
 
                 if (! $station->canAcceptRemoteStart($connectorId, $user)) {
                     throw new RuntimeException('Conectorul selectat nu este disponibil pentru pornire.', 422);
@@ -312,6 +308,7 @@ class ChargingController extends Controller
                     'start_source' => 'app',
                     'start_time' => now(),
                     'kwh_consumed' => 0,
+                    'price_per_kwh' => app(TariffService::class)->snapshotPriceForNewSession($request->user()),
                 ]);
 
                 if ($prepaidLimits !== null) {
@@ -321,20 +318,6 @@ class ChargingController extends Controller
                         $prepaidLimits['budget_amount'],
                         $prepaidLimits['target_kwh'],
                     );
-                }
-
-                $activeReservation = Reservation::query()
-                    ->with('station')
-                    ->where('user_id', $request->user()->id)
-                    ->where('station_id', $station->id)
-                    ->where('connector_id', $connectorId)
-                    ->whereIn('status', [Reservation::STATUS_CONFIRMED, Reservation::STATUS_ACTIVE])
-                    ->where('starts_at', '<=', now())
-                    ->get()
-                    ->first(fn (Reservation $reservation) => $reservation->isWithinStartWindow());
-
-                if ($activeReservation) {
-                    $this->reservationService->attachSession($activeReservation, $session->id);
                 }
 
                 $station->update(['status' => Station::STATUS_CHARGING]);

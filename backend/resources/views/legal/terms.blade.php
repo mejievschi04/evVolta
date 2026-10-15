@@ -18,15 +18,14 @@ un cont sau de a porni o sesiune.
         <li><a href="#s5"><span class="n">5.</span>Tarife si preturi</a></li>
         <li><a href="#s6"><span class="n">6.</span>Sold, plati, prestarea serviciului si retururi</a></li>
         <li><a href="#s7"><span class="n">7.</span>Facturare</a></li>
-        <li><a href="#s8"><span class="n">8.</span>Rezervari</a></li>
-        <li><a href="#s9"><span class="n">9.</span>Utilizare acceptabila</a></li>
-        <li><a href="#s10"><span class="n">10.</span>Disponibilitate</a></li>
-        <li><a href="#s11"><span class="n">11.</span>Limitarea raspunderii</a></li>
-        <li><a href="#s12"><span class="n">12.</span>Proprietate intelectuala</a></li>
-        <li><a href="#s13"><span class="n">13.</span>Stergerea contului</a></li>
-        <li><a href="#s14"><span class="n">14.</span>Modificari</a></li>
-        <li><a href="#s15"><span class="n">15.</span>Legea aplicabila</a></li>
-        <li><a href="#s16"><span class="n">16.</span>Contact</a></li>
+        <li><a href="#s8"><span class="n">8.</span>Utilizare acceptabila</a></li>
+        <li><a href="#s9"><span class="n">9.</span>Disponibilitate</a></li>
+        <li><a href="#s10"><span class="n">10.</span>Limitarea raspunderii</a></li>
+        <li><a href="#s11"><span class="n">11.</span>Proprietate intelectuala</a></li>
+        <li><a href="#s12"><span class="n">12.</span>Stergerea contului</a></li>
+        <li><a href="#s13"><span class="n">13.</span>Modificari</a></li>
+        <li><a href="#s14"><span class="n">14.</span>Legea aplicabila</a></li>
+        <li><a href="#s15"><span class="n">15.</span>Contact</a></li>
     </ol>
 @endsection
 
@@ -41,7 +40,7 @@ un cont sau de a porni o sesiune.
         </p>
         <p>
             Serviciul include, dupa caz: crearea si gestionarea contului, localizarea statiilor,
-            rezervarea conectorilor, pornirea si oprirea sesiunilor de incarcare, alimentarea
+            pornirea si oprirea sesiunilor de incarcare, alimentarea
             soldului, urmarirea consumului (kWh), facturarea si istoricul tranzactiilor.
         </p>
         <div class="callout">
@@ -161,25 +160,7 @@ un cont sau de a porni o sesiune.
     </section>
 
     <section class="legal-section" id="s8">
-        <h2><span class="n">8.</span> Rezervari</h2>
-        <p>
-            Poti rezerva un conector la statiile care ofera aceasta functie. Rezervarile sunt
-            <strong>gratuite</strong> si limitate la durata maxima configurata pentru statie
-            (de regula pana la <strong>30 de minute</strong>), afisata in aplicatie.
-        </p>
-        <ul>
-            <li>Rezervarea iti pastreaza conectorul pe intervalul confirmat, in limitele tehnice
-                ale statiei.</li>
-            <li>Daca nu te prezinti sau depasesti perioada de gratie, rezervarea se anuleaza
-                automat si conectorul este eliberat. Nu se percepe nicio taxa.</li>
-            <li>Poti anula o rezervare din aplicatie, daca statusul permite.</li>
-            <li>Rezervarea nu garanteaza pornirea incarcarii daca exista defectiuni, ocupare
-                neasteptata sau nerespectarea procedurii de conectare.</li>
-        </ul>
-    </section>
-
-    <section class="legal-section" id="s9">
-        <h2><span class="n">9.</span> Utilizare acceptabila</h2>
+        <h2><span class="n">8.</span> Utilizare acceptabila</h2>
         <p>Te angajezi sa:</p>
         <ul>
             <li>nu deteriorezi echipamentele, cablurile, ecranele sau infrastructura statiei;</li>
@@ -189,13 +170,13 @@ un cont sau de a porni o sesiune.
             <li>nu blochezi inutil conectorii sau locurile de parcare rezervate pentru EV.</li>
         </ul>
         <p>
-            Incalcarea acestor reguli poate atrage suspendarea contului, anularea rezervarilor
-            si, daca este cazul, actiuni legale sau recuperarea prejudiciului.
+            Incalcarea acestor reguli poate atrage suspendarea contului si, daca este cazul,
+            actiuni legale sau recuperarea prejudiciului.
         </p>
     </section>
 
-    <section class="legal-section" id="s10">
-        <h2><span class="n">10.</span> Disponibilitate</h2>
+    <section class="legal-section" id="s9">
+        <h2><span class="n">9.</span> Disponibilitate</h2>
         <p>
             Depunem eforturi rezonabile pentru functionarea aplicatiei si a statiilor, dar nu
             garantam disponibilitate neintrerupta. Pot aparea intreruperi din cauze precum:
@@ -208,8 +189,8 @@ un cont sau de a porni o sesiune.
         </p>
     </section>
 
-    <section class="legal-section" id="s11">
-        <h2><span class="n">11.</span> Limitarea raspunderii</h2>
+    <section class="legal-section" id="s10">
+        <h2><span class="n">10.</span> Limitarea raspunderii</h2>
         <p>
             In masura permisa de legea aplicabila, {{ $companyName }} nu raspunde pentru:
         </p>
@@ -227,8 +208,8 @@ un cont sau de a porni o sesiune.
         </p>
     </section>
 
-    <section class="legal-section" id="s12">
-        <h2><span class="n">12.</span> Proprietate intelectuala</h2>
+    <section class="legal-section" id="s11">
+        <h2><span class="n">11.</span> Proprietate intelectuala</h2>
         <p>
             Aplicatia <strong>{{ $appName }}</strong>, logo-urile, designul, textele si software-ul
             aferent Serviciului sunt protejate. Primesti o licenta limitata, neexclusiva si
@@ -238,8 +219,8 @@ un cont sau de a porni o sesiune.
         </p>
     </section>
 
-    <section class="legal-section" id="s13">
-        <h2><span class="n">13.</span> Stergerea contului</h2>
+    <section class="legal-section" id="s12">
+        <h2><span class="n">12.</span> Stergerea contului</h2>
         <p>
             Poti solicita stergerea contului din setarile aplicatiei. Stergerea poate fi
             conditionata, de exemplu, de:
@@ -258,8 +239,8 @@ un cont sau de a porni o sesiune.
         </p>
     </section>
 
-    <section class="legal-section" id="s14">
-        <h2><span class="n">14.</span> Modificari</h2>
+    <section class="legal-section" id="s13">
+        <h2><span class="n">13.</span> Modificari</h2>
         <p>
             Putem actualiza acesti Termeni pentru a reflecta modificari ale Serviciului
             (inclusiv rebranding-ul aplicatiei ca <strong>{{ $appName }}</strong>),
@@ -273,8 +254,8 @@ un cont sau de a porni o sesiune.
         </p>
     </section>
 
-    <section class="legal-section" id="s15">
-        <h2><span class="n">15.</span> Legea aplicabila</h2>
+    <section class="legal-section" id="s14">
+        <h2><span class="n">14.</span> Legea aplicabila</h2>
         <p>
             Acesti Termeni sunt guvernati de legislatia Republicii Moldova, daca nu este
             prevazut altfel de dispozitii imperative. Eventualele dispute vor fi solutionate
@@ -283,8 +264,8 @@ un cont sau de a porni o sesiune.
         </p>
     </section>
 
-    <section class="legal-section" id="s16">
-        <h2><span class="n">16.</span> Contact</h2>
+    <section class="legal-section" id="s15">
+        <h2><span class="n">15.</span> Contact</h2>
         <p>
             Pentru intrebari despre Termeni, facturare sau suport:
         </p>

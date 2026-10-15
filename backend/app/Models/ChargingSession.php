@@ -25,6 +25,7 @@ class ChargingSession extends Model
         'kwh_consumed',
         'charge_budget',
         'target_kwh',
+        'price_per_kwh',
         'live_metrics',
     ];
 
@@ -34,6 +35,7 @@ class ChargingSession extends Model
         'kwh_consumed' => 'float',
         'charge_budget' => 'float',
         'target_kwh' => 'float',
+        'price_per_kwh' => 'float',
         'meter_start_kwh' => 'float',
         'meter_stop_kwh' => 'float',
         'live_metrics' => 'array',
@@ -109,7 +111,7 @@ class ChargingSession extends Model
         $kwhDelivered = app(SessionEnergyService::class)->telemetryKwhDelivered($this);
         $this->loadMissing('user');
         $pricePerKwh = $this->presentationPricePerKwh
-            ?? app(TariffService::class)->pricePerKwhForUser($this->user);
+            ?? app(TariffService::class)->pricePerKwhForSession($this);
 
         return [
             'kwh_consumed' => $kwhDelivered,

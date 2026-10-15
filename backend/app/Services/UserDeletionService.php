@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\Invoice;
-use App\Models\Reservation;
 use App\Models\StationFavorite;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +15,6 @@ class UserDeletionService
 {
     public function __construct(
         private readonly WalletService $walletService,
-        private readonly OcppService $ocppService,
         private readonly AuditLogService $auditLogService,
     ) {
     }
@@ -71,7 +69,6 @@ class UserDeletionService
             $user = User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
 
             $this->assertDeletable($user);
-            $this->releaseBlockingReservations($user);
 
             StationFavorite::query()->where('user_id', $user->id)->delete();
 
@@ -121,35 +118,6 @@ class UserDeletionService
 
             $user->delete();
         });
-    }
-
-    private function releaseBlockingReservations(User $user): void
-    {
-        $reservations = Reservation::query()
-            ->where('user_id', $user->id)
-            ->blocking()
-            ->with('station')
-            ->get();
-
-        foreach ($reservations as $reservation) {
-            $reservation->update([
-                'status' => Reservation::STATUS_CANCELLED,
-                'cancelled_at' => now(),
-            ]);
-
-            if (! $reservation->station || ! $reservation->ocpp_reservation_id) {
-                continue;
-            }
-
-            try {
-                $this->ocppService->cancelReservation(
-                    $reservation->station,
-                    $reservation->ocpp_reservation_id,
-                );
-            } catch (\Throwable) {
-                // Deletion continues even if the station cannot confirm the cancel.
-            }
-        }
     }
 
     private function scrubAuditMetadata(int $userId): void

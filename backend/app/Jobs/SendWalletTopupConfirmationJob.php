@@ -3,9 +3,8 @@
 namespace App\Jobs;
 
 use App\Mail\WalletTopupConfirmationMail;
-use App\Models\Invoice;
 use App\Models\WalletTopup;
-use App\Services\InvoiceDocumentService;
+use App\Services\TopupConfirmationDocumentService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -20,13 +19,17 @@ class SendWalletTopupConfirmationJob implements ShouldQueue
 
     public int $tries = 3;
 
+    // Declared with a default (not promoted) so jobs queued before this field existed still unserialize.
+    public ?float $balanceAfter = null;
+
     public function __construct(
         public readonly int $topupId,
-        public readonly ?int $invoiceId = null,
+        ?float $balanceAfter = null,
     ) {
+        $this->balanceAfter = $balanceAfter;
     }
 
-    public function handle(InvoiceDocumentService $invoiceDocumentService): void
+    public function handle(TopupConfirmationDocumentService $documents): void
     {
         $topup = WalletTopup::query()->with('user')->find($this->topupId);
 
@@ -34,18 +37,10 @@ class SendWalletTopupConfirmationJob implements ShouldQueue
             return;
         }
 
-        $invoice = $this->invoiceId
-            ? Invoice::query()->find($this->invoiceId)
-            : Invoice::query()->where('wallet_topup_id', $topup->id)->first();
-
-        $pdf = null;
-        $filename = null;
-        if ($invoice) {
-            $pdf = $invoiceDocumentService->pdf($invoice);
-            $filename = $invoiceDocumentService->filename($invoice);
-        }
+        $details = $documents->data($topup, $this->balanceAfter);
+        $pdf = $documents->pdf($topup, $this->balanceAfter);
 
         Mail::to($topup->user->email, $topup->user->name)
-            ->send(new WalletTopupConfirmationMail($topup, $invoice, $pdf, $filename));
+            ->send(new WalletTopupConfirmationMail($topup, $details, $pdf, $documents->filename($topup)));
     }
 }

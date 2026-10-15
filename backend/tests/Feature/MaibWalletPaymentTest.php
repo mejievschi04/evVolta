@@ -29,6 +29,26 @@ class MaibWalletPaymentTest extends TestCase
         ]);
     }
 
+    public function test_create_topup_checkout_rejects_amount_below_minimum(): void
+    {
+        Http::fake();
+
+        $user = $this->createAppUser(['wallet_balance' => 0]);
+
+        $this->actingAs($user, 'api')
+            ->postJson('/api/wallet/topup-checkout', ['amount' => 99.99])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.amount.0', 'Suma minima de alimentare este 100 MDL.');
+
+        $this->assertDatabaseMissing('wallet_topups', ['user_id' => $user->id]);
+        Http::assertNothingSent();
+
+        $this->actingAs($user, 'api')
+            ->getJson('/api/wallet')
+            ->assertOk()
+            ->assertJsonPath('min_topup', 100);
+    }
+
     public function test_create_topup_checkout_returns_maib_checkout_url(): void
     {
         Http::fake([
@@ -399,6 +419,20 @@ class MaibWalletPaymentTest extends TestCase
     /**
      * @param  array<string, mixed>  $payload
      */
+    public function test_callback_with_non_numeric_timestamp_is_rejected_even_if_signed(): void
+    {
+        $raw = json_encode(['orderId' => 'wallet-topup-1', 'paymentStatus' => 'Executed'], JSON_UNESCAPED_SLASHES);
+        $timestamp = 'now';
+        $signature = app(MaibPaymentService::class)->buildCallbackSignature($raw, $timestamp);
+
+        $this->call('POST', '/api/maib/callback', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_SIGNATURE' => $signature,
+            'HTTP_X_SIGNATURE_TIMESTAMP' => $timestamp,
+        ], $raw)->assertStatus(403);
+    }
+
     private function postSignedMaibCallback(array $payload)
     {
         $raw = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

@@ -6,6 +6,7 @@ use App\Models\ChargingSession;
 use App\Models\Station;
 use App\Models\WalletTopup;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\LocalTime;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -16,6 +17,7 @@ class ReportDocumentService
      */
     public function stationsMonthly(Carbon $month): array
     {
+        $month = LocalTime::of($month);
         $from = $month->copy()->startOfMonth();
         $to = $month->copy()->endOfMonth();
         $rows = $this->stationDayAggregates($from, $to);
@@ -35,8 +37,8 @@ class ReportDocumentService
      */
     public function walletTopups(Carbon $from, Carbon $to): array
     {
-        $from = $from->copy()->startOfDay();
-        $to = $to->copy()->endOfDay();
+        $from = LocalTime::of($from)->startOfDay();
+        $to = LocalTime::of($to)->endOfDay();
         $rows = $this->topupDayAggregates($from, $to);
 
         $totalTx = (int) $rows->sum('topups_count');
@@ -118,7 +120,7 @@ HTML
         $sessions = ChargingSession::query()
             ->with(['station:id,name', 'invoice:id,source_session_id,total_amount,invoice_type'])
             ->whereNotNull('end_time')
-            ->whereBetween('end_time', [$from, $to])
+            ->whereBetween('end_time', [LocalTime::utc($from), LocalTime::utc($to)])
             ->get();
 
         $stationIds = $sessions->pluck('station_id')->filter()->unique()->values();
@@ -127,7 +129,7 @@ HTML
             ->pluck('name', 'id');
 
         $grouped = $sessions->groupBy(function (ChargingSession $session) {
-            $day = $session->end_time?->format('Y-m-d') ?? 'unknown';
+            $day = LocalTime::of($session->end_time)?->format('Y-m-d') ?? 'unknown';
             $stationId = (int) ($session->station_id ?? 0);
 
             return $day.'|'.$stationId;
@@ -176,11 +178,11 @@ HTML
             ->with('user:id,name,email')
             ->where('status', 'paid')
             ->whereNotNull('paid_at')
-            ->whereBetween('paid_at', [$from, $to])
+            ->whereBetween('paid_at', [LocalTime::utc($from), LocalTime::utc($to)])
             ->get();
 
         $grouped = $topups->groupBy(function (WalletTopup $topup) {
-            $day = $topup->paid_at?->format('Y-m-d') ?? 'unknown';
+            $day = LocalTime::of($topup->paid_at)?->format('Y-m-d') ?? 'unknown';
             $userId = (int) ($topup->user_id ?? 0);
 
             return $day.'|'.$userId;
@@ -273,7 +275,7 @@ HTML
     {
         $safeTitle = e($title);
         $safePeriod = e($periodLabel);
-        $generated = e(now()->format('d.m.Y H:i'));
+        $generated = e(LocalTime::now()->format('d.m.Y H:i'));
 
         return <<<HTML
 <!doctype html>

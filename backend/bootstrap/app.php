@@ -14,8 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Trust only loopback/private hops (our own nginx). "*" would let any client
+        // spoof its IP via X-Forwarded-For when PHP-FPM is reached directly (VPS setup).
         $middleware->trustProxies(
-            at: env('TRUSTED_PROXIES', '*'),
+            at: env('TRUSTED_PROXIES', '127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7'),
             headers: Request::HEADER_X_FORWARDED_FOR
                 | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT
@@ -38,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'backoffice.auth' => \App\Http\Middleware\EnsureBackofficeAuth::class,
             'security.headers' => \App\Http\Middleware\AddSecurityHeaders::class,
             'legal.accepted' => \App\Http\Middleware\EnsureLegalAccepted::class,
+            'token.version' => \App\Http\Middleware\EnsureTokenVersion::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

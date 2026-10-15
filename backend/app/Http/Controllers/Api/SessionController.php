@@ -8,10 +8,10 @@ use App\Models\Invoice;
 use App\Services\ChargingResumeService;
 use App\Services\ChargingStopService;
 use App\Services\SessionPresentationService;
+use App\Services\UsageStatisticsService;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SessionController extends Controller
 {
@@ -24,6 +24,10 @@ class SessionController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        // Optional: newer apps ask for the latest N and take totals from /sessions/summary.
+        // Without it the full history is returned, as older app versions compute totals from it.
+        $limit = $request->validate(['limit' => 'sometimes|integer|min:1|max:500'])['limit'] ?? null;
+
         $this->reconcileOpenSessions($request);
 
         // Plasa de siguranta pentru facturi lipsa doar pe sesiunile recente: decontarea
@@ -36,12 +40,18 @@ class SessionController extends Controller
                 ->with(['station', 'invoice', 'user'])
                 ->where('user_id', $request->user()->id)
                 ->latest('start_time')
+                ->when($limit, fn ($query) => $query->limit((int) $limit))
                 ->get(),
             fn (ChargingSession $session): bool => ! $session->invoice
                 && (bool) $session->end_time?->greaterThan($ensureInvoiceSince),
         );
 
         return response()->json($sessions);
+    }
+
+    public function summary(Request $request, UsageStatisticsService $usageStatisticsService): JsonResponse
+    {
+        return response()->json($usageStatisticsService->historySummary($request->user()));
     }
 
     /**
@@ -98,44 +108,6 @@ class SessionController extends Controller
         $this->authorizeSession($request, $session);
 
         return response()->json($this->buildLivePayload($session));
-    }
-
-    public function stream(Request $request, ChargingSession $session): StreamedResponse
-    {
-        $this->authorizeSession($request, $session);
-
-        return response()->stream(function () use ($session): void {
-            $startedAt = time();
-            $lastVersion = null;
-
-            while (! connection_aborted() && (time() - $startedAt) < 120) {
-                $session = $session->fresh(['station']);
-                $payload = $this->buildLivePayload($session);
-                $version = $payload['stream_version'];
-
-                if ($version !== $lastVersion) {
-                    echo 'data: ' . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
-                    if (ob_get_level() > 0) {
-                        ob_flush();
-                    }
-                    flush();
-                    $lastVersion = $version;
-                } else {
-                    echo ": keepalive\n\n";
-                    if (ob_get_level() > 0) {
-                        ob_flush();
-                    }
-                    flush();
-                }
-
-                usleep(500000);
-            }
-        }, 200, [
-            'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache, no-transform',
-            'Connection' => 'keep-alive',
-            'X-Accel-Buffering' => 'no',
-        ]);
     }
 
     /**

@@ -100,4 +100,54 @@ class BackofficeStationsTest extends TestCase
             ->assertJsonPath('data.1.latitude', null)
             ->assertJsonPath('data.1.longitude', null);
     }
+
+    public function test_station_with_sessions_cannot_be_deleted(): void
+    {
+        config(['billing.prepaid_wallet_enabled' => true]);
+        $admin = $this->createAdminUser();
+        $user = $this->createAppUser(['wallet_balance' => 0]);
+        $station = \App\Models\Station::query()->create([
+            'name' => 'VOLTA DEL',
+            'location' => 'Chisinau',
+            'status' => 'available',
+        ]);
+        $active = \App\Models\ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'start_time' => now()->subMinutes(5),
+            'kwh_consumed' => 0,
+            'charge_budget' => 100,
+        ]);
+
+        $this->withSession(['backoffice_user_id' => $admin->id])
+            ->postJson('/backoffice/stations/'.$station->id.'/delete')
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Statia are o sesiune activa. Opreste sesiunea inainte de stergere.');
+
+        $active->update(['end_time' => now()]);
+
+        $this->withSession(['backoffice_user_id' => $admin->id])
+            ->postJson('/backoffice/stations/'.$station->id.'/delete')
+            ->assertStatus(422);
+
+        $this->assertDatabaseHas('stations', ['id' => $station->id]);
+        $this->assertDatabaseHas('charging_sessions', ['id' => $active->id]);
+    }
+
+    public function test_station_without_sessions_can_be_deleted(): void
+    {
+        $admin = $this->createAdminUser();
+        $station = \App\Models\Station::query()->create([
+            'name' => 'VOLTA EMPTY',
+            'location' => 'Chisinau',
+            'status' => 'available',
+        ]);
+
+        $this->withSession(['backoffice_user_id' => $admin->id])
+            ->postJson('/backoffice/stations/'.$station->id.'/delete')
+            ->assertOk();
+
+        $this->assertDatabaseMissing('stations', ['id' => $station->id]);
+    }
 }

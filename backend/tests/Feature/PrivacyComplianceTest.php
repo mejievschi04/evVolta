@@ -36,7 +36,6 @@ class PrivacyComplianceTest extends TestCase
                 'user',
                 'sessions',
                 'invoices',
-                'reservations',
                 'wallet_topups',
                 'rights',
             ]);

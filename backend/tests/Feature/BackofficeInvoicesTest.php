@@ -118,4 +118,31 @@ class BackofficeInvoicesTest extends TestCase
             'subject_id' => $invoice->id,
         ]);
     }
+
+    public function test_issued_session_invoice_cannot_be_deleted_or_reissued(): void
+    {
+        $admin = $this->createAdminUser();
+        $user = $this->createAppUser();
+        $station = \App\Models\Station::query()->create([
+            'name' => 'VOLTA INV',
+            'location' => 'Chisinau',
+            'status' => 'available',
+        ]);
+        $session = \App\Models\ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'start_time' => now()->subHour(),
+            'end_time' => now()->subMinutes(10),
+            'kwh_consumed' => 4,
+        ]);
+        $invoice = app(\App\Services\InvoiceIssuanceService::class)->createSessionInvoice($session, 16.0);
+
+        $this->withSession(['backoffice_user_id' => $admin->id])
+            ->postJson('/backoffice/invoices/'.$invoice->id.'/delete')
+            ->assertStatus(422);
+
+        $this->assertDatabaseHas('invoices', ['id' => $invoice->id]);
+        $this->assertSame(1, Invoice::query()->where('source_session_id', $session->id)->count());
+    }
 }

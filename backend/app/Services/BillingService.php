@@ -33,8 +33,7 @@ class BillingService
             return null;
         }
 
-        $tariffService = app(TariffService::class);
-        $pricePerKwh = $tariffService->pricePerKwhForUser($session->user);
+        $pricePerKwh = app(TariffService::class)->pricePerKwhForSession($session);
         $charged = app(WalletService::class)->settleSession($session, $pricePerKwh);
 
         $existing = Invoice::query()
@@ -51,7 +50,7 @@ class BillingService
     public function estimatedSessionCharge(ChargingSession $session, ?float $pricePerKwh = null): float
     {
         $session->loadMissing('user');
-        $pricePerKwh ??= app(TariffService::class)->pricePerKwhForUser($session->user);
+        $pricePerKwh ??= app(TariffService::class)->pricePerKwhForSession($session);
         $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
         $budget = (float) ($session->charge_budget ?? 0);
 

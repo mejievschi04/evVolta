@@ -174,7 +174,6 @@ class ChargingStopService
 
         $invoice = $this->billingService->finalizeBillingForSession($session->fresh());
         $station->markConnectorAvailable((int) ($session->ocpp_connector_id ?: 1));
-        app(ReservationService::class)->completeForSession($session->id);
 
         $session = $session->fresh(['user', 'station']);
 
@@ -464,6 +463,78 @@ class ChargingStopService
         // StopTransaction — altfel noul StartTransaction ar reseta kWh-ii deja livrati.
         return in_array($status, ['Available'], true)
             && $this->shouldAutoFinalizeOnConnectorRelease($session, $station, $status, false);
+    }
+
+    /**
+     * Sesiuni din aplicatie care n-au primit niciodata StartTransaction (RemoteStart respins,
+     * masina neconectata, clientul a plecat). Altfel tin portul ocupat pentru ceilalti si
+     * bugetul blocat pana cand proprietarul redeschide aplicatia.
+     *
+     * Un StartTransaction intarziat pentru o sesiune inchisa e respins de gateway, deci
+     * inchiderea nu poate livra energie nefacturata.
+     */
+    public function closeUnstartedSessions(Station $station): int
+    {
+        // Simulator mode bills estimated energy for sessions without meter data; never apply that here.
+        if (! $this->isGatewayMode()) {
+            return 0;
+        }
+
+        $timeoutMinutes = max(5, (int) config('services.ocpp.unstarted_session_timeout_minutes', 15));
+        $cutoff = now()->subMinutes($timeoutMinutes);
+
+        $candidates = ChargingSession::query()
+            ->where('station_id', $station->id)
+            ->whereNull('end_time')
+            ->whereNull('ocpp_transaction_id')
+            // finalizeStop marks the session's connector Available; without one it would hit connector 1.
+            ->whereNotNull('ocpp_connector_id')
+            ->where('start_time', '<=', $cutoff)
+            ->get();
+
+        $closed = 0;
+
+        foreach ($candidates as $session) {
+            $fresh = $station->fresh();
+
+            if (! $fresh || ! $this->isUnstartedAndIdle($session->fresh(), $fresh, $cutoff)) {
+                continue;
+            }
+
+            $this->finalizeStop(
+                $session,
+                $fresh,
+                'system',
+                null,
+                null,
+                'NeverStarted',
+                ['trigger' => 'unstarted_session_timeout', 'timeout_minutes' => $timeoutMinutes]
+            );
+            $closed++;
+        }
+
+        return $closed;
+    }
+
+    private function isUnstartedAndIdle(?ChargingSession $session, Station $station, Carbon $cutoff): bool
+    {
+        if (! $session || $session->end_time || $session->ocpp_transaction_id) {
+            return false;
+        }
+
+        if ($this->sessionIsCurrentlyCharging($session, $station) || $this->sessionHadChargingActivity($session)) {
+            return false;
+        }
+
+        // A RemoteStart / recovery still in flight, or sent recently, may yet produce a StartTransaction
+        // (the same 15-minute window the gateway uses to match StartTransaction to a RemoteStart).
+        return ! OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->where(function ($query) use ($cutoff): void {
+                $query->whereIn('status', [OcppCommand::STATUS_PENDING, OcppCommand::STATUS_SENT])
+                    ->orWhere('created_at', '>', $cutoff);
+            })
+            ->exists();
     }
 
     public function sessionIsCurrentlyCharging(ChargingSession $session, Station $station): bool

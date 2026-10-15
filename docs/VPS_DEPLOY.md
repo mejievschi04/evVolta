@@ -207,7 +207,7 @@ Loguri queue: `journalctl -u evvolta-queue -f`
 
 ## Cron
 
-Scheduler Laravel (rezervari, reconciliere alimentari MAIB, curatare date) — configurat de `vps-bootstrap.sh` pentru user `www-data`:
+Scheduler Laravel (reconciliere alimentari MAIB, curatare date) — configurat de `vps-bootstrap.sh` pentru user `www-data`:
 
 ```
 * * * * * cd /var/www/evvolta/backend && php artisan schedule:run

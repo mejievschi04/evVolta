@@ -71,4 +71,14 @@ class Invoice extends Model
     {
         return $this->belongsTo(WalletTopup::class);
     }
+
+    /**
+     * Only unpaid drafts not tied to a session or top-up may be deleted; anything else is a fiscal record.
+     */
+    public function isDeletableDraft(): bool
+    {
+        return $this->status !== 'paid'
+            && $this->source_session_id === null
+            && $this->wallet_topup_id === null;
+    }
 }

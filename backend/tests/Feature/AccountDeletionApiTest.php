@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\ChargingSession;
 use App\Models\Invoice;
-use App\Models\Reservation;
 use App\Models\Station;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -124,42 +123,5 @@ class AccountDeletionApiTest extends TestCase
             ->assertJsonPath('message', 'Contul are facturi neplatite. Achita sau contacteaza suportul.');
 
         $this->assertDatabaseHas('users', ['id' => $user->id]);
-    }
-
-    public function test_account_deletion_cancels_blocking_reservations(): void
-    {
-        $user = $this->createAppUser(['wallet_balance' => 0]);
-        $station = Station::query()->create([
-            'name' => 'Test Station',
-            'location' => 'Chisinau',
-            'status' => 'available',
-        ]);
-
-        $reservation = Reservation::query()->create([
-            'user_id' => $user->id,
-            'station_id' => $station->id,
-            'connector_id' => 1,
-            'ocpp_reservation_id' => 42,
-            'id_tag' => 'VOLTA00000001',
-            'starts_at' => now()->addHour(),
-            'ends_at' => now()->addHours(2),
-            'status' => Reservation::STATUS_CONFIRMED,
-            'fee_amount' => 0,
-        ]);
-
-        $reservationId = $reservation->id;
-
-        $this->actingAs($user, 'api')
-            ->postJson('/api/me/delete', [
-                'password' => 'password123',
-                'confirm_delete' => true,
-            ])
-            ->assertOk();
-
-        $this->assertSoftDeleted('users', ['id' => $user->id]);
-        $this->assertDatabaseHas('reservations', [
-            'id' => $reservationId,
-            'status' => Reservation::STATUS_CANCELLED,
-        ]);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Support\LocalTime;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class InvoiceDocumentService
@@ -37,8 +38,8 @@ class InvoiceDocumentService
 
         $docLabel = e((string) config('invoice.document_label', 'Factura'));
         $number = e($invoice->invoice_number ?: str_pad((string) $invoice->id, 7, '0', STR_PAD_LEFT));
-        $date = e(($invoice->issued_at ?? $invoice->created_at)?->format('d.m.Y')
-            ?? ($invoice->period_end?->format('d.m.Y') ?? now()->format('d.m.Y')));
+        $date = e(LocalTime::of($invoice->issued_at ?? $invoice->created_at)?->format('d.m.Y')
+            ?? ($invoice->period_end?->format('d.m.Y') ?? LocalTime::now()->format('d.m.Y')));
 
         $qty = e(number_format((float) $line['quantity'], 3, ',', ' '));
         $unit = e($line['unit']);

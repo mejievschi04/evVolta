@@ -26,6 +26,31 @@ class ApiAuthSecurityTest extends TestCase
         ]);
     }
 
+    public function test_client_cannot_spoof_ip_via_forwarded_header(): void
+    {
+        // VPS: PHP-FPM sees the client directly, so its X-Forwarded-For must be ignored.
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])
+            ->withHeaders(['X-Forwarded-For' => '1.2.3.4'])
+            ->postJson('/api/login', [
+                'email' => 'spoof@example.test',
+                'password' => 'wrong-password',
+                'accept_terms' => true,
+            ])->assertUnauthorized();
+
+        $this->assertSame('203.0.113.9', AuditLog::query()->latest('id')->first()->metadata['ip'] ?? null);
+
+        // Docker: our private-network nginx appends the real client after any spoofed entry.
+        $this->withServerVariables(['REMOTE_ADDR' => '172.18.0.5'])
+            ->withHeaders(['X-Forwarded-For' => '1.2.3.4, 198.51.100.7'])
+            ->postJson('/api/login', [
+                'email' => 'spoof@example.test',
+                'password' => 'wrong-password',
+                'accept_terms' => true,
+            ])->assertUnauthorized();
+
+        $this->assertSame('198.51.100.7', AuditLog::query()->latest('id')->first()->metadata['ip'] ?? null);
+    }
+
     public function test_successful_login_writes_audit_log(): void
     {
         $user = $this->createAppUser([
@@ -160,5 +185,52 @@ class ApiAuthSecurityTest extends TestCase
         $this->get('/api/tariff/current', [
             'Origin' => 'https://evil.example',
         ])->assertHeaderMissing('Access-Control-Allow-Origin');
+    }
+
+    public function test_refresh_keeps_the_token_lifetime_chosen_at_login(): void
+    {
+        $this->createAppUser([
+            'email' => 'ttl@example.test',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $minutesLeft = function (string $token): int {
+            $exp = (int) JWTAuth::setToken($token)->getPayload()->get('exp');
+
+            return (int) round(($exp - time()) / 60);
+        };
+
+        foreach ([false => 720, true => 43200] as $remember => $expectedMinutes) {
+            $token = $this->postJson('/api/login', [
+                'email' => 'ttl@example.test',
+                'password' => 'password123',
+                'accept_terms' => true,
+                'remember_me' => (bool) $remember,
+            ])->assertOk()->json('access_token');
+
+            $this->assertEqualsWithDelta($expectedMinutes, $minutesLeft($token), 1);
+
+            $refreshed = $this->withHeader('Authorization', 'Bearer '.$token)
+                ->postJson('/api/refresh')
+                ->assertOk()
+                ->json('access_token');
+
+            $this->assertEqualsWithDelta($expectedMinutes, $minutesLeft($refreshed), 1);
+            $this->app['auth']->forgetGuards();
+        }
+    }
+
+    public function test_refresh_of_token_without_remember_claim_keeps_long_lifetime(): void
+    {
+        $user = $this->createAppUser();
+        $legacyToken = JWTAuth::fromUser($user);
+
+        $refreshed = $this->withHeader('Authorization', 'Bearer '.$legacyToken)
+            ->postJson('/api/refresh')
+            ->assertOk()
+            ->json('access_token');
+
+        $exp = (int) JWTAuth::setToken($refreshed)->getPayload()->get('exp');
+        $this->assertEqualsWithDelta(43200, ($exp - time()) / 60, 1);
     }
 }

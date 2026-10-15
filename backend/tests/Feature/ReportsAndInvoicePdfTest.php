@@ -96,37 +96,45 @@ class ReportsAndInvoicePdfTest extends TestCase
         Mail::assertSent(InvoiceMail::class);
     }
 
-    public function test_wallet_topup_confirmation_email_attaches_fiscal_pdf(): void
+    public function test_wallet_topup_confirmation_email_attaches_confirmation_pdf(): void
     {
         Mail::fake();
-        Queue::fake();
 
-        $user = $this->createAppUser(['email' => 'topup.pdf@example.test']);
+        $user = $this->createAppUser([
+            'name' => 'Ion Popescu',
+            'email' => 'topup.pdf@example.test',
+            'wallet_balance' => 175,
+        ]);
         $topup = WalletTopup::query()->create([
             'user_id' => $user->id,
             'amount' => 100,
             'currency' => 'MDL',
             'status' => 'paid',
             'payment_provider' => 'maib',
-            'paid_at' => now(),
+            // Stored in UTC; Chisinau is UTC+3 in October.
+            'paid_at' => \Carbon\Carbon::parse('2026-10-15 11:30:00', 'UTC'),
         ]);
 
-        $invoice = app(InvoiceIssuanceService::class)->createWalletTopupInvoice($topup);
+        (new \App\Jobs\SendWalletTopupConfirmationJob($topup->id, 150.0))
+            ->handle(app(\App\Services\TopupConfirmationDocumentService::class));
 
-        $this->assertNotNull($invoice);
-        Queue::assertNotPushed(SendInvoiceEmailJob::class);
-
-        (new \App\Jobs\SendWalletTopupConfirmationJob($topup->id, $invoice->id))
-            ->handle(app(\App\Services\InvoiceDocumentService::class));
-
-        Mail::assertSent(\App\Mail\WalletTopupConfirmationMail::class, function ($mail) use ($invoice) {
+        Mail::assertSent(\App\Mail\WalletTopupConfirmationMail::class, function ($mail) {
             $built = $mail->build();
             $attachments = $built->rawAttachments ?? [];
+            $html = $built->render();
 
-            return $mail->invoice?->id === $invoice->id
+            return $built->subject === 'Confirmare suplinire cont - V CHARGE'
+                && $mail->details['amount'] === '100.00 MDL'
+                && $mail->details['balance'] === '150.00 MDL'
+                && $mail->details['name'] === 'Ion Popescu'
+                && $mail->details['email'] === 'topup.pdf@example.test'
+                && $mail->details['paid_at'] === '15.10.2026 14:30'
+                && ! str_contains($html, 'Factur')
                 && count($attachments) === 1
+                && $attachments[0]['name'] === 'confirmare-suplinire-'.$mail->topup->id.'.pdf'
                 && ($attachments[0]['options']['mime'] ?? null) === 'application/pdf';
         });
+        $this->assertDatabaseMissing('invoices', ['wallet_topup_id' => $topup->id]);
     }
 
     public function test_station_monthly_report_returns_pdf_with_day_station_rows(): void

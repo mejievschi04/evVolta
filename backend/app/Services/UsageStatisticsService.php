@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ChargingSession;
 use App\Models\User;
+use App\Support\LocalTime;
 use Illuminate\Support\Collection;
 
 class UsageStatisticsService
@@ -21,18 +22,14 @@ class UsageStatisticsService
         $pricePerKwh = $this->walletService->currentPricePerKwh($user);
         $currency = $user->currency ?? 'MDL';
 
-        $completed = ChargingSession::query()
-            ->where('user_id', $user->id)
-            ->whereNotNull('end_time')
-            ->orderByDesc('end_time')
-            ->get();
+        $completed = $this->completedSessions($user);
 
         $activeCount = ChargingSession::query()
             ->where('user_id', $user->id)
             ->whereNull('end_time')
             ->count();
 
-        $now = now();
+        $now = LocalTime::now();
         $monthStart = $now->copy()->startOfMonth();
         $monthEnd = $now->copy()->endOfMonth();
         $currentMonthSessions = $completed->filter(
@@ -47,15 +44,15 @@ class UsageStatisticsService
                 'sessions_count' => $completed->count(),
                 'active_sessions' => $activeCount,
                 'total_kwh' => round($completed->sum(fn (ChargingSession $session) => (float) $session->kwh_consumed), 2),
-                'total_spent' => round($completed->sum(fn (ChargingSession $session) => $this->sessionSpent($session, $pricePerKwh)), 2),
+                'total_spent' => $this->totalSpent($completed),
             ],
             'current_month' => [
                 'month' => $now->format('Y-m'),
                 'sessions_count' => $currentMonthSessions->count(),
                 'total_kwh' => round($currentMonthSessions->sum(fn (ChargingSession $session) => (float) $session->kwh_consumed), 2),
-                'total_spent' => round($currentMonthSessions->sum(fn (ChargingSession $session) => $this->sessionSpent($session, $pricePerKwh)), 2),
+                'total_spent' => $this->totalSpent($currentMonthSessions),
             ],
-            'monthly' => $this->buildMonthlyBreakdown($completed, $pricePerKwh),
+            'monthly' => $this->buildMonthlyBreakdown($completed),
         ];
     }
 
@@ -63,33 +60,76 @@ class UsageStatisticsService
      * @param  Collection<int, ChargingSession>  $completed
      * @return list<array{month: string, sessions_count: int, total_kwh: float, total_spent: float}>
      */
-    private function buildMonthlyBreakdown(Collection $completed, float $pricePerKwh, int $limit = 12): array
+    private function buildMonthlyBreakdown(Collection $completed, int $limit = 12): array
     {
         return $completed
-            ->groupBy(fn (ChargingSession $session) => $session->end_time?->format('Y-m'))
+            ->groupBy(fn (ChargingSession $session) => LocalTime::of($session->end_time)?->format('Y-m'))
             ->sortKeysDesc()
             ->take($limit)
-            ->map(function (Collection $sessions, string $month) use ($pricePerKwh) {
+            ->map(function (Collection $sessions, string $month) {
                 return [
                     'month' => $month,
                     'sessions_count' => $sessions->count(),
                     'total_kwh' => round($sessions->sum(fn (ChargingSession $session) => (float) $session->kwh_consumed), 2),
-                    'total_spent' => round($sessions->sum(fn (ChargingSession $session) => $this->sessionSpent($session, $pricePerKwh)), 2),
+                    'total_spent' => $this->totalSpent($sessions),
                 ];
             })
             ->values()
             ->all();
     }
 
-    private function sessionSpent(ChargingSession $session, float $pricePerKwh): float
+    /**
+     * Totals for the app's history screen, so it no longer needs every session to compute them.
+     *
+     * @return array{sessions: int, active: int, closed: int, total_kwh: float, total_spent: float, currency: string}
+     */
+    public function historySummary(User $user): array
     {
-        $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
-        $budget = (float) ($session->charge_budget ?? 0);
+        $completed = $this->completedSessions($user);
+        $active = ChargingSession::query()
+            ->where('user_id', $user->id)
+            ->whereNull('end_time')
+            ->count();
 
-        if ($budget > 0) {
-            return round(min($actualCost, $budget), 2);
-        }
-
-        return $actualCost;
+        return [
+            'sessions' => $completed->count() + $active,
+            'active' => $active,
+            'closed' => $completed->count(),
+            'total_kwh' => round($completed->sum(fn (ChargingSession $session) => (float) $session->kwh_consumed), 3),
+            'total_spent' => $this->totalSpent($completed),
+            'currency' => $user->currency ?? 'MDL',
+        ];
     }
+
+    /**
+     * @return Collection<int, ChargingSession>
+     */
+    private function completedSessions(User $user): Collection
+    {
+        return ChargingSession::query()
+            ->with('invoice:id,source_session_id,total_amount')
+            ->where('user_id', $user->id)
+            ->whereNotNull('end_time')
+            ->orderByDesc('end_time')
+            ->get()
+            ->each(fn (ChargingSession $session) => $session->setRelation('user', $user));
+    }
+
+    /**
+     * Same amount the session list shows: the invoice when issued, otherwise the settled estimate
+     * at the session's own (start-time) price.
+     *
+     * @param  Collection<int, ChargingSession>  $sessions
+     */
+    private function totalSpent(Collection $sessions): float
+    {
+        $billing = app(BillingService::class);
+
+        return round($sessions->sum(
+            fn (ChargingSession $session) => $session->invoice
+                ? (float) $session->invoice->total_amount
+                : $billing->estimatedSessionCharge($session)
+        ), 2);
+    }
+
 }

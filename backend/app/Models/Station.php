@@ -139,13 +139,6 @@ class Station extends Model
         'power_kw',
         'connector_type',
         'currency',
-        'reservations_enabled',
-        'reservation_require_for_start',
-        'reservation_fee',
-        'reservation_no_show_fee',
-        'reservation_max_duration_minutes',
-        'reservation_advance_days',
-        'reservation_grace_minutes',
     ];
 
     protected $hidden = [
@@ -157,13 +150,6 @@ class Station extends Model
         'last_ocpp_message_at' => 'datetime',
         'latitude' => 'float',
         'longitude' => 'float',
-        'reservations_enabled' => 'boolean',
-        'reservation_require_for_start' => 'boolean',
-        'reservation_fee' => 'float',
-        'reservation_no_show_fee' => 'float',
-        'reservation_max_duration_minutes' => 'integer',
-        'reservation_advance_days' => 'integer',
-        'reservation_grace_minutes' => 'integer',
         'meter_value_kwh' => 'float',
         'ocpp_configuration' => 'array',
     ];
@@ -401,14 +387,6 @@ class Station extends Model
             return false;
         }
 
-        if (
-            $status === 'Reserved'
-            && $user
-            && $this->userHasActiveReservationOnConnector($user, $connectorId)
-        ) {
-            return true;
-        }
-
         if (in_array($status, self::BLOCKED_START_STATUSES, true)) {
             return false;
         }
@@ -573,107 +551,19 @@ class Station extends Model
             ->all();
     }
 
-    public function connectorCanReserve(?int $connectorId, ?User $user = null): bool
-    {
-        if ($connectorId === null || $connectorId <= 0 || ! $this->reservationsEnabled()) {
-            return false;
-        }
-
-        if (! in_array($connectorId, $this->expectedConnectorIds(), true)) {
-            return false;
-        }
-
-        $isGatewayMode = config('services.ocpp.mode', 'simulator') !== 'simulator';
-        if ($isGatewayMode && ! $this->isOcppOnline()) {
-            return false;
-        }
-
-        if ($this->hasActiveSessionOnConnector($connectorId)) {
-            return false;
-        }
-
-        $status = $this->connectorOcppStatus($connectorId);
-        if (in_array($status, ['Charging', 'SuspendedEV', 'SuspendedEVSE', 'Preparing', 'Reserved', 'Faulted', 'Unavailable'], true)) {
-            return false;
-        }
-
-        if ($status === 'Finishing' && $this->hasActiveSessionOnConnector($connectorId)) {
-            return false;
-        }
-
-        if ($this->activeReservationForConnector($connectorId, $user)) {
-            return false;
-        }
-
-        return true;
-    }
-
     public function canAcceptRemoteStart(?int $connectorId = null, ?User $user = null): bool
     {
         return $this->connectorCanStart($connectorId, $user);
     }
 
-    public function reservationsEnabled(): bool
-    {
-        return (bool) $this->reservations_enabled;
-    }
-
     /**
+     * Reservations were removed; kept so older app versions hide the reservation UI.
+     *
      * @return array<string, mixed>
      */
     public function reservationPolicy(): array
     {
-        return [
-            'enabled' => $this->reservationsEnabled(),
-            'require_for_start' => (bool) $this->reservation_require_for_start,
-            'fee' => 0.0,
-            'no_show_fee' => 0.0,
-            'max_duration_minutes' => (int) $this->reservation_max_duration_minutes,
-            'advance_days' => (int) $this->reservation_advance_days,
-            'grace_minutes' => (int) $this->reservation_grace_minutes,
-            'currency' => $this->currency ?? 'MDL',
-        ];
-    }
-
-    public function userHasActiveReservationOnConnector(User $user, ?int $connectorId = null): bool
-    {
-        $query = Reservation::query()
-            ->with('station')
-            ->where('user_id', $user->id)
-            ->where('station_id', $this->id)
-            ->blocking()
-            ->where('starts_at', '<=', now());
-
-        if ($connectorId !== null) {
-            $query->where('connector_id', $connectorId);
-        }
-
-        return $query->get()->contains(
-            fn (Reservation $reservation) => $reservation->isWithinStartWindow()
-        );
-    }
-
-    public function activeReservationForConnector(int $connectorId, ?User $exceptUser = null): ?Reservation
-    {
-        $query = Reservation::query()
-            ->with('station')
-            ->where('station_id', $this->id)
-            ->where('connector_id', $connectorId)
-            ->blocking()
-            ->orderBy('starts_at');
-
-        if ($exceptUser) {
-            $query->where('user_id', '!=', $exceptUser->id);
-        }
-
-        return $query->get()->first(
-            fn (Reservation $reservation) => $reservation->isWithinStartWindow()
-        );
-    }
-
-    public function reservations()
-    {
-        return $this->hasMany(Reservation::class);
+        return ['enabled' => false];
     }
 
     /**
@@ -1004,8 +894,6 @@ class Station extends Model
                 $canStartForUser = $user
                     && $this->connectorIsStartCandidateForUser($id, $user)
                     && (! $isGatewayMode || ($isOnline && ! $isStale));
-                $canReserve = $this->connectorCanReserve($id, $user)
-                    && (! $isGatewayMode || ($isOnline && ! $isStale));
                 $availability = ($isGatewayMode && (! $isOnline || $isStale))
                     ? self::STATUS_OFFLINE
                     : $this->connectorDisplayAvailability($status, $id);
@@ -1024,7 +912,8 @@ class Station extends Model
                     'my_active_session' => $user
                         ? $this->userHasActiveSessionOnConnector($id, (int) $user->id)
                         : false,
-                    'can_reserve' => $canReserve,
+                    // Reservations were removed; kept for older app versions.
+                    'can_reserve' => false,
                     'is_stale_finishing' => $status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id),
                     'can_resume' => $user
                         && in_array($status, ['SuspendedEV', 'SuspendedEVSE', 'Finishing'], true)

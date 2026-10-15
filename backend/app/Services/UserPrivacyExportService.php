@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\AuditLog;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
-use App\Models\Reservation;
 use App\Models\StationFavorite;
 use App\Models\User;
 use App\Models\WalletRefund;
@@ -74,10 +73,6 @@ class UserPrivacyExportService
                 ->orderByDesc('id')
                 ->get(),
             'invoices' => Invoice::query()
-                ->where('user_id', $user->id)
-                ->orderByDesc('id')
-                ->get(),
-            'reservations' => Reservation::query()
                 ->where('user_id', $user->id)
                 ->orderByDesc('id')
                 ->get(),

@@ -8,7 +8,6 @@ return [
         'account_active' => 'for_account_lifetime',
         'invoices_years' => (int) env('PRIVACY_INVOICE_RETENTION_YEARS', 7),
         'charging_sessions_days' => (int) env('PRIVACY_SESSIONS_RETENTION_DAYS', 2555), // ~7y
-        'reservations_days' => (int) env('PRIVACY_RESERVATIONS_RETENTION_DAYS', 730),
         'wallet_topups_days' => (int) env('PRIVACY_WALLET_RETENTION_DAYS', 2555),
         'audit_logs_days' => (int) env('PRIVACY_AUDIT_RETENTION_DAYS', 7),
         // Money / account mutation trail kept longer than generic operational audits.

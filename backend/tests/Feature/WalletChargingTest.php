@@ -309,4 +309,27 @@ class WalletChargingTest extends TestCase
 
         $this->assertTrue(app(WalletService::class)->shouldStopForBudget($session, 0.20));
     }
+
+    public function test_budget_stop_fires_early_by_current_power(): void
+    {
+        config(['billing.prepaid_wallet_enabled' => true, 'billing.budget_stop_lookahead_seconds' => 30]);
+
+        $make = fn (float $powerKw) => ChargingSession::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'station_id' => Station::query()->create([
+                'name' => 'Lookahead '.$powerKw,
+                'location' => 'Test',
+                'status' => Station::STATUS_CHARGING,
+            ])->id,
+            'start_time' => now()->subMinutes(30),
+            'kwh_consumed' => 0,
+            'charge_budget' => 10,
+            'live_metrics' => ['energy_integrated_kwh' => 9.9, 'power_kw' => $powerKw],
+        ]);
+
+        // 9.9 kWh x 1.00 = 9.90 of 10.00. At 22 kW, 30 s more is ~0.18 kWh: stop now.
+        $this->assertTrue(app(WalletService::class)->shouldStopForBudget($make(22.0), 1.00));
+        // Nearly idle: nothing will overshoot, keep charging.
+        $this->assertFalse(app(WalletService::class)->shouldStopForBudget($make(0.0), 1.00));
+    }
 }

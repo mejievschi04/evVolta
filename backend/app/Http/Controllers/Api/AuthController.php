@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureTokenVersion;
 use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\LegalAcceptanceService;
@@ -19,6 +20,8 @@ use RuntimeException;
 
 class AuthController extends Controller
 {
+    private const REMEMBER_CLAIM = 'rmb';
+
     public function __construct(
         private readonly AuditLogService $auditLogService,
         private readonly LegalAcceptanceService $legalAcceptanceService,
@@ -107,7 +110,12 @@ class AuthController extends Controller
             'password' => $credentials['password'],
         ];
 
-        if (! $token = Auth::guard('api')->attempt($loginCredentials)) {
+        $tokenVersion = (int) User::query()->where('email', strtolower(trim($loginCredentials['email'])))->value('token_version');
+
+        if (! $token = Auth::guard('api')->claims([
+            self::REMEMBER_CLAIM => $remember,
+            EnsureTokenVersion::CLAIM => $tokenVersion,
+        ])->attempt($loginCredentials)) {
             $this->auditLogService->record(
                 action: 'auth.login_failed',
                 subjectType: User::class,
@@ -227,7 +235,16 @@ class AuthController extends Controller
 
     public function refresh(): JsonResponse
     {
-        $token = Auth::guard('api')->refresh();
+        // Keep the lifetime the user chose at login; without this every refresh used the 30-day TTL.
+        // Tokens issued before the claim existed keep the previous (remember) behaviour.
+        $claim = Auth::guard('api')->payload()->get(self::REMEMBER_CLAIM);
+        $remember = $claim === null ? true : (bool) $claim;
+        $this->configureApiTokenTtl($remember);
+
+        $token = Auth::guard('api')->claims([
+            self::REMEMBER_CLAIM => $remember,
+            EnsureTokenVersion::CLAIM => (int) Auth::guard('api')->user()?->token_version,
+        ])->refresh();
 
         return response()->json([
             'access_token' => $token,
@@ -521,6 +538,9 @@ class AuthController extends Controller
     {
         $this->configureApiTokenTtl($remember);
 
-        return Auth::guard('api')->login($user);
+        return Auth::guard('api')->claims([
+            self::REMEMBER_CLAIM => $remember,
+            EnsureTokenVersion::CLAIM => (int) $user->token_version,
+        ])->login($user);
     }
 }

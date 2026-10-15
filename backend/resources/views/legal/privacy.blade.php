@@ -54,7 +54,7 @@ si cum ne poti contacta. Se citeste impreuna cu Termenii si conditiile.
         <ul>
             <li><strong>Date de cont:</strong> nume, e-mail, telefon (optional), parola (hash), tip de cont, sold.</li>
             <li><strong>Date de utilizare:</strong> sesiuni de incarcare, consum kWh, putere, statii
-                si conectori folositi, rezervari, bugete de incarcare, favorite.</li>
+                si conectori folositi, bugete de incarcare, favorite.</li>
             <li><strong>Date de locatie (GPS):</strong> coordonatele dispozitivului, doar cand folosesti
                 harta din aplicatie, pentru afisarea statiilor apropiate. Locatia nu este folosita
                 pentru publicitate.</li>
@@ -72,7 +72,7 @@ si cum ne poti contacta. Se citeste impreuna cu Termenii si conditiile.
     <section class="legal-section" id="p3">
         <h2><span class="n">3.</span> Scopuri si temeiuri legale</h2>
         <ul>
-            <li><strong>Furnizarea Serviciului</strong> (cont, incarcare, rezervari, facturi) —
+            <li><strong>Furnizarea Serviciului</strong> (cont, incarcare, facturi) —
                 executarea contractului.</li>
             <li><strong>Plati si sold</strong> — executarea contractului si obligatii legale fiscale.</li>
             <li><strong>Securitate, fraud prevention, jurnale tehnice</strong> — interes legitim,
@@ -116,7 +116,6 @@ si cum ne poti contacta. Se citeste impreuna cu Termenii si conditiile.
             <li>Date de cont: pe durata contului activ.</li>
             <li>Facturi / evidenta fiscala: aproximativ {{ $retention['invoices_years'] ?? 7 }} ani.</li>
             <li>Sesiuni de incarcare: pana la {{ $retention['charging_sessions_days'] ?? 2555 }} zile.</li>
-            <li>Rezervari inchise: {{ $retention['reservations_days'] ?? 730 }} zile.</li>
             <li>Jurnale audit: {{ $retention['audit_logs_days'] ?? 7 }} zile.</li>
             <li>Mesaje OCPP tehnice: {{ $retention['ocpp_messages_days'] ?? 90 }} zile.</li>
         </ul>

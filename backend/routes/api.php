@@ -5,18 +5,22 @@ use App\Http\Controllers\LegalController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChargingController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PaymentController;
-use App\Http\Controllers\Api\ReservationController;
 use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\TariffController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\StationController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth');
 Route::post('/auth/google', [AuthController::class, 'loginWithGoogle'])->middleware('throttle:auth');
 Route::post('/auth/apple', [AuthController::class, 'loginWithApple'])->middleware('throttle:auth');
+Route::post('/password/forgot', [PasswordResetController::class, 'forgot'])->middleware('throttle:password-reset');
+// HTML form opened from the reset email (token in the URL authorizes the change).
+Route::get('/password/reset/{token}', [PasswordResetController::class, 'showResetForm'])->middleware('throttle:30,1');
+Route::post('/password/reset', [PasswordResetController::class, 'reset'])->middleware('throttle:password-reset');
 Route::get('/legal', [LegalController::class, 'config']);
 Route::get('/legal/terms', [LegalController::class, 'terms']);
 Route::get('/legal/privacy', [LegalController::class, 'privacy']);
@@ -29,7 +33,7 @@ Route::middleware('throttle:60,1')->group(function () {
     Route::get('/tariff/current', [TariffController::class, 'current']);
 });
 
-Route::middleware('auth:api')->group(function () {
+Route::middleware(['auth:api', 'token.version'])->group(function () {
     // Account / privacy rights — available even when a new legal version must be accepted.
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('throttle:auth');
@@ -41,23 +45,18 @@ Route::middleware('auth:api')->group(function () {
 
     Route::middleware('legal.accepted')->group(function () {
         Route::post('/stations/resolve-qr', [StationController::class, 'resolveQr']);
-        Route::post('/stations/{station}/refresh-status', [StationController::class, 'refreshStatus']);
-        Route::post('/stations/{station}/reset-connector', [StationController::class, 'resetConnector']);
-        Route::post('/stations/{station}/unlock-connector', [StationController::class, 'unlockConnector']);
+        // Each call queues OCPP commands to the charger: cap per user so a loop cannot flood a station.
+        Route::post('/stations/{station}/refresh-status', [StationController::class, 'refreshStatus'])->middleware('throttle:20,1');
+        Route::post('/stations/{station}/reset-connector', [StationController::class, 'resetConnector'])->middleware('throttle:6,1');
+        Route::post('/stations/{station}/unlock-connector', [StationController::class, 'unlockConnector'])->middleware('throttle:6,1');
         Route::post('/stations/{station}/favorite', [StationController::class, 'toggleFavorite']);
-        Route::get('/stations/{station}/reservations/availability', [ReservationController::class, 'availability']);
-        Route::get('/reservations', [ReservationController::class, 'index']);
-        Route::get('/reservations/{reservation}', [ReservationController::class, 'show']);
-        Route::post('/reservations', [ReservationController::class, 'store']);
-        Route::post('/reservations/{reservation}/cancel', [ReservationController::class, 'cancel']);
-        Route::post('/reservations/{reservation}/verify-plug', [ReservationController::class, 'verifyPlug']);
         Route::post('/charging/start', [ChargingController::class, 'start']);
         Route::post('/charging/resume', [ChargingController::class, 'resume']);
         Route::post('/charging/stop', [ChargingController::class, 'stop']);
         Route::get('/sessions', [SessionController::class, 'index']);
         Route::get('/sessions/active', [SessionController::class, 'active']);
+        Route::get('/sessions/summary', [SessionController::class, 'summary']);
         Route::get('/sessions/{session}/live', [SessionController::class, 'live']);
-        Route::get('/sessions/{session}/stream', [SessionController::class, 'stream']);
         Route::get('/payments/config', [PaymentController::class, 'config']);
         Route::get('/wallet', [WalletController::class, 'show']);
         Route::get('/wallet/topups', [WalletController::class, 'indexTopups']);

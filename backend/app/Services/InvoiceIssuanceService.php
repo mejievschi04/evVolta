@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Jobs\SendInvoiceEmailJob;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
-use App\Models\WalletTopup;
+use App\Support\LocalTime;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +43,9 @@ class InvoiceIssuanceService
 
         $end = Carbon::parse($session->end_time);
         $start = $session->start_time ? Carbon::parse($session->start_time) : $end;
+        // Fiscal month and period follow the local calendar, not UTC.
+        $localEnd = LocalTime::of($end);
+        $localStart = LocalTime::of($start);
         $stationName = $session->station?->name ?: 'statie EV';
         $quantity = $kwh > 0 ? $kwh : 1.0;
         $unit = $kwh > 0 ? 'kWh' : 'buc';
@@ -54,10 +57,10 @@ class InvoiceIssuanceService
             'source_session_id' => $session->id,
             'invoice_type' => 'session',
             'series' => null,
-            'month' => $end->format('Y-m'),
+            'month' => $localEnd->format('Y-m'),
             'currency' => $session->user->currency ?? 'MDL',
-            'period_start' => $start->toDateString(),
-            'period_end' => $end->toDateString(),
+            'period_start' => $localStart->toDateString(),
+            'period_end' => $localEnd->toDateString(),
             'total_kwh' => $kwh,
             'total_amount' => $fiscal['amount_gross'],
             'sessions_count' => 1,
@@ -84,63 +87,6 @@ class InvoiceIssuanceService
         $this->queueInvoiceEmail($invoice);
 
         return $invoice;
-    }
-
-    public function createWalletTopupInvoice(WalletTopup $topup): ?Invoice
-    {
-        $topup->loadMissing('user');
-
-        if ($topup->status !== 'paid' || ! $topup->user?->usesCardPayment()) {
-            return null;
-        }
-
-        $existing = Invoice::query()
-            ->where('wallet_topup_id', $topup->id)
-            ->first();
-
-        if ($existing) {
-            return $existing;
-        }
-
-        $paidAt = $topup->paid_at ? Carbon::parse($topup->paid_at) : now();
-        $amount = round((float) $topup->amount, 2);
-        if ($amount <= 0) {
-            return null;
-        }
-
-        $fiscal = $this->fiscalCalculator->breakdown($amount, 1.0);
-        $seller = $this->fiscalCalculator->sellerSnapshot();
-
-        $attributes = array_merge([
-            'user_id' => $topup->user_id,
-            'wallet_topup_id' => $topup->id,
-            'invoice_type' => 'wallet_topup',
-            'series' => null,
-            'month' => $paidAt->format('Y-m'),
-            'currency' => $topup->currency ?: ($topup->user->currency ?? 'MDL'),
-            'period_start' => $paidAt->toDateString(),
-            'period_end' => $paidAt->toDateString(),
-            'total_kwh' => 0,
-            'total_amount' => $fiscal['amount_gross'],
-            'sessions_count' => 0,
-            'line_description' => 'Alimentare sold preplatit pentru servicii de incarcare EV',
-            'unit' => 'buc',
-            'quantity' => 1,
-            'unit_price' => $fiscal['unit_price'],
-            'vat_rate' => $fiscal['vat_rate'],
-            'amount_net' => $fiscal['amount_net'],
-            'amount_vat' => $fiscal['amount_vat'],
-            'buyer_name' => $topup->user->name,
-            'buyer_email' => $topup->user->email,
-            'status' => 'paid',
-            'paid_at' => $paidAt,
-            'issued_at' => $paidAt,
-            'payment_provider' => $topup->payment_provider ?: 'maib',
-            'payment_session_id' => $topup->payment_session_id,
-        ], $seller);
-
-        // Confirmation email (SendWalletTopupConfirmationJob) attaches the fiscal PDF.
-        return $this->createWithUniqueInvoiceNumber($attributes);
     }
 
     /**

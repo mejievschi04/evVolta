@@ -28,6 +28,7 @@ class WalletController extends Controller
             'free_charging' => $user->isFreeCharging(),
             'requires_prepaid' => $requiresPrepaid,
             'prepaid_wallet_enabled' => $walletService->enabled(),
+            'min_topup' => WalletService::MIN_TOPUP_AMOUNT,
             'charge_options' => $requiresPrepaid
                 ? $walletService->chargeOptions($user)
                 : ($user->isFreeCharging() ? $walletService->chargeOptions($user) : null),
@@ -91,7 +92,9 @@ class WalletController extends Controller
         }
 
         $data = $request->validate([
-            'amount' => 'required|numeric|min:50|max:50000',
+            'amount' => 'required|numeric|min:'.WalletService::MIN_TOPUP_AMOUNT.'|max:50000',
+        ], [
+            'amount.min' => 'Suma minima de alimentare este '.WalletService::MIN_TOPUP_AMOUNT.' MDL.',
         ]);
 
         if (! $maibPaymentService->isConfigured()) {
@@ -206,9 +209,11 @@ class WalletController extends Controller
         $user = $user->fresh();
 
         return response()->json([
-            'message' => $topup->status === 'paid'
-                ? 'Plata a fost confirmata.'
-                : 'Plata este inca in curs de procesare.',
+            'message' => match ($topup->status) {
+                'paid' => 'Plata a fost confirmata.',
+                'expired' => 'Plata nu a fost finalizata si alimentarea a expirat.',
+                default => 'Plata este inca in curs de procesare.',
+            },
             'payment_status' => $paymentStatus,
             'session_status' => $status !== '' ? $status : 'pending',
             'wallet_balance' => $walletService->balance($user),

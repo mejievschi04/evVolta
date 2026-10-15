@@ -30,7 +30,7 @@ class SessionPresentationService
             $session->load('invoice');
         }
 
-        $pricePerKwh ??= $this->tariffService->pricePerKwhForUser($session->user);
+        $pricePerKwh ??= $this->tariffService->pricePerKwhForSession($session);
         $invoice = $session->invoice;
         $currency = $invoice?->currency ?: $session->user?->currency ?: 'MDL';
         $amountSpent = $session->end_time
@@ -72,6 +72,10 @@ class SessionPresentationService
         return $sessions->map(function (ChargingSession $session) use ($ensureInvoice, &$prices, &$liveStatuses): array {
             $userKey = (int) $session->user_id;
             $prices[$userKey] ??= $this->tariffService->pricePerKwhForUser($session->user);
+            // The tariff captured at start wins; the cached current tariff only covers older sessions.
+            $price = $session->price_per_kwh !== null && ! $session->user?->isFreeCharging()
+                ? $this->tariffService->pricePerKwhForSession($session)
+                : $prices[$userKey];
 
             $liveStatus = null;
             if ($session->station) {
@@ -80,7 +84,7 @@ class SessionPresentationService
                 $liveStatus = $liveStatuses[$liveKey];
             }
 
-            return $this->presentForUser($session, $ensureInvoice($session), $prices[$userKey], $liveStatus);
+            return $this->presentForUser($session, $ensureInvoice($session), $price, $liveStatus);
         });
     }
 

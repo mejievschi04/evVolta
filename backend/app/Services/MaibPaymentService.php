@@ -230,13 +230,15 @@ class MaibPaymentService
             return false;
         }
 
-        // Replay window: 10 minutes
+        // Replay window: 10 minutes. A missing / non-numeric timestamp used to skip this check.
+        if (! ctype_digit($timestamp)) {
+            return false;
+        }
+
         $tsMs = (int) $timestamp;
-        if ($tsMs > 0) {
-            $skew = abs((int) (microtime(true) * 1000) - $tsMs);
-            if ($skew > 10 * 60 * 1000) {
-                return false;
-            }
+        $skew = abs((int) (microtime(true) * 1000) - $tsMs);
+        if ($tsMs <= 0 || $skew > 10 * 60 * 1000) {
+            return false;
         }
 
         $message = $rawBody.'.'.$timestamp;

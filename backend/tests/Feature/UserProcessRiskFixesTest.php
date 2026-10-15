@@ -150,7 +150,7 @@ class UserProcessRiskFixesTest extends TestCase
         $wallet->creditTopup($topup->fresh());
 
         $this->assertEquals(60.0, (float) $user->fresh()->wallet_balance);
-        $this->assertEquals(1, Invoice::query()->where('wallet_topup_id', $topup->id)->count());
+        $this->assertEquals(0, Invoice::query()->where('wallet_topup_id', $topup->id)->count());
     }
 
     public function test_ensure_session_invoice_settles_hold_instead_of_inventing_amount(): void

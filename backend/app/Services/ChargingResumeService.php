@@ -139,6 +139,7 @@ class ChargingResumeService
                 'start_source' => 'app_resume',
                 'start_time' => now(),
                 'kwh_consumed' => 0,
+                'price_per_kwh' => app(TariffService::class)->snapshotPriceForNewSession($user),
             ]);
 
             if ($carryBudget !== null && $carryBudget >= WalletService::MIN_BUDGET_AMOUNT && $user->usesCardPayment()) {

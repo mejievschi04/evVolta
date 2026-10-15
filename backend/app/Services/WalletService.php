@@ -15,6 +15,8 @@ class WalletService
 {
     public const MIN_BUDGET_AMOUNT = 10;
 
+    public const MIN_TOPUP_AMOUNT = 100;
+
     public const MAX_BUDGET_AMOUNT = 50000;
 
     public const MAX_TARGET_KWH = 500;
@@ -245,10 +247,10 @@ class WalletService
         ?string $paymentIntentId = null,
     ): void {
         $paidTopup = null;
-        $invoice = null;
+        $balanceAfter = null;
         $justCredited = false;
 
-        DB::transaction(function () use ($topup, $paymentSessionId, $paymentIntentId, &$paidTopup, &$invoice, &$justCredited): void {
+        DB::transaction(function () use ($topup, $paymentSessionId, $paymentIntentId, &$paidTopup, &$balanceAfter, &$justCredited): void {
             $locked = WalletTopup::query()
                 ->whereKey($topup->id)
                 ->lockForUpdate()
@@ -268,14 +270,14 @@ class WalletService
                 'payment_intent_id' => $paymentIntentId ?: $locked->payment_intent_id,
             ]);
 
-            User::query()
+            $user = User::query()
                 ->whereKey($locked->user_id)
                 ->lockForUpdate()
-                ->firstOrFail()
-                ->increment('wallet_balance', (float) $locked->amount);
+                ->firstOrFail();
+            $user->increment('wallet_balance', (float) $locked->amount);
 
             $paidTopup = $locked->fresh(['user']);
-            $invoice = app(InvoiceIssuanceService::class)->createWalletTopupInvoice($paidTopup);
+            $balanceAfter = round((float) $user->wallet_balance, 2);
             $justCredited = true;
         });
 
@@ -283,7 +285,7 @@ class WalletService
             return;
         }
 
-        SendWalletTopupConfirmationJob::dispatch($paidTopup->id, $invoice?->id)
+        SendWalletTopupConfirmationJob::dispatch($paidTopup->id, $balanceAfter)
             ->afterCommit();
     }
 
@@ -593,14 +595,6 @@ class WalletService
             || str_contains($message, 'could not resolve host');
     }
 
-    public function estimatedCostForSession(ChargingSession $session, ?float $pricePerKwh = null): float
-    {
-        $session->loadMissing('user');
-        $pricePerKwh ??= $this->currentPricePerKwh($session->user);
-
-        return round(app(SessionEnergyService::class)->telemetryKwhDelivered($session) * $pricePerKwh, 2);
-    }
-
     public function shouldStopForBudget(ChargingSession $session, ?float $pricePerKwh = null): bool
     {
         $budget = (float) ($session->charge_budget ?? 0);
@@ -615,8 +609,11 @@ class WalletService
         }
 
         $kwhDelivered = app(SessionEnergyService::class)->telemetryKwhDelivered($session);
+        // Energy still delivered before the stop takes effect is never billed (charges are capped at
+        // the budget), so stop early by what the current power delivers during that delay.
+        $lookaheadKwh = $this->stopLookaheadKwh($session);
 
-        if ($targetKwh > 0 && $kwhDelivered >= $targetKwh) {
+        if ($targetKwh > 0 && $kwhDelivered + $lookaheadKwh >= $targetKwh) {
             return true;
         }
 
@@ -624,9 +621,19 @@ class WalletService
             return false;
         }
 
-        $estimated = $this->estimatedCostForSession($session, $pricePerKwh);
+        $pricePerKwh ??= app(TariffService::class)->pricePerKwhForSession($session);
+        $estimated = round(($kwhDelivered + $lookaheadKwh) * $pricePerKwh, 2);
 
         return $estimated >= $budget;
+    }
+
+    private function stopLookaheadKwh(ChargingSession $session): float
+    {
+        $seconds = max(0, (int) config('billing.budget_stop_lookahead_seconds', 30));
+        $live = is_array($session->live_metrics) ? $session->live_metrics : [];
+        $powerKw = max(0.0, (float) ($live['power_kw'] ?? 0));
+
+        return $powerKw * $seconds / 3600;
     }
 
     public function maybeAutoStopForBudget(ChargingSession $session, Station $station): void
@@ -642,42 +649,5 @@ class WalletService
         }
 
         app(ChargingStopService::class)->requestStop($session, $station->fresh(), 'budget');
-    }
-
-    /**
-     * Legacy helper: reservation and no-show fees are no longer charged.
-     * Kept only to refund any fee collected before fees were removed.
-     */
-    public function refundReservationFee(User $user, \App\Models\Reservation $reservation): void
-    {
-        if (! $reservation->fee_charged || ! $this->enabled() || ! $user->usesCardPayment()) {
-            return;
-        }
-
-        DB::transaction(function () use ($user, $reservation): void {
-            $reservation = \App\Models\Reservation::query()
-                ->whereKey($reservation->id)
-                ->lockForUpdate()
-                ->first();
-
-            if (! $reservation || ! $reservation->fee_charged) {
-                return;
-            }
-
-            $amount = round((float) $reservation->fee_amount, 2);
-            if ($amount <= 0) {
-                $reservation->update(['fee_charged' => false]);
-
-                return;
-            }
-
-            $lockedUser = User::query()
-                ->whereKey($user->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $lockedUser->increment('wallet_balance', $amount);
-            $reservation->update(['fee_charged' => false]);
-        });
     }
 }

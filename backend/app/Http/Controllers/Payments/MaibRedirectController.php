@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Payments;
 
 use App\Http\Controllers\Controller;
 use App\Models\WalletTopup;
+use App\Support\LocalTime;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -49,7 +50,7 @@ class MaibRedirectController extends Controller
                 'description' => 'Alimentare sold V CHARGE × 1',
                 'amount' => round((float) $topup->amount, 2),
                 'currency' => $topup->currency ?: 'MDL',
-                'paid_at' => $paidAt?->format('d.m.Y H:i'),
+                'paid_at' => LocalTime::of($paidAt)?->format('d.m.Y H:i'),
                 'company_name' => (string) config('legal.company_name', 'Volta SRL'),
                 'app_name' => (string) config('legal.app_name', 'V CHARGE'),
             ];

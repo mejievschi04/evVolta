@@ -42,6 +42,7 @@ class User extends Authenticatable implements JWTSubject
         'apple_id',
         'legal_accepted_ip',
         'legal_accepted_user_agent',
+        'token_version',
     ];
 
     protected $appends = [
@@ -58,7 +59,18 @@ class User extends Authenticatable implements JWTSubject
             'is_admin' => 'boolean',
             'account_type' => 'string',
             'wallet_balance' => 'float',
+            'token_version' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // Any password change (reset, backoffice, account deletion) revokes every API token issued before it.
+        static::updating(function (self $user): void {
+            if ($user->isDirty('password')) {
+                $user->token_version = (int) $user->getOriginal('token_version') + 1;
+            }
+        });
     }
 
     public function isAdmin(): bool
@@ -156,11 +168,6 @@ class User extends Authenticatable implements JWTSubject
     public function stationFavorites()
     {
         return $this->hasMany(StationFavorite::class);
-    }
-
-    public function reservations()
-    {
-        return $this->hasMany(Reservation::class);
     }
 
     public function getDisplayNameAttribute(): string
