@@ -33,6 +33,13 @@ services:
       db:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/evvolta-ready && kill -0 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+
   ocpp:
     build:
       context: .
@@ -53,7 +60,7 @@ services:
       - app_cache:/var/www/backend/bootstrap/cache
     depends_on:
       app:
-        condition: service_started
+        condition: service_healthy
 
   scheduler:
     build:
@@ -75,7 +82,7 @@ services:
       - app_cache:/var/www/backend/bootstrap/cache
     depends_on:
       app:
-        condition: service_started
+        condition: service_healthy
 
   queue:
     build:
@@ -97,7 +104,7 @@ services:
       - app_cache:/var/www/backend/bootstrap/cache
     depends_on:
       app:
-        condition: service_started
+        condition: service_healthy
 
   nginx:
     build:

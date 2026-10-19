@@ -80,6 +80,26 @@ class UnstartedSessionCleanupTest extends TestCase
         $this->assertNull($started->fresh()->end_time);
     }
 
+    public function test_accepted_remote_start_without_transaction_closes_sooner(): void
+    {
+        config(['services.ocpp.accepted_start_without_transaction_minutes' => 3]);
+
+        $user = $this->createAppUser(['wallet_balance' => 50]);
+        $station = $this->station('Preparing');
+        $session = $this->openSession($user->id, $station, minutesAgo: 5, budget: 100);
+
+        $this->command($station, $session, OcppCommand::STATUS_ACCEPTED, minutesAgo: 4);
+        OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->update(['acknowledged_at' => now()->subMinutes(4)]);
+
+        $closed = app(ChargingStopService::class)->closeUnstartedSessions($station);
+
+        $this->assertSame(1, $closed);
+        $this->assertNotNull($session->fresh()->end_time);
+        $this->assertSame('NeverStarted', $session->fresh()->ocpp_stop_reason);
+    }
+
     public function test_simulator_mode_never_closes_sessions(): void
     {
         config(['services.ocpp.mode' => 'simulator']);

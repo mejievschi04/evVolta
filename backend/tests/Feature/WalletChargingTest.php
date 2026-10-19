@@ -273,6 +273,23 @@ class WalletChargingTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_advertised_minimum_kwh_always_covers_the_minimum_budget(): void
+    {
+        $user = $this->createAppUser(['wallet_balance' => 200]);
+        $service = app(WalletService::class);
+        foreach ([0.2, 3, 6, 7, 12, 10] as $price) {
+            Config::set('billing.price_per_kwh', $price);
+            $minimum = $service->minTargetKwh($user);
+            $resolved = $service->resolvePrepaidStart(null, $minimum, $user);
+            $this->assertGreaterThanOrEqual(10, $resolved['budget_amount']);
+        }
+        Config::set('billing.price_per_kwh', 3);
+        $this->assertSame(3.34, $service->minTargetKwh($user));
+        $this->actingAs($user, 'api')->postJson('/api/charging/start', [
+            'station_id' => $this->walletStation()->id, 'target_kwh' => 3.34,
+        ])->assertCreated();
+    }
+
     public function test_wallet_endpoint_exposes_charge_options(): void
     {
         Config::set('billing.price_per_kwh', 0.20);

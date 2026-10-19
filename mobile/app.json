@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "V CHARGE",
+    "slug": "v-charge",
+    "scheme": "vcharge",
+    "version": "1.0.7",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#05070D"
+    },
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "android": {
+      "versionCode": 11,
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "package": "com.mjsky.voltaev",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#05070D"
+      }
+    },
+    "ios": {
+      "buildNumber": "10",
+      "infoPlist": {
+        "CFBundleDisplayName": "V CHARGE",
+        "CFBundleName": "V CHARGE",
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "V CHARGE foloseste camera pentru scanarea codului QR al statiei.",
+        "NSLocationWhenInUseUsageDescription": "V CHARGE foloseste locatia GPS a dispozitivului (doar cand folosesti harta) pentru a afisa statiile de incarcare apropiate. Locatia nu este folosita pentru publicitate."
+      },
+      "bundleIdentifier": "com.mjsky.voltaev"
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "V CHARGE foloseste locatia GPS a dispozitivului (doar cand folosesti harta) pentru a afisa statiile de incarcare apropiate. Locatia nu este folosita pentru publicitate."
+        }
+      ],
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "V CHARGE foloseste camera pentru scanarea codului QR al statiei."
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f7cb9902-943d-4a2d-bbad-cd9087a45b81"
+      }
+    },
+    "owner": "mejievski"
+  }
+}

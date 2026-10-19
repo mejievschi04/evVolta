@@ -2417,6 +2417,10 @@ class OcppServe extends Command
             return;
         }
 
+        if (! app(OcppService::class)->canAutomaticallyResetForConnector($station->fresh(), $connectorId)) {
+            return;
+        }
+
         app(OcppService::class)->queueOutboundCommand($station, 'Reset', [
             'type' => 'Soft',
         ]);

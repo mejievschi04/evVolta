@@ -54,6 +54,13 @@ class ChargingSession extends Model
         'power_kw_live',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $session): void {
+            $session->tariff_type = $session->user?->account_type;
+        });
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -76,15 +83,51 @@ class ChargingSession extends Model
 
     /**
      * OCPP 1.6: RemoteStopTransaction foloseste transactionId din StartTransaction.conf
-     * (alocat de Central System), NU valoarea din MeterValues.
+     * (alocat de Central System). Nu trimitem id-ul intern al sesiunii din app daca
+     * StartTransaction nu a confirmat niciodata tranzactia — statia il respinge mereu.
      *
      * @see https://ocpp.md/ocpp-1.6j/sequences/#34-remote-stop-transaction
      */
     public function remoteStopTransactionId(): int
     {
-        $transactionId = $this->ocpp_transaction_id ?: (string) $this->id;
+        $live = is_array($this->live_metrics) ? $this->live_metrics : [];
 
-        return is_numeric($transactionId) ? (int) $transactionId : 0;
+        foreach ([
+            $live['assigned_transaction_id'] ?? null,
+            $this->ocpp_transaction_id,
+        ] as $candidate) {
+            if ($candidate !== null && $candidate !== '' && is_numeric($candidate) && (int) $candidate > 0
+                && ! ((string) $candidate === (string) $this->id && ! $this->hasConfirmedOcppTransaction())) {
+                return (int) $candidate;
+            }
+        }
+
+        $reported = $live['reported_transaction_id'] ?? null;
+        if ($reported !== null && is_numeric($reported) && (int) $reported > 0) {
+            return (int) $reported;
+        }
+
+        return 0;
+    }
+
+    /**
+     * True cand StartTransaction (sau energie/metru) confirma ca statia cunoaste transactionId-ul.
+     */
+    public function hasConfirmedOcppTransaction(): bool
+    {
+        $live = is_array($this->live_metrics) ? $this->live_metrics : [];
+
+        if (! empty($live['assigned_transaction_id'])) {
+            return true;
+        }
+
+        if ((float) $this->kwh_consumed > 0 || $this->meter_start_kwh !== null) {
+            return true;
+        }
+
+        // A preassigned app ID alone is not a confirmed charger transaction.
+        return filled($this->ocpp_transaction_id)
+            && (string) $this->ocpp_transaction_id !== (string) $this->id;
     }
 
     /** Diagnostic: ce transactionId raporteaza statia in MeterValues (poate diferi de cel alocat). */

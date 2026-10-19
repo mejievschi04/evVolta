@@ -3,22 +3,34 @@
 namespace App\Services;
 
 use App\Models\ChargingSession;
-use App\Models\Station;
 use App\Models\WalletTopup;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\LocalTime;
+use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Writer\XLSX\Options;
 use OpenSpout\Writer\XLSX\Writer;
-use App\Support\LocalTime;
-use Carbon\Carbon;
-use Illuminate\Support\Collection;
 
+/**
+ * Backoffice reports as Excel workbooks: seller header, then real date / number cells
+ * so the data can be sorted, filtered and summed in Excel.
+ */
 class ReportDocumentService
 {
+    private int $reportRowIndex = 0;
+
+    private int $reportColumnCount = 0;
+
+    private const FORMAT_MONEY = '#,##0.00';
+
+    private const FORMAT_KWH = '#,##0.000';
+
     /**
-     * @return array{pdf: string, filename: string}
+     * Charging per day × station for one month.
+     *
+     * @return array{content: string, filename: string}
      */
     public function stationsMonthly(Carbon $month): array
     {
@@ -27,18 +39,146 @@ class ReportDocumentService
         $to = $month->copy()->endOfMonth();
         $rows = $this->stationDayAggregates($from, $to);
 
-        $title = 'Raport lunar pe statii';
-        $periodLabel = $month->translatedFormat('F Y');
-        $filename = sprintf('raport-statii-lunar-%s.pdf', $month->format('Y-m'));
+        $bold = (new Style())->setFontBold();
+        $header = $this->headerStyle();
+        $money = (new Style())->setFormat(self::FORMAT_MONEY);
+        $moneyBold = (new Style())->setFontBold()->setFormat(self::FORMAT_MONEY);
+        $kwh = (new Style())->setFormat(self::FORMAT_KWH);
+        $kwhBold = (new Style())->setFontBold()->setFormat(self::FORMAT_KWH);
+        $integerBold = (new Style())->setFontBold();
+        $date = (new Style())->setFormat('dd.mm.yyyy');
+
+        $content = $this->writeWorkbook(
+            [14, 30, 40, 12, 14, 22],
+            'RAPORT LUNAR PE STATII',
+            'Perioada: '.$month->translatedFormat('F Y'),
+            function (Writer $writer) use ($rows, $bold, $header, $money, $moneyBold, $kwh, $kwhBold, $integerBold, $date): void {
+                $this->writeStyledRow($writer, Row::fromValues(['Data', 'Statie', 'Adresa statiei', 'Sesiuni', 'kWh', 'Venit facturat (MDL)'], $header));
+
+                foreach ($rows as $row) {
+                    $this->writeStyledRow($writer, new Row([
+                        $row['date'] !== 'unknown'
+                            ? Cell::fromValue(new \DateTimeImmutable($row['date']), $date)
+                            : Cell::fromValue('-'),
+                        Cell::fromValue($row['station_name']),
+                        Cell::fromValue($row['station_address']),
+                        Cell::fromValue($row['sessions_count']),
+                        Cell::fromValue($row['total_kwh'], $kwh),
+                        Cell::fromValue($row['revenue'], $money),
+                    ]));
+                }
+
+                if ($rows->isEmpty()) {
+                    $this->writeStyledRow($writer, Row::fromValues(['Nicio sesiune in interval.']));
+                }
+
+                $this->writeStyledRow($writer, new Row([
+                    Cell::fromValue('Total luna', $bold),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue((int) $rows->sum('sessions_count'), $integerBold),
+                    Cell::fromValue(round((float) $rows->sum('total_kwh'), 3), $kwhBold),
+                    Cell::fromValue(round((float) $rows->sum('revenue'), 2), $moneyBold),
+                ]));
+
+                $byStation = $rows->groupBy(fn ($row) => $row['station_id'] ?? 'unknown');
+                if ($byStation->isNotEmpty()) {
+                    $this->writeStyledRow($writer, Row::fromValues([]));
+                    $this->writeStyledRow($writer, Row::fromValues(['Pe statii', '', 'Adresa statiei', 'Sesiuni', 'kWh', 'Venit facturat (MDL)'], $header));
+                    foreach ($byStation as $station => $group) {
+                        $this->writeStyledRow($writer, new Row([
+                            Cell::fromValue($group->first()['station_name']),
+                            Cell::fromValue(''),
+                            Cell::fromValue($group->first()['station_address']),
+                            Cell::fromValue((int) $group->sum('sessions_count')),
+                            Cell::fromValue(round((float) $group->sum('total_kwh'), 3), $kwh),
+                            Cell::fromValue(round((float) $group->sum('revenue'), 2), $money),
+                        ]));
+                    }
+                }
+            },
+        );
 
         return [
-            'pdf' => $this->renderStationsPdf($title, $periodLabel, $rows),
-            'filename' => $filename,
+            'content' => $content,
+            'filename' => sprintf('raport-statii-lunar-%s.xlsx', $month->format('Y-m')),
         ];
     }
 
+    public function chargingSessions(Carbon $from, Carbon $to): array
+    {
+        $from = LocalTime::of($from)->startOfDay();
+        $to = LocalTime::of($to)->endOfDay();
+        $sessions = ChargingSession::query()
+            ->with(['user' => fn ($query) => $query->withTrashed(), 'station', 'invoice'])
+            ->whereNotNull('end_time')
+            ->whereBetween('end_time', [LocalTime::utc($from), LocalTime::utc($to)])
+            ->orderBy('end_time')->orderBy('id')->get();
+        $money = (new Style())->setFormat(self::FORMAT_MONEY);
+        $bold = (new Style())->setFontBold();
+        $moneyBold = (new Style())->setFontBold()->setFormat(self::FORMAT_MONEY);
+        $quantity = (new Style())->setFormat(self::FORMAT_KWH);
+        $quantityBold = (new Style())->setFontBold()->setFormat(self::FORMAT_KWH);
+        $tariff = (new Style())->setFormat('#,##0');
+        $date = (new Style())->setFormat('dd.mm.yyyy hh:mm');
+        $content = $this->writeWorkbook(
+            [22, 14, 24, 46, 18, 16, 22, 20, 22],
+            'RAPORT ALIMENTARI MASINI',
+            sprintf('Perioada: %s – %s', $from->format('d.m.Y'), $to->format('d.m.Y')),
+            function (Writer $writer) use ($sessions, $money, $bold, $moneyBold, $date, $quantity, $quantityBold, $tariff): void {
+                $this->writeStyledRow($writer, Row::fromValues(['Data', 'ID client', 'Client', 'Statia', 'Unitatea de masura', 'Cantitatea', 'Denumirea tarifului', 'Tarif (MDL/kWh)', 'Suma totala (MDL)'], $this->headerStyle()));
+                $total = 0.0;
+                $kwh = 0.0;
+                foreach ($sessions as $session) {
+                    // Only invoiced amounts are fiscal revenue; never infer a payment method from wallet top-ups.
+                    $tariffType = $session->tariff_type ?? $session->user?->account_type;
+                    $amount = $session->invoice?->invoice_type === 'session'
+                        ? (float) $session->invoice->total_amount
+                        : ($tariffType === \App\Models\User::ACCOUNT_TYPE_SERVICE ? 0.0 : null);
+                    $total += $amount ?? 0.0;
+                    $kwh += (float) $session->kwh_consumed;
+                    $station = $session->station;
+                    $stationLabel = $station?->name ?? 'Fara statie';
+                    if (filled($station?->location)) {
+                        $stationLabel .= ' · '.$station->location;
+                    }
+                    $this->writeStyledRow($writer, new Row([
+                        Cell::fromValue(new \DateTimeImmutable(LocalTime::of($session->end_time)->format('Y-m-d H:i:s')), $date),
+                        Cell::fromValue($session->user?->public_id),
+                        Cell::fromValue($session->user?->name ?? 'Fara client'),
+                        Cell::fromValue($stationLabel),
+                        Cell::fromValue('kWh'),
+                        Cell::fromValue((float) $session->kwh_consumed, $quantity),
+                        Cell::fromValue(match ($tariffType) {
+                            \App\Models\User::ACCOUNT_TYPE_SERVICE => 'Serviciu',
+                            \App\Models\User::ACCOUNT_TYPE_CUSTOMER => 'Client',
+                            \App\Models\User::ACCOUNT_TYPE_PERSONAL => 'Personal',
+                            default => 'Nespecificat',
+                        }),
+                        Cell::fromValue($tariffType === \App\Models\User::ACCOUNT_TYPE_SERVICE ? 0.0 : ($session->price_per_kwh ?? 'Nespecificat'), $tariff),
+                        Cell::fromValue($amount ?? 'Nefacturat', $money),
+                    ]));
+                }
+                if ($sessions->isEmpty()) {
+                    $this->writeStyledRow($writer, Row::fromValues(['Nicio alimentare in interval.']));
+                }
+                $this->writeStyledRow($writer, new Row([
+                    Cell::fromValue(sprintf('Total (%d alimentari)', $sessions->count()), $bold),
+                    Cell::fromValue(''), Cell::fromValue(''), Cell::fromValue(''),
+                    Cell::fromValue('kWh', $bold),
+                    Cell::fromValue(round($kwh, 3), $quantityBold),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(round($total, 2), $moneyBold),
+                ]));
+            }
+        );
+
+        return ['content' => $content, 'filename' => sprintf('raport-alimentari-masini-%s-%s.xlsx', $from->format('Ymd'), $to->format('Ymd'))];
+    }
+
     /**
-     * Top-up report as an Excel workbook: one row per payment, real date and number cells.
+     * One row per paid top-up.
      *
      * @return array{content: string, filename: string}
      */
@@ -47,84 +187,79 @@ class ReportDocumentService
         $from = LocalTime::of($from)->startOfDay();
         $to = LocalTime::of($to)->endOfDay();
         $rows = $this->topupRows($from, $to);
-        $seller = $this->seller();
 
         $bold = (new Style())->setFontBold();
-        $title = (new Style())->setFontBold()->setFontSize(14);
-        $header = (new Style())->setFontBold()->setBackgroundColor('F3F4F6');
-        $money = (new Style())->setFormat('#,##0.00');
-        $moneyBold = (new Style())->setFontBold()->setFormat('#,##0.00');
+        $header = $this->headerStyle();
+        $money = (new Style())->setFormat(self::FORMAT_MONEY);
+        $moneyBold = (new Style())->setFontBold()->setFormat(self::FORMAT_MONEY);
         $date = (new Style())->setFormat('dd.mm.yyyy hh:mm');
+        $day = (new Style())->setFormat('dd.mm.yyyy');
 
-        $options = new Options();
-        $options->setColumnWidth(6, 1);
-        $options->setColumnWidth(18, 2);
-        $options->setColumnWidth(26, 3);
-        $options->setColumnWidth(30, 4);
-        $options->setColumnWidth(14, 5);
-        $options->setColumnWidth(14, 6);
+        $content = $this->writeWorkbook(
+            [8, 16, 24, 16, 28, 18, 22],
+            'RAPORT ALIMENTARI CONT',
+            sprintf('Perioada: %s – %s', $from->format('d.m.Y'), $to->format('d.m.Y')),
+            function (Writer $writer) use ($rows, $bold, $header, $money, $moneyBold, $date, $day): void {
+                $index = 0;
+                $byMethod = $rows->groupBy('method')->sortKeys();
+                foreach ($byMethod as $method => $group) {
+                    $this->writeStyledRow($writer, Row::fromValues(['Plati '.$method], $header));
+                    $this->writeStyledRow($writer, Row::fromValues(['Nr.', 'Data', 'Data achitarii', 'ID client', 'Client', 'Metoda', 'Suma (MDL)'], $header));
+                    foreach ($group as $row) {
+                        $this->writeStyledRow($writer, new Row([
+                            Cell::fromValue(++$index),
+                            Cell::fromValue($row['paid_at_local']->setTime(0, 0), $day),
+                            Cell::fromValue($row['paid_at_local'], $date),
+                            Cell::fromValue($row['user_public_id']),
+                            Cell::fromValue($row['user_name']),
+                            Cell::fromValue($row['method']),
+                            Cell::fromValue($row['amount'], $money),
+                        ]));
+                    }
+                    $this->writeStyledRow($writer, new Row([
+                        Cell::fromValue('Subtotal '.$method, $bold),
+                        Cell::fromValue(''),
+                        Cell::fromValue(''),
+                        Cell::fromValue(''),
+                        Cell::fromValue(''),
+                        Cell::fromValue(''),
+                        Cell::fromValue(round((float) $group->sum('amount'), 2), $moneyBold),
+                    ]));
+                    $this->writeStyledRow($writer, Row::fromValues([]));
+                }
 
-        $path = tempnam(sys_get_temp_dir(), 'topups');
-        $writer = new Writer($options);
-        $writer->openToFile($path);
+                if ($rows->isEmpty()) {
+                    $this->writeStyledRow($writer, Row::fromValues(['Nicio alimentare in interval.']));
+                }
 
-        $writer->addRow(Row::fromValues([mb_strtoupper($seller['name'])], $bold));
-        $writer->addRow(Row::fromValues([$seller['idno'] !== '' ? 'Cod fiscal (IDNO): '.$seller['idno'] : '']));
-        $writer->addRow(Row::fromValues([]));
-        $writer->addRow(Row::fromValues(['RAPORT ALIMENTARI CONT'], $title));
-        $writer->addRow(Row::fromValues([sprintf(
-            'Perioada: %s – %s · Generat: %s · V CHARGE',
-            $from->format('d.m.Y'),
-            $to->format('d.m.Y'),
-            LocalTime::now()->format('d.m.Y H:i')
-        )]));
-        $writer->addRow(Row::fromValues([]));
-        $writer->addRow(Row::fromValues(['Nr.', 'Data achitarii', 'Client', 'E-mail', 'Metoda', 'Suma (MDL)'], $header));
-
-        foreach ($rows->values() as $index => $row) {
-            $writer->addRow(new Row([
-                Cell::fromValue($index + 1),
-                Cell::fromValue($row['paid_at_local'], $date),
-                Cell::fromValue($row['user_name']),
-                Cell::fromValue($row['user_email']),
-                Cell::fromValue($row['method']),
-                Cell::fromValue($row['amount'], $money),
-            ]));
-        }
-
-        if ($rows->isEmpty()) {
-            $writer->addRow(Row::fromValues(['Nicio alimentare in interval.']));
-        }
-
-        // Labels start in column A (text flows over the empty cells): some viewers stop at rows starting later.
-        $writer->addRow(new Row([
-            Cell::fromValue(sprintf('Suma totala (%d alimentari)', $rows->count()), $bold),
-            Cell::fromValue(''),
-            Cell::fromValue(''),
-            Cell::fromValue(''),
-            Cell::fromValue(''),
-            Cell::fromValue(round((float) $rows->sum('amount'), 2), $moneyBold),
-        ]));
-
-        $byMethod = $rows->groupBy('method')->sortKeys();
-        if ($byMethod->isNotEmpty()) {
-            $writer->addRow(Row::fromValues([]));
-            $writer->addRow(Row::fromValues(['Pe metode de plata', '', '', '', 'Alimentari', 'Suma (MDL)'], $header));
-            foreach ($byMethod as $method => $group) {
-                $writer->addRow(new Row([
-                    Cell::fromValue((string) $method),
+                $this->writeStyledRow($writer, new Row([
+                    Cell::fromValue(sprintf('Suma totala (%d alimentari)', $rows->count()), $bold),
                     Cell::fromValue(''),
                     Cell::fromValue(''),
                     Cell::fromValue(''),
-                    Cell::fromValue($group->count()),
-                    Cell::fromValue(round((float) $group->sum('amount'), 2), $money),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(round((float) $rows->sum('amount'), 2), $moneyBold),
                 ]));
-            }
-        }
 
-        $writer->close();
-        $content = (string) file_get_contents($path);
-        @unlink($path);
+                $byMethod = $rows->groupBy('method')->sortKeys();
+                if ($byMethod->isNotEmpty()) {
+                    $this->writeStyledRow($writer, Row::fromValues([]));
+                    $this->writeStyledRow($writer, Row::fromValues(['Pe metode de plata', '', '', '', '', 'Alimentari', 'Suma (MDL)'], $header));
+                    foreach ($byMethod as $method => $group) {
+                        $this->writeStyledRow($writer, new Row([
+                            Cell::fromValue((string) $method),
+                            Cell::fromValue(''),
+                            Cell::fromValue(''),
+                            Cell::fromValue(''),
+                            Cell::fromValue(''),
+                            Cell::fromValue($group->count()),
+                            Cell::fromValue(round((float) $group->sum('amount'), 2), $money),
+                        ]));
+                    }
+                }
+            },
+        );
 
         return [
             'content' => $content,
@@ -140,15 +275,10 @@ class ReportDocumentService
     private function stationDayAggregates(Carbon $from, Carbon $to): Collection
     {
         $sessions = ChargingSession::query()
-            ->with(['station:id,name', 'invoice:id,source_session_id,total_amount,invoice_type'])
+            ->with(['station:id,name,location', 'invoice:id,source_session_id,total_amount,invoice_type'])
             ->whereNotNull('end_time')
             ->whereBetween('end_time', [LocalTime::utc($from), LocalTime::utc($to)])
             ->get();
-
-        $stationIds = $sessions->pluck('station_id')->filter()->unique()->values();
-        $stationNames = Station::query()
-            ->whereIn('id', $stationIds)
-            ->pluck('name', 'id');
 
         $grouped = $sessions->groupBy(function (ChargingSession $session) {
             $day = LocalTime::of($session->end_time)?->format('Y-m-d') ?? 'unknown';
@@ -157,11 +287,11 @@ class ReportDocumentService
             return $day.'|'.$stationId;
         });
 
-        return $grouped->map(function (Collection $group, string $key) use ($stationNames) {
+        return $grouped->map(function (Collection $group, string $key) {
             [$day, $stationKey] = explode('|', $key, 2);
             $stationId = (int) $stationKey;
             $name = $stationId > 0
-                ? (string) ($stationNames[$stationId] ?? $group->first()?->station?->name ?? 'Statie #'.$stationId)
+                ? (string) ($group->first()?->station?->name ?? 'Statie #'.$stationId)
                 : 'Fara statie';
 
             $revenue = round($group->sum(function (ChargingSession $session) {
@@ -177,6 +307,7 @@ class ReportDocumentService
                 'date' => $day,
                 'station_id' => $stationId > 0 ? $stationId : null,
                 'station_name' => $name,
+                'station_address' => (string) ($group->first()?->station?->location ?? ''),
                 'sessions_count' => $group->count(),
                 'total_kwh' => round((float) $group->sum('kwh_consumed'), 3),
                 'revenue' => $revenue,
@@ -192,12 +323,12 @@ class ReportDocumentService
     /**
      * One row per paid top-up, in payment order (local time).
      *
-     * @return Collection<int, array{id: int, paid_at: string, user_name: string, user_email: string, method: string, amount: float}>
+     * @return Collection<int, array{id: int, paid_at: string, paid_at_local: \DateTimeImmutable, user_name: string, user_email: string, method: string, amount: float}>
      */
     private function topupRows(Carbon $from, Carbon $to): Collection
     {
         return WalletTopup::query()
-            ->with('user:id,name,email')
+            ->with('user:id,public_id,name,email')
             ->where('status', 'paid')
             ->whereNotNull('paid_at')
             ->whereBetween('paid_at', [LocalTime::utc($from), LocalTime::utc($to)])
@@ -210,6 +341,7 @@ class ReportDocumentService
                 // Local wall-clock time as a naive date: Excel cells carry no timezone.
                 'paid_at_local' => new \DateTimeImmutable(LocalTime::of($topup->paid_at)->format('Y-m-d H:i:s')),
                 'user_name' => (string) ($topup->user?->name ?? ($topup->user_id ? 'User #'.$topup->user_id : 'Fara utilizator')),
+                'user_public_id' => $topup->user?->public_id,
                 'user_email' => (string) ($topup->user?->email ?? ''),
                 'method' => WalletTopup::paymentMethodLabel($topup->payment_method),
                 'amount' => round((float) $topup->amount, 2),
@@ -218,61 +350,123 @@ class ReportDocumentService
     }
 
     /**
-     * @param  Collection<int, array{date: string, station_id: int|null, station_name: string, sessions_count: int, total_kwh: float, revenue: float}>  $rows
+     * Seller header, title and period, then the report body; returns the .xlsx bytes.
+     *
+     * Labels always start in column A (text flows over empty cells): some viewers stop
+     * rendering at rows whose first cell is further right.
+     *
+     * @param  list<float>  $columnWidths
+     * @param  callable(Writer): void  $body
      */
-    private function renderStationsPdf(string $title, string $periodLabel, Collection $rows): string
+    private function writeWorkbook(array $columnWidths, string $title, string $period, callable $body): string
     {
-        $totalSessions = (int) $rows->sum('sessions_count');
-        $totalKwh = round((float) $rows->sum('total_kwh'), 3);
-        $totalRevenue = round((float) $rows->sum('revenue'), 2);
+        $seller = $this->seller();
 
-        $bodyRows = $rows->map(function (array $row) {
-            $dateLabel = $row['date'] !== 'unknown'
-                ? Carbon::createFromFormat('Y-m-d', $row['date'])->format('d.m.Y')
-                : '-';
-
-            return sprintf(
-                '<tr><td>%s</td><td>%s</td><td class="num">%s</td><td class="num">%s</td><td class="num">%s</td></tr>',
-                e($dateLabel),
-                e($row['station_name']),
-                number_format($row['sessions_count'], 0, '.', ' '),
-                number_format($row['total_kwh'], 3, '.', ' '),
-                number_format($row['revenue'], 2, '.', ' ')
-            );
-        })->implode('');
-
-        if ($bodyRows === '') {
-            $bodyRows = '<tr><td colspan="5" class="empty">Nicio sesiune in interval.</td></tr>';
+        $this->reportRowIndex = 0;
+        $this->reportColumnCount = count($columnWidths);
+        $options = new Options();
+        $options->DEFAULT_ROW_STYLE = $this->bodyStyle();
+        $options->setPageSetup(new \OpenSpout\Writer\XLSX\Options\PageSetup(
+            \OpenSpout\Writer\XLSX\Options\PageOrientation::LANDSCAPE,
+            \OpenSpout\Writer\XLSX\Options\PaperSize::A4,
+            fitToHeight: 0,
+            fitToWidth: 1,
+        ));
+        foreach ($columnWidths as $index => $width) {
+            $options->setColumnWidth($width, $index + 1);
         }
 
-        $html = $this->wrapReportHtml(
-            $title,
-            $periodLabel,
-            <<<HTML
-<table>
-  <thead>
-    <tr>
-      <th>Data</th>
-      <th>Statie</th>
-      <th class="num">Sesiuni</th>
-      <th class="num">kWh</th>
-      <th class="num">Venit facturat (MDL)</th>
-    </tr>
-  </thead>
-  <tbody>
-    {$bodyRows}
-    <tr class="grand">
-      <td colspan="2"><strong>Total luna</strong></td>
-      <td class="num"><strong>{$this->int($totalSessions)}</strong></td>
-      <td class="num"><strong>{$this->kwh($totalKwh)}</strong></td>
-      <td class="num"><strong>{$this->money($totalRevenue)}</strong></td>
-    </tr>
-  </tbody>
-</table>
-HTML
+        $path = tempnam(sys_get_temp_dir(), 'report');
+        $writer = new Writer($options);
+        $writer->openToFile($path);
+        $writer->getCurrentSheet()->setName('Raport');
+        $writer->getCurrentSheet()->setSheetView(
+            (new \OpenSpout\Writer\XLSX\Entity\SheetView())->setShowGridLines(false)
         );
 
-        return Pdf::loadHTML($html)->setPaper('a4', 'landscape')->output();
+        try {
+            $this->writeStyledRow($writer, Row::fromValues([mb_strtoupper($seller['name'])], (new Style())->setFontBold()));
+            $this->writeStyledRow($writer, Row::fromValues([]));
+            $this->writeStyledRow($writer, Row::fromValues([$title], (new Style())->setFontBold()->setFontSize(18)->setFontColor('17324D')));
+            $this->writeStyledRow($writer, Row::fromValues([sprintf(
+                '%s · Generat: %s · V CHARGE',
+                $period,
+                LocalTime::now()->format('d.m.Y H:i')
+            )]));
+            $this->writeStyledRow($writer, Row::fromValues([]));
+
+            $body($writer);
+        } finally {
+            $writer->close();
+        }
+
+        $content = (string) file_get_contents($path);
+        @unlink($path);
+
+        return $content;
+    }
+
+    private function bodyStyle(): Style
+    {
+        return (new Style())->setFontName('Calibri')->setFontSize(11)->setFontColor('000000')
+            ->setCellAlignment(\OpenSpout\Common\Entity\Style\CellAlignment::CENTER)
+            ->setCellVerticalAlignment(\OpenSpout\Common\Entity\Style\CellVerticalAlignment::CENTER)
+            ->setShouldWrapText();
+    }
+
+    private function writeStyledRow(Writer $writer, Row $row): void
+    {
+        $rowNumber = ++$this->reportRowIndex;
+        $cells = $row->getCells();
+        if ($cells === []) {
+            $row->setHeight(10);
+            $writer->addRow($row);
+
+            return;
+        }
+        $first = $cells[0]->getValue();
+        $label = is_string($first) ? $first : '';
+        $isTotal = preg_match('/^(Subtotal |Total|Suma totala)/', $label) === 1;
+        $isSection = str_starts_with($label, 'Plati ');
+        $isHeader = $row->getStyle()->getBackgroundColor() !== null;
+        $style = clone $row->getStyle();
+        $style->setFontName('Calibri')
+            ->setCellAlignment(\OpenSpout\Common\Entity\Style\CellAlignment::CENTER)
+            ->setCellVerticalAlignment(\OpenSpout\Common\Entity\Style\CellVerticalAlignment::CENTER)
+            ->setShouldWrapText();
+        $row->setHeight($rowNumber <= 4 ? 30 : ($isHeader ? 40 : 36));
+        if ($isTotal) {
+            $style->setFontBold()->setFontColor('000000')->setBackgroundColor('FFFFFF');
+            $row->setHeight(34);
+            $firstValueColumn = 1;
+            while ($firstValueColumn < count($cells) && $cells[$firstValueColumn]->getValue() === '') {
+                $firstValueColumn++;
+            }
+            if ($firstValueColumn > 1) {
+                $writer->getOptions()->mergeCells(0, $rowNumber, $firstValueColumn - 1, $rowNumber);
+            }
+        }
+        if (count($cells) === 1) {
+            $writer->getOptions()->mergeCells(0, $rowNumber, $this->reportColumnCount - 1, $rowNumber);
+            if ($isSection) {
+                $style->setBackgroundColor('FFFFFF')->setFontColor('000000')->setFontBold();
+                $row->setHeight(28);
+            }
+        } else {
+            $style->setBorder(new \OpenSpout\Common\Entity\Style\Border(
+                new \OpenSpout\Common\Entity\Style\BorderPart('top', 'BFBFBF', 'thin', 'solid'),
+                new \OpenSpout\Common\Entity\Style\BorderPart('bottom', 'BFBFBF', 'thin', 'solid'),
+                new \OpenSpout\Common\Entity\Style\BorderPart('left', 'BFBFBF', 'thin', 'solid'),
+                new \OpenSpout\Common\Entity\Style\BorderPart('right', 'BFBFBF', 'thin', 'solid')
+            ));
+        }
+        $row->setStyle($style);
+        $writer->addRow($row);
+    }
+
+    private function headerStyle(): Style
+    {
+        return $this->bodyStyle()->setFontBold()->setFontColor('000000')->setBackgroundColor('F2F2F2');
     }
 
     /**
@@ -288,56 +482,5 @@ HTML
             'name' => $snapshot['seller_name'] !== '' ? $snapshot['seller_name'] : (string) config('legal.company_name', 'Volta SRL'),
             'idno' => $snapshot['seller_idno'] !== '' ? $snapshot['seller_idno'] : (string) config('legal.company_idno', ''),
         ];
-    }
-
-    private function wrapReportHtml(string $title, string $periodLabel, string $body): string
-    {
-        $safeTitle = e($title);
-        $safePeriod = e($periodLabel);
-        $generated = e(LocalTime::now()->format('d.m.Y H:i'));
-
-        return <<<HTML
-<!doctype html>
-<html lang="ro">
-<head>
-  <meta charset="utf-8">
-  <title>{$safeTitle}</title>
-  <style>
-    body { margin: 0; padding: 18px; font-family: DejaVu Sans, Arial, sans-serif; color: #111; font-size: 11px; }
-    h1 { margin: 0 0 4px; font-size: 16px; text-transform: uppercase; }
-    .meta { color: #555; margin-bottom: 12px; font-size: 11px; }
-    table, table.lines { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #111; padding: 6px 5px; vertical-align: top; }
-    th { background: #f3f4f6; text-align: left; font-size: 9px; text-transform: uppercase; }
-    td.num, th.num { text-align: right; white-space: nowrap; }
-    .center { text-align: center; }
-    tr.grand td, tr.totals td { background: #f9fafb; font-weight: 700; }
-    .totals-note { margin-top: 14px; line-height: 1.6; }
-    .muted { color: #6b7280; font-size: 10px; }
-    .empty { text-align: center; color: #6b7280; }
-  </style>
-</head>
-<body>
-  <h1>{$safeTitle}</h1>
-  <p class="meta">Perioada: {$safePeriod} · Generat: {$generated} · V CHARGE</p>
-  {$body}
-</body>
-</html>
-HTML;
-    }
-
-    private function money(float $value): string
-    {
-        return number_format($value, 2, '.', ' ');
-    }
-
-    private function kwh(float $value): string
-    {
-        return number_format($value, 3, '.', ' ');
-    }
-
-    private function int(int $value): string
-    {
-        return number_format($value, 0, '.', ' ');
     }
 }

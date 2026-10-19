@@ -68,6 +68,52 @@ class ChargingStopService
                 ];
             }
 
+            // Fara transactionId confirmat pe OCPP, RemoteStop cu id-ul sesiunii din app e respins.
+            // Soft Reset / ChangeAvailability elibereaza conectorul; sesiunea goala se inchide local.
+            if ($session->remoteStopTransactionId() <= 0) {
+                $connectorId = (int) ($session->ocpp_connector_id ?: 0);
+                $recovery = $connectorId > 0
+                    ? $this->ocppService->recoverConnectorForRemoteStart(
+                        $station,
+                        $connectorId,
+                        null,
+                        'stop_without_transaction',
+                        true
+                    )
+                    : [];
+
+                if (! $session->hasConfirmedOcppTransaction()) {
+                    $finalized = $this->finalizeStop(
+                        $session,
+                        $station,
+                        $stopSource,
+                        null,
+                        null,
+                        'NeverStarted',
+                        ['trigger' => 'stop_without_ocpp_transaction', 'command_ids' => $recovery]
+                    );
+
+                    return array_merge($finalized, [
+                        'ocpp' => [
+                            'status' => $recovery === [] ? 'local_only' : 'queued',
+                            'command_ids' => $recovery,
+                            'message' => 'Sesiunea nu a pornit pe statie; a fost inchisa local.',
+                        ],
+                    ]);
+                }
+
+                return [
+                    'status' => 'stopping',
+                    'message' => 'Oprire prin reset conector (fara transactionId OCPP valid).',
+                    'session' => $session->fresh(),
+                    'station' => $station->fresh(),
+                    'ocpp' => [
+                        'status' => 'queued',
+                        'command_ids' => $recovery,
+                    ],
+                ];
+            }
+
             $ocppResponse = $this->ocppService->stopTransaction($station, $session);
 
             return [
@@ -481,7 +527,9 @@ class ChargingStopService
         }
 
         $timeoutMinutes = max(5, (int) config('services.ocpp.unstarted_session_timeout_minutes', 15));
+        $acceptedTimeoutMinutes = max(1, (int) config('services.ocpp.accepted_start_without_transaction_minutes', 3));
         $cutoff = now()->subMinutes($timeoutMinutes);
+        $acceptedCutoff = now()->subMinutes($acceptedTimeoutMinutes);
 
         $candidates = ChargingSession::query()
             ->where('station_id', $station->id)
@@ -489,15 +537,25 @@ class ChargingStopService
             ->whereNull('ocpp_transaction_id')
             // finalizeStop marks the session's connector Available; without one it would hit connector 1.
             ->whereNotNull('ocpp_connector_id')
-            ->where('start_time', '<=', $cutoff)
+            ->where('start_time', '<=', now()->subMinutes(min($timeoutMinutes, $acceptedTimeoutMinutes)))
             ->get();
 
         $closed = 0;
 
         foreach ($candidates as $session) {
             $fresh = $station->fresh();
+            $session = $session->fresh();
 
-            if (! $fresh || ! $this->isUnstartedAndIdle($session->fresh(), $fresh, $cutoff)) {
+            if (! $fresh || ! $session) {
+                continue;
+            }
+
+            $staleAccepted = $this->isAcceptedStartWithoutTransaction($session, $acceptedCutoff);
+            $idleTimedOut = $session->start_time
+                && $session->start_time->lessThanOrEqualTo($cutoff)
+                && $this->isUnstartedAndIdle($session, $fresh, $cutoff);
+
+            if (! $staleAccepted && ! $idleTimedOut) {
                 continue;
             }
 
@@ -508,7 +566,12 @@ class ChargingStopService
                 null,
                 null,
                 'NeverStarted',
-                ['trigger' => 'unstarted_session_timeout', 'timeout_minutes' => $timeoutMinutes]
+                [
+                    'trigger' => $staleAccepted
+                        ? 'accepted_start_without_transaction_timeout'
+                        : 'unstarted_session_timeout',
+                    'timeout_minutes' => $staleAccepted ? $acceptedTimeoutMinutes : $timeoutMinutes,
+                ]
             );
             $closed++;
         }
@@ -534,6 +597,40 @@ class ChargingStopService
                 $query->whereIn('status', [OcppCommand::STATUS_PENDING, OcppCommand::STATUS_SENT])
                     ->orWhere('created_at', '>', $cutoff);
             })
+            ->exists();
+    }
+
+    /**
+     * RemoteStart Accepted, dar StartTransaction nu a venit — fiecare Continua ar crea alta sesiune goala.
+     */
+    private function isAcceptedStartWithoutTransaction(ChargingSession $session, Carbon $acceptedCutoff): bool
+    {
+        if ($session->end_time || $session->ocpp_transaction_id || $session->hasConfirmedOcppTransaction()) {
+            return false;
+        }
+
+        if ($this->sessionHadChargingActivity($session)) {
+            return false;
+        }
+
+        $acceptedStart = OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->whereIn('action', ['RemoteStartTransaction', 'RequestStartTransaction'])
+            ->where('status', OcppCommand::STATUS_ACCEPTED)
+            ->where('acknowledged_at', '<=', $acceptedCutoff)
+            ->latest('id')
+            ->first();
+
+        if (! $acceptedStart) {
+            return false;
+        }
+
+        // Still waiting on a newer pending/sent start for the same session.
+        return ! OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->whereIn('action', ['RemoteStartTransaction', 'RequestStartTransaction'])
+            ->whereIn('status', [OcppCommand::STATUS_PENDING, OcppCommand::STATUS_SENT])
+            ->where('id', '>', $acceptedStart->id)
             ->exists();
     }
 

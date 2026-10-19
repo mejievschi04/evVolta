@@ -8,6 +8,18 @@ use Illuminate\Support\Facades\DB;
 
 class Station extends Model
 {
+    public static function withoutPowerRating(string $name): string
+    {
+        $name = preg_replace('/(?:\(\s*|\[\s*)?\d+(?:[.,]\d+)?\s*kW(?!h)\b\s*[)\]]?/iu', '', $name);
+
+        return trim(preg_replace('/\s{2,}/u', ' ', $name), " \t\n\r\0\x0B-–—·|");
+    }
+
+    public function getNameAttribute(?string $value): string
+    {
+        return self::withoutPowerRating($value ?? '');
+    }
+
     /** Masina conectata la conector (OCPP 1.6J). */
     public const VEHICLE_CONNECTED_STATUSES = ['Preparing', 'SuspendedEV', 'SuspendedEVSE', 'Charging'];
 

@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native builds
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/captures/
+android/.idea/
+*.apk
+*.aab
+ios/Pods/
+ios/build/
+ios/**/xcuserdata/
+*.xcuserstate
+DerivedData/
+*.ipa
+*.dSYM.zip
+
+# Signing (debug.keystore e cheia standard React Native de debug)
+*.jks
+*.keystore
+!debug.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Metro
+.metro-health-check*
+
+# Env (valorile reale stau in eas.json / local)
+.env
+.env*.local
+
+# OS / editor
+.DS_Store
+*.pem
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.idea/
+.vscode/
+ios/.xcode.env.local
+android/.kotlin/

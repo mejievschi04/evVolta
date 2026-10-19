@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>V CHARGE</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>V CHARGE</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>vcharge</string>
+          <string>voltaev</string>
+          <string>com.mjsky.voltaev</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>exp+v-charge</string>
+          <string>exp+volta-ev</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.332236191549-6fs05sgrealvd24ktafkm6e12g83c2qv</string>
+        </array>
+      </dict>
+    </array>
+    <key>GIDClientID</key>
+    <string>332236191549-6fs05sgrealvd24ktafkm6e12g83c2qv.apps.googleusercontent.com</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+      <key>NSAllowsArbitraryLoads</key>
+      <false/>
+      <key>NSAllowsLocalNetworking</key>
+      <true/>
+    </dict>
+    <key>NSCameraUsageDescription</key>
+    <string>V CHARGE foloseste camera pentru scanarea codului QR al statiei.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>V CHARGE foloseste locatia GPS a dispozitivului (doar cand folosesti harta) pentru a afisa statiile de incarcare apropiate. Locatia nu este folosita pentru publicitate.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>V CHARGE foloseste locatia GPS a dispozitivului (doar cand folosesti harta) pentru a afisa statiile de incarcare apropiate. Locatia nu este folosita pentru publicitate.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>V CHARGE foloseste locatia GPS a dispozitivului (doar cand folosesti harta) pentru a afisa statiile de incarcare apropiate. Locatia nu este folosita pentru publicitate.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>V CHARGE poate folosi microfonul daca este necesar pentru functii auxiliare.</string>
+    <key>RCTNewArchEnabled</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>SplashScreen</string>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+      <string>arm64</string>
+    </array>
+    <key>UIRequiresFullScreen</key>
+    <false/>
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleDefault</string>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+      <string>UIInterfaceOrientationPortrait</string>
+      <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    </array>
+    <key>UIUserInterfaceStyle</key>
+    <string>Dark</string>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+  </dict>
+</plist>

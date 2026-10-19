@@ -11,6 +11,7 @@ Sistem de management incarcare EV (backend Laravel + backoffice React + gateway 
 ```text
 backend/          Laravel API + OCPP gateway (artisan ocpp:serve)
 backoffice/       React admin UI (Vite)
+mobile/           Expo React Native + proiecte Android si Xcode
 deploy/           nginx, systemd, scripturi VPS
 docs/             Ghiduri deploy
 ```

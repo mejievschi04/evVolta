@@ -2,9 +2,6 @@
 node_modules/
 vendor/
 
-# Mobile app scos din repo (pastreaza local daca e nevoie)
-mobile/
-
 # Environment
 .env
 .env.*
@@ -29,3 +26,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Generated reports and mobile release artifacts
+/output/

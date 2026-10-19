@@ -1,0 +1,43 @@
+{
+  "cli": {
+    "version": ">= 18.8.1",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ocpp.volta.md/api",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "332236191549-htmcb655irvuqcnishak515gdkr2fgaa.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "332236191549-6fs05sgrealvd24ktafkm6e12g83c2qv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.332236191549-6fs05sgrealvd24ktafkm6e12g83c2qv"
+      }
+    },
+    "production": {
+      "autoIncrement": false,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ocpp.volta.md/api",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "332236191549-htmcb655irvuqcnishak515gdkr2fgaa.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "332236191549-6fs05sgrealvd24ktafkm6e12g83c2qv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.332236191549-6fs05sgrealvd24ktafkm6e12g83c2qv"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "resourceClass": "m-medium",
+        "scheme": "VCHARGE"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

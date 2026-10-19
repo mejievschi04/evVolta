@@ -20,6 +20,35 @@ class OcppConnectorRecoveryTest extends TestCase
         Config::set('services.ocpp.mode', 'gateway');
     }
 
+    public function test_recovery_does_not_reset_the_station_while_another_port_is_charging(): void
+    {
+        $user = $this->createAppUser();
+        $station = Station::query()->create([
+            'name' => 'Two ports', 'location' => 'Test', 'status' => Station::STATUS_CHARGING,
+            'ocpp_identity' => 'two-ports', 'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => ['connectors' => [
+                1 => ['connectorId' => 1, 'status' => 'Charging'],
+                2 => ['connectorId' => 2, 'status' => 'SuspendedEV'],
+            ]],
+        ]);
+        $other = ChargingSession::query()->create([
+            'user_id' => $user->id, 'station_id' => $station->id, 'ocpp_connector_id' => 1,
+            'start_time' => now()->subMinutes(5), 'ocpp_transaction_id' => '51',
+        ]);
+        $pending = ChargingSession::query()->create([
+            'user_id' => $user->id, 'station_id' => $station->id, 'ocpp_connector_id' => 2,
+            'start_time' => now(),
+        ]);
+        $service = app(OcppService::class);
+        $this->assertFalse($service->canAutomaticallyResetForConnector($station, 2));
+        $ids = $service->recoverConnectorForRemoteStart($station, 2, $pending, 'user_resume_suspended', true);
+        $this->assertCount(3, $ids);
+        $this->assertDatabaseMissing('ocpp_commands', ['station_id' => $station->id, 'action' => 'Reset']);
+        $this->assertNull($other->fresh()->end_time);
+        $this->assertSame('Charging', $station->fresh()->connectorOcppStatus(1));
+    }
+
     public function test_recover_connector_queues_availability_cycle_reset_and_remote_start(): void
     {
         $user = $this->createPersonalUser();

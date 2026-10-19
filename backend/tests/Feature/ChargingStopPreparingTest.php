@@ -23,7 +23,7 @@ class ChargingStopPreparingTest extends TestCase
         ]);
     }
 
-    public function test_stop_queues_remote_command_for_preparing_session_without_ocpp_transaction(): void
+    public function test_stop_closes_preparing_session_without_fake_remote_stop_transaction_id(): void
     {
         $user = $this->createAppUser([
             'email' => 'driver@example.test',
@@ -60,22 +60,13 @@ class ChargingStopPreparingTest extends TestCase
                 'station_id' => $station->id,
             ])
             ->assertOk()
-            ->assertJsonPath('status', 'stopping')
+            ->assertJsonPath('status', 'completed')
             ->assertJsonPath('session.id', $session->id);
 
-        $this->assertDatabaseHas('charging_sessions', [
-            'id' => $session->id,
-            'end_time' => null,
-        ]);
-
-        $this->assertDatabaseHas('ocpp_commands', [
+        $this->assertNotNull($session->fresh()->end_time);
+        $this->assertDatabaseMissing('ocpp_commands', [
             'station_id' => $station->id,
-            'charging_session_id' => $session->id,
             'action' => 'RemoteStopTransaction',
-            'status' => OcppCommand::STATUS_PENDING,
         ]);
-
-        $command = OcppCommand::query()->first();
-        $this->assertSame($session->id, $command->payload['transactionId']);
     }
 }
