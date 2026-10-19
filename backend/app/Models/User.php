@@ -61,6 +61,7 @@ class User extends Authenticatable implements JWTSubject
             'account_type' => 'string',
             'wallet_balance' => 'float',
             'token_version' => 'integer',
+            'public_id' => 'integer',
         ];
     }
 
@@ -90,6 +91,19 @@ class User extends Authenticatable implements JWTSubject
 
     protected static function booted(): void
     {
+        static::creating(function (self $user): void {
+            $user->public_id = $user->getConnection()->transaction(function () use ($user): int {
+                $counter = $user->getConnection()->table('user_id_counter');
+                $lastId = (int) $counter->where('id', 1)->lockForUpdate()->value('last_id');
+                if ($lastId >= 999999) {
+                    throw new \RuntimeException('The six-digit user ID range is exhausted.');
+                }
+                $counter->where('id', 1)->update(['last_id' => $lastId + 1]);
+
+                return $lastId + 1;
+            });
+        });
+
         // Any password change (reset, backoffice, account deletion) revokes every API token issued before it.
         static::updating(function (self $user): void {
             if ($user->isDirty('password')) {

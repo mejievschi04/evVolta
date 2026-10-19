@@ -29,7 +29,7 @@ class InvoiceDocumentService
 
     public function html(Invoice $invoice): string
     {
-        $invoice->loadMissing(['user:id,name,email,currency', 'sourceSession.station:id,name']);
+        $invoice->loadMissing(['user:id,name,email,currency', 'sourceSession.station:id,name,location']);
 
         $seller = $this->sellerData($invoice);
         $buyer = $this->buyerData($invoice);
@@ -48,7 +48,11 @@ class InvoiceDocumentService
         $lineNet = e(number_format((float) $fiscal['amount_net'], 2, ',', ' '));
         $lineVat = e(number_format((float) $fiscal['amount_vat'], 2, ',', ' '));
         $lineGross = e(number_format((float) $fiscal['amount_gross'], 2, ',', ' '));
-        $description = e($line['description']);
+        $description = e(\App\Models\Station::withoutPowerRating($line['description']));
+        $station = $invoice->sourceSession?->station;
+        if ($station && filled($station->location) && ! str_contains($line['description'], (string) $station->location)) {
+            $description .= '<br><strong>Adresa statiei:</strong> '.e($station->location);
+        }
 
         $sellerBlock = $this->partyBlock($seller);
         $buyerBlock = $this->partyBlock($buyer);

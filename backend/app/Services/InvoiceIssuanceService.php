@@ -19,7 +19,7 @@ class InvoiceIssuanceService
 
     public function createSessionInvoice(ChargingSession $session, float $chargedAmount): ?Invoice
     {
-        $session->loadMissing(['user', 'station:id,name']);
+        $session->loadMissing(['user', 'station:id,name,location']);
 
         if (! $session->user?->usesCardPayment() || ! $session->end_time) {
             return null;
@@ -46,7 +46,10 @@ class InvoiceIssuanceService
         // Fiscal month and period follow the local calendar, not UTC.
         $localEnd = LocalTime::of($end);
         $localStart = LocalTime::of($start);
-        $stationName = $session->station?->name ?: 'statie EV';
+        $stationName = \App\Models\Station::withoutPowerRating($session->station?->name ?: 'statie EV');
+        if (filled($session->station?->location)) {
+            $stationName .= ' · Adresa statiei: '.$session->station->location;
+        }
         $quantity = $kwh > 0 ? $kwh : 1.0;
         $unit = $kwh > 0 ? 'kWh' : 'buc';
         $fiscal = $this->fiscalCalculator->breakdown($amount, $quantity);

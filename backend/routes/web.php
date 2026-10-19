@@ -55,6 +55,7 @@ Route::prefix('backoffice')->middleware('security.headers')->group(function () {
         Route::post('/invoices/{invoice}/send', [DashboardController::class, 'sendInvoice'])->name('backoffice.invoices.send');
         Route::post('/invoices/{invoice}/delete', [DashboardController::class, 'deleteInvoice'])->name('backoffice.invoices.delete');
         Route::get('/reports/stations/monthly', [ReportController::class, 'stationsMonthly'])->name('backoffice.reports.stations.monthly');
+        Route::get('/reports/charging-sessions', [ReportController::class, 'chargingSessions'])->name('backoffice.reports.charging_sessions');
         Route::get('/reports/wallet-topups', [ReportController::class, 'walletTopups'])->name('backoffice.reports.wallet_topups');
         Route::post('/settings', [DashboardController::class, 'updateSettings'])->name('backoffice.settings.update');
         Route::post('/tariff', [DashboardController::class, 'updateTariff'])->name('backoffice.tariff.update');

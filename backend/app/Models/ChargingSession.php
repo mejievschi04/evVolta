@@ -54,6 +54,13 @@ class ChargingSession extends Model
         'power_kw_live',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $session): void {
+            $session->tariff_type = $session->user?->account_type;
+        });
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
