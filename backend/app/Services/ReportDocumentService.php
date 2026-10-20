@@ -3,8 +3,9 @@
 namespace App\Services;
 
 use App\Models\ChargingSession;
-use App\Models\WalletTopup;
+use App\Models\Tariff;
 use App\Models\User;
+use App\Models\WalletTopup;
 use Illuminate\Database\Eloquent\Builder;
 use App\Support\LocalTime;
 use Carbon\Carbon;
@@ -28,6 +29,8 @@ class ReportDocumentService
     private const FORMAT_MONEY = '#,##0.00';
 
     private const FORMAT_KWH = '#,##0.000';
+
+    private const FORMAT_TARIFF = '#,##0.00';
 
     /**
      * Charging per day × station for one month.
@@ -121,22 +124,23 @@ class ReportDocumentService
         $moneyBold = (new Style())->setFontBold()->setFormat(self::FORMAT_MONEY);
         $quantity = (new Style())->setFormat(self::FORMAT_KWH);
         $quantityBold = (new Style())->setFontBold()->setFormat(self::FORMAT_KWH);
-        $tariff = (new Style())->setFormat('#,##0');
+        $tariff = (new Style())->setFormat(self::FORMAT_TARIFF);
         $date = (new Style())->setFormat('dd.mm.yyyy hh:mm');
+        $tariffs = app(TariffService::class);
         $content = $this->writeWorkbook(
             [22, 14, 24, 46, 18, 16, 22, 20, 22],
             'RAPORT ALIMENTARI MASINI',
             sprintf('Perioada: %s – %s', $from->format('d.m.Y'), $to->format('d.m.Y')),
-            function (Writer $writer) use ($sessions, $money, $bold, $moneyBold, $date, $quantity, $quantityBold, $tariff): void {
+            function (Writer $writer) use ($sessions, $money, $bold, $moneyBold, $date, $quantity, $quantityBold, $tariff, $tariffs): void {
                 $this->writeStyledRow($writer, Row::fromValues(['Data', 'ID client', 'Client', 'Statia', 'Unitatea de masura', 'Cantitatea', 'Denumirea tarifului', 'Tarif (MDL/kWh)', 'Suma totala (MDL)'], $this->headerStyle()));
                 $total = 0.0;
                 $kwh = 0.0;
                 foreach ($sessions as $session) {
                     // Only invoiced amounts are fiscal revenue; never infer a payment method from wallet top-ups.
-                    $tariffType = $session->tariff_type ?? $session->user?->account_type;
+                    $tariffType = $this->resolvedTariffType($session);
                     $amount = $session->invoice?->invoice_type === 'session'
                         ? (float) $session->invoice->total_amount
-                        : ($tariffType === \App\Models\User::ACCOUNT_TYPE_SERVICE ? 0.0 : null);
+                        : ($tariffType === User::ACCOUNT_TYPE_SERVICE ? 0.0 : null);
                     $total += $amount ?? 0.0;
                     $kwh += (float) $session->kwh_consumed;
                     $station = $session->station;
@@ -151,13 +155,8 @@ class ReportDocumentService
                         Cell::fromValue($stationLabel),
                         Cell::fromValue('kWh'),
                         Cell::fromValue((float) $session->kwh_consumed, $quantity),
-                        Cell::fromValue(match ($tariffType) {
-                            \App\Models\User::ACCOUNT_TYPE_SERVICE => 'Serviciu',
-                            \App\Models\User::ACCOUNT_TYPE_CUSTOMER => 'Client',
-                            \App\Models\User::ACCOUNT_TYPE_PERSONAL => 'Personal',
-                            default => 'Nespecificat',
-                        }),
-                        Cell::fromValue($tariffType === \App\Models\User::ACCOUNT_TYPE_SERVICE ? 0.0 : ($session->price_per_kwh ?? 'Nespecificat'), $tariff),
+                        Cell::fromValue($this->tariffTypeLabel($tariffType)),
+                        Cell::fromValue($this->resolvedTariffPrice($session, $tariffType, $tariffs), $tariff),
                         Cell::fromValue($amount ?? 'Nefacturat', $money),
                     ]));
                 }
@@ -296,6 +295,48 @@ class ReportDocumentService
                             ->whereHas('invoice', fn (Builder $invoice) => $invoice->where('invoice_type', 'session'));
                     });
             });
+    }
+
+    private function resolvedTariffType(ChargingSession $session): ?string
+    {
+        $type = filled($session->tariff_type)
+            ? $session->tariff_type
+            : $session->user?->account_type;
+
+        return in_array($type, [
+            User::ACCOUNT_TYPE_SERVICE,
+            User::ACCOUNT_TYPE_CUSTOMER,
+            User::ACCOUNT_TYPE_PERSONAL,
+        ], true) ? $type : null;
+    }
+
+    private function tariffTypeLabel(?string $type): string
+    {
+        return match ($type) {
+            User::ACCOUNT_TYPE_SERVICE => 'Serviciu',
+            User::ACCOUNT_TYPE_CUSTOMER => 'Client',
+            User::ACCOUNT_TYPE_PERSONAL => 'Personal',
+            default => 'Nespecificat',
+        };
+    }
+
+    private function resolvedTariffPrice(ChargingSession $session, ?string $tariffType, TariffService $tariffs): float
+    {
+        if ($tariffType === User::ACCOUNT_TYPE_SERVICE || $session->user?->isFreeCharging()) {
+            return 0.0;
+        }
+
+        if ($session->price_per_kwh !== null) {
+            return Tariff::normalizePrice($session->price_per_kwh);
+        }
+
+        $invoice = $session->invoice;
+        $kwh = (float) $session->kwh_consumed;
+        if ($invoice?->invoice_type === 'session' && $kwh > 0 && $invoice->total_amount !== null) {
+            return Tariff::normalizePrice(((float) $invoice->total_amount) / $kwh);
+        }
+
+        return $tariffs->pricePerKwhForSession($session);
     }
 
     private function stationDayAggregates(Carbon $from, Carbon $to): Collection

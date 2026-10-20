@@ -33,6 +33,7 @@ class ChargingSession extends Model
         'charge_budget',
         'target_kwh',
         'price_per_kwh',
+        'tariff_type',
         'live_metrics',
     ];
 
@@ -43,6 +44,7 @@ class ChargingSession extends Model
         'charge_budget' => 'float',
         'target_kwh' => 'float',
         'price_per_kwh' => 'float',
+        'tariff_type' => 'string',
         'meter_start_kwh' => 'float',
         'meter_stop_kwh' => 'float',
         'live_metrics' => 'array',
@@ -64,7 +66,13 @@ class ChargingSession extends Model
     protected static function booted(): void
     {
         static::creating(function (self $session): void {
-            $session->tariff_type = $session->user?->account_type;
+            if (filled($session->tariff_type) || ! $session->user_id) {
+                return;
+            }
+
+            $session->tariff_type = $session->relationLoaded('user')
+                ? $session->user?->account_type
+                : User::query()->withTrashed()->whereKey($session->user_id)->value('account_type');
         });
     }
 

@@ -186,9 +186,9 @@
     "semantic_hash": ""
   },
   "backend/app/Models/ChargingSession.php": {
-    "mtime": 1792482681.1480875,
-    "seen": 1792482774.104979,
-    "ast_hash": "2dee47172281f499c1038c9a61a8c003",
+    "mtime": 1792484878.917067,
+    "seen": 1792484911.4385521,
+    "ast_hash": "c05f7390453cc67cb84664bedc6659a4",
     "semantic_hash": ""
   },
   "backend/app/Models/Invoice.php": {
@@ -342,9 +342,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/ReportDocumentService.php": {
-    "mtime": 1792482704.340696,
-    "seen": 1792482774.104992,
-    "ast_hash": "0852f52701c31b6520af5b056f0f8309",
+    "mtime": 1792484876.9871726,
+    "seen": 1792484911.438567,
+    "ast_hash": "3ef2002174be4179300775e489f4085f",
     "semantic_hash": ""
   },
   "backend/app/Services/SessionEnergyService.php": {
@@ -1188,9 +1188,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/ReportsAndInvoicePdfTest.php": {
-    "mtime": 1792482681.1532974,
-    "seen": 1792482774.105073,
-    "ast_hash": "f70f54336c9ed84d8df6e0fa8ced1af8",
+    "mtime": 1792484893.685038,
+    "seen": 1792484911.438655,
+    "ast_hash": "b5815831370187a779d7a4e7b1294465",
     "semantic_hash": ""
   },
   "backend/tests/Feature/SecurityTest.php": {

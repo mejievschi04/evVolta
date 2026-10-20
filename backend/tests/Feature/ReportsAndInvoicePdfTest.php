@@ -7,6 +7,7 @@ use App\Mail\InvoiceMail;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
 use App\Models\Station;
+use App\Models\Tariff;
 use App\Models\WalletTopup;
 use App\Services\InvoiceIssuanceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -94,6 +95,72 @@ class ReportsAndInvoicePdfTest extends TestCase
                 $reader->close();
                 unlink($path);
             }
+        }
+    }
+
+    public function test_charging_report_fills_tariff_from_account_invoice_or_current_plan(): void
+    {
+        Tariff::query()->create(['price_per_kwh' => 0.43, 'personal_price_per_kwh' => 0.15]);
+        $station = Station::query()->create([
+            'name' => 'Tariff station',
+            'location' => 'Chisinau',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'station:tariff-fallback',
+        ]);
+        $day = \App\Support\LocalTime::day('2026-10-15');
+        $cases = [
+            ['customer', null, 10, 4.30, 'Client', 0.43],
+            ['personal', null, 8, 1.20, 'Personal', 0.15],
+            ['service', null, 6, null, 'Serviciu', 0.0],
+            ['customer', 0.50, 4, 2.00, 'Client', 0.50],
+        ];
+        foreach ($cases as $index => [$type, $snapshotPrice, $energy, $invoiceAmount, $expectedName, $expectedPrice]) {
+            $user = $this->createAppUser(['name' => 'Tariff driver '.$index, 'account_type' => $type]);
+            $session = ChargingSession::query()->create([
+                'user_id' => $user->id,
+                'station_id' => $station->id,
+                'start_time' => '2026-10-15 09:00:00',
+                'end_time' => '2026-10-15 10:00:00',
+                'kwh_consumed' => $energy,
+                'price_per_kwh' => $snapshotPrice,
+            ]);
+            $session->forceFill(['tariff_type' => null])->save();
+            if ($invoiceAmount !== null) {
+                Invoice::query()->create([
+                    'user_id' => $user->id, 'source_session_id' => $session->id,
+                    'month' => '2026-10', 'currency' => 'MDL', 'invoice_type' => 'session',
+                    'total_kwh' => $energy, 'total_amount' => $invoiceAmount,
+                    'sessions_count' => 1, 'status' => 'paid',
+                ]);
+            }
+            $cases[$index][] = $user->name;
+        }
+
+        $report = app(\App\Services\ReportDocumentService::class)->chargingSessions($day, $day);
+        $path = tempnam(sys_get_temp_dir(), 'charging-tariff-report-');
+        $reader = new \OpenSpout\Reader\XLSX\Reader();
+        try {
+            file_put_contents($path, $report['content']);
+            $reader->open($path);
+            $byName = [];
+            foreach ($reader->getSheetIterator() as $sheet) {
+                foreach ($sheet->getRowIterator() as $row) {
+                    $cells = $row->toArray();
+                    if (($cells[0] ?? null) instanceof \DateTimeInterface) {
+                        $byName[$cells[2]] = $cells;
+                    }
+                }
+            }
+            foreach ($cases as [$type, $snapshotPrice, $energy, $invoiceAmount, $expectedName, $expectedPrice, $userName]) {
+                $this->assertArrayHasKey($userName, $byName, $type);
+                $this->assertSame($expectedName, $byName[$userName][6], $type.' name');
+                $this->assertEquals($expectedPrice, $byName[$userName][7], $type.' price');
+                $this->assertNotSame('Nespecificat', $byName[$userName][6]);
+                $this->assertNotSame('Nespecificat', $byName[$userName][7]);
+            }
+        } finally {
+            $reader->close();
+            unlink($path);
         }
     }
 
