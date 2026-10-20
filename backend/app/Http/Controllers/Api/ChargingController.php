@@ -70,6 +70,16 @@ class ChargingController extends Controller
 
                 $requestedConnector = isset($payload['connector_id']) ? (int) $payload['connector_id'] : null;
 
+                $automaticStopPending = ChargingSession::query()->where('station_id', $station->id)
+                    ->where('user_id', $user->id)->whereNull('end_time')
+                    ->where('stop_source', ChargingSession::STOP_SOURCE_SUSPENDED_EV)
+                    ->when($requestedConnector !== null, fn ($query) => $query->where('ocpp_connector_id', $requestedConnector))
+                    ->exists();
+                if ($automaticStopPending) {
+                    throw new RuntimeException('Asteapta finalizarea opririi automate, apoi porneste o sesiune noua.', 422);
+                }
+
+
                 if ($requestedConnector !== null) {
                     if ($station->hasActiveSessionOnConnector($requestedConnector)) {
                         $occupant = ChargingSession::query()

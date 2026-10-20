@@ -205,7 +205,7 @@ class ChargingStopService
             'end_time' => $endTime,
             'kwh_consumed' => $kwhConsumed,
             'meter_stop_kwh' => $meterStop,
-            'stop_source' => $stopSource,
+            'stop_source' => $session->stoppedAfterEvPause() ? ChargingSession::STOP_SOURCE_SUSPENDED_EV : $stopSource,
         ];
 
         if ($ocppStopReason !== null && $ocppStopReason !== '') {

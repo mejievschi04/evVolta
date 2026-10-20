@@ -49,6 +49,7 @@ OCPP_METER_VALUE_SAMPLE_INTERVAL=5
 OCPP_START_SYNC_WAIT_MS=1200
 OCPP_START_SYNC_WAIT_CONNECTED_MS=400
 OCPP_SOFT_RESET_ON_STOP_REJECT=true
+OCPP_SUSPENDED_EV_STOP_SECONDS=120
 ```
 
 | Variabila | Rol |
@@ -58,6 +59,19 @@ OCPP_SOFT_RESET_ON_STOP_REJECT=true
 | `OCPP_HEARTBEAT_INTERVAL` | Interval returnat in `BootNotification.conf` |
 | `OCPP_METER_VALUE_SAMPLE_INTERVAL` | Interval push la statie + scheduler telemetry |
 | `OCPP_SOFT_RESET_ON_STOP_REJECT` | Dupa `RemoteStop Rejected`, trimite `Reset Soft` (EU1060) |
+
+Dupa 120 de secunde consecutive in `SuspendedEV`, gateway-ul cere oprirea
+tranzactiei prin fluxul normal RemoteStop. Notificarile repetate nu reseteaza
+termenul. Inainte de expirare, orice alt status anuleaza temporizatorul. Dupa
+expirare, oprirea este definitiva: revenirea la `Charging` nu anuleaza comanda,
+`Continua` este blocat, iar o pornire noua asteapta finalizarea sesiunii vechi.
+Incarcarea urmatoare foloseste o sesiune noua, cu ID si facturare separate.
+Verificarea ruleaza in gateway, fara sa depinda de aplicatia mobila sau de o noua
+notificare. Sesiunile neconfirmate si statiile deconectate nu sunt oprite de aceasta
+regula. Inchiderea si facturarea asteapta confirmarea statiei si contorul final;
+ramane valabil mecanismul existent de finalizare dupa eliberarea conectorului.
+`OCPP_SUSPENDED_EV_STOP_SECONDS=0` dezactiveaza regula. Dupa deploy, reincarca
+configuratia si reporneste procesul OCPP pentru aplicarea modificarii.
 
 Pentru demo fara hardware: `OCPP_MODE=simulator`.
 

@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "backend/app/Console/Commands/OcppServe.php": {
-    "mtime": 1792475909.894924,
-    "seen": 1792475914.4101481,
-    "ast_hash": "9aba63c0eefe05d6cb2c32d226fcfd22",
+    "mtime": 1792481640.7599158,
+    "seen": 1792481666.5935202,
+    "ast_hash": "99b50ef8fe298314574bd4120378d824",
     "semantic_hash": ""
   },
   "backend/app/Console/Commands/PrivacyPurgeExpiredData.php": {
@@ -54,9 +54,9 @@
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Api/ChargingController.php": {
-    "mtime": 1792056954.0416644,
-    "seen": 1792057402.591925,
-    "ast_hash": "2c4ce0af3353ab3f575974795e96666e",
+    "mtime": 1792481589.3888125,
+    "seen": 1792481666.5935261,
+    "ast_hash": "888fbecf9502c5924e3327ec91fff122",
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Api/InvoiceController.php": {
@@ -78,9 +78,9 @@
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Api/SessionController.php": {
-    "mtime": 1792059142.1745675,
-    "seen": 1792059189.290976,
-    "ast_hash": "026f459ebc72aeb0fc910ba58826bd52",
+    "mtime": 1792481589.3883178,
+    "seen": 1792481666.593529,
+    "ast_hash": "e227adb9d64921383f0b428c8ea9e6e4",
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Api/StationController.php": {
@@ -186,9 +186,9 @@
     "semantic_hash": ""
   },
   "backend/app/Models/ChargingSession.php": {
-    "mtime": 1792399801.89151,
-    "seen": 1792475914.410165,
-    "ast_hash": "c4053d81eed0f6b405d2af3df3acc710",
+    "mtime": 1792481589.386494,
+    "seen": 1792481666.5935428,
+    "ast_hash": "2dee47172281f499c1038c9a61a8c003",
     "semantic_hash": ""
   },
   "backend/app/Models/Invoice.php": {
@@ -264,15 +264,15 @@
     "semantic_hash": ""
   },
   "backend/app/Services/ChargingResumeService.php": {
-    "mtime": 1792399801.891884,
-    "seen": 1792475914.4101708,
-    "ast_hash": "3a01dabf69cabf63b880b71254c5c177",
+    "mtime": 1792481589.3879273,
+    "seen": 1792481666.5935512,
+    "ast_hash": "4de50e22c9443aef78617f884309ee57",
     "semantic_hash": ""
   },
   "backend/app/Services/ChargingStopService.php": {
-    "mtime": 1792129379.975656,
-    "seen": 1792129492.529567,
-    "ast_hash": "94e4bd8710b47c7cc8b050f12381b295",
+    "mtime": 1792481589.3875823,
+    "seen": 1792481666.5935512,
+    "ast_hash": "535a8424d3124a04598d728e7e4d9335",
     "semantic_hash": ""
   },
   "backend/app/Services/InvoiceDocumentService.php": {
@@ -516,9 +516,9 @@
     "semantic_hash": ""
   },
   "backend/config/services.php": {
-    "mtime": 1792129361.6842847,
-    "seen": 1792129492.529593,
-    "ast_hash": "802a88ed9a22ccb5cb5748c24c1c9ce6",
+    "mtime": 1792481113.9716094,
+    "seen": 1792481463.578003,
+    "ast_hash": "4ef92df1b68d8cf4e9e7b080d090bc33",
     "semantic_hash": ""
   },
   "backend/config/session.php": {
@@ -1458,9 +1458,9 @@
     "semantic_hash": ""
   },
   "backend/docs/OCPP_SETUP.md": {
-    "mtime": 1792475909.9072714,
-    "seen": 1792475914.410316,
-    "ast_hash": "0fd59806497116011e4c81cc761f780c",
+    "mtime": 1792481662.6727562,
+    "seen": 1792481666.5937018,
+    "ast_hash": "991a2b26715c89639c749696ebb73ae0",
     "semantic_hash": ""
   },
   "backend/docs/SOCIAL_AUTH_SETUP.md": {
@@ -1800,9 +1800,9 @@
     "semantic_hash": ""
   },
   "mobile/app/src/screens/ChargingScreen.js": {
-    "mtime": 1792475910.8452878,
-    "seen": 1792475914.4103,
-    "ast_hash": "de77337aac27f60e65e3d4d4ae2a186b",
+    "mtime": 1792481589.3893576,
+    "seen": 1792481666.593685,
+    "ast_hash": "f83af06ee918589a6d7046903cf78cd9",
     "semantic_hash": ""
   },
   "mobile/app/src/screens/HistorySessionsScreen.js": {
@@ -2034,9 +2034,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/OcppStopTransactionGraceTest.php": {
-    "mtime": 1792057298.4820015,
-    "seen": 1792057402.592032,
-    "ast_hash": "9f0454904e190ef5954830b46aadaf39",
+    "mtime": 1792481640.7601368,
+    "seen": 1792481666.593638,
+    "ast_hash": "a5e2b2f25f01d8e26f10cfff3c9dfa56",
     "semantic_hash": ""
   },
   "backend/tests/Feature/OcppLocalStartPolicyTest.php": {

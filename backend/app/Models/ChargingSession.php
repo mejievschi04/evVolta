@@ -8,6 +8,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class ChargingSession extends Model
 {
+    public const STOP_SOURCE_SUSPENDED_EV = 'suspended_ev';
+
+    public function stoppedAfterEvPause(): bool
+    {
+        return $this->stop_source === self::STOP_SOURCE_SUSPENDED_EV;
+    }
+
     protected $fillable = [
         'user_id',
         'station_id',
