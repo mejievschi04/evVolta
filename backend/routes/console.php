@@ -23,3 +23,9 @@ app(Schedule::class)
     ->timezone('Europe/Chisinau')
     ->dailyAt('07:00')
     ->withoutOverlapping();
+
+// Recover missing payment metadata before daily exports, and for historical reports.
+app(Schedule::class)
+    ->command('wallet:backfill-payment-methods --limit=100')
+    ->hourlyAt(40)
+    ->withoutOverlapping();

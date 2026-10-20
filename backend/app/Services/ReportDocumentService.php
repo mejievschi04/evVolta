@@ -361,6 +361,7 @@ class ReportDocumentService
             ->orderBy('paid_at')
             ->orderBy('id')
             ->get()
+            ->each(fn (WalletTopup $topup) => app(TopupPaymentMethodService::class)->fillMissing($topup))
             ->map(fn (WalletTopup $topup) => [
                 'id' => (int) $topup->id,
                 'paid_at' => LocalTime::of($topup->paid_at)->format('d.m.Y H:i'),

@@ -342,9 +342,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/ReportDocumentService.php": {
-    "mtime": 1792479006.5893016,
-    "seen": 1792479029.553051,
-    "ast_hash": "d3b285f519b85576e0dd8ef112e0f790",
+    "mtime": 1792482324.9750388,
+    "seen": 1792482392.649696,
+    "ast_hash": "0852f52701c31b6520af5b056f0f8309",
     "semantic_hash": ""
   },
   "backend/app/Services/SessionEnergyService.php": {
@@ -870,9 +870,9 @@
     "semantic_hash": ""
   },
   "backend/routes/console.php": {
-    "mtime": 1792479445.5400393,
-    "seen": 1792479510.165478,
-    "ast_hash": "7858f4970d0e6afbe44a72a270299a32",
+    "mtime": 1792482324.9755907,
+    "seen": 1792482392.6497579,
+    "ast_hash": "ae49f1b694af0ead5209250330f1080b",
     "semantic_hash": ""
   },
   "backend/routes/web.php": {
@@ -1452,9 +1452,9 @@
     "semantic_hash": ""
   },
   "backend/docs/MAIB_SETUP.md": {
-    "mtime": 1790581431.8418233,
-    "seen": 1791198508.329567,
-    "ast_hash": "9a17a67245f796d7866e7f2ef062438a",
+    "mtime": 1792482389.2161233,
+    "seen": 1792482392.649857,
+    "ast_hash": "eb0710e500cd0a4366876d04b41c1d86",
     "semantic_hash": ""
   },
   "backend/docs/OCPP_SETUP.md": {
@@ -2238,9 +2238,9 @@
     "semantic_hash": ""
   },
   "backend/app/Console/Commands/BackfillTopupPaymentMethods.php": {
-    "mtime": 1792060667.547973,
-    "seen": 1792060769.3356318,
-    "ast_hash": "61dda38c675f3886752a5564c49fd685",
+    "mtime": 1792482389.2154434,
+    "seen": 1792482392.649651,
+    "ast_hash": "bbc439ce064ffdcef96d689d4e07b6c0",
     "semantic_hash": ""
   },
   "backend/database/migrations/2026_10_15_160000_add_payment_method_to_wallet_topups_table.php": {
@@ -2250,9 +2250,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/TopupPaymentMethodReportTest.php": {
-    "mtime": 1792391366.9395318,
-    "seen": 1792391370.418366,
-    "ast_hash": "8eeff0d93173b0447bf05723c9cf4fe8",
+    "mtime": 1792482355.2163098,
+    "seen": 1792482392.649804,
+    "ast_hash": "ac9bf72f89f813b5ebce289ee4157e76",
     "semantic_hash": ""
   },
   "backend/database/migrations/2026_10_19_120000_add_public_id_to_users.php": {
@@ -2325,6 +2325,12 @@
     "mtime": 1792479652.0424523,
     "seen": 1792479685.977452,
     "ast_hash": "2d47ed975494434a28efc044da616ab7",
+    "semantic_hash": ""
+  },
+  "backend/app/Services/TopupPaymentMethodService.php": {
+    "mtime": 1792482324.9330559,
+    "seen": 1792482392.649699,
+    "ast_hash": "fb614852d17ce5b2628ee5f78327db06",
     "semantic_hash": ""
   }
 }
