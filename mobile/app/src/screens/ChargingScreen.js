@@ -335,13 +335,12 @@ export default function ChargingScreen() {
     return findResumableConnector(selectedStation, preferred);
   }, [selectedStation, displaySession, lastResult]);
 
+  const autoStoppedSession = displaySession?.stop_source === "suspended_ev"
+    || lastResult?.session?.stop_source === "suspended_ev";
   const showResume =
     Boolean(resolvedStationId)
-    && (
-      liveCanResume
-      || ["SuspendedEV", "SuspendedEVSE", "Finishing"].includes(connectorStatus)
-      || Boolean(resumableConnector)
-    )
+    && !autoStoppedSession
+    && (liveCanResume || Boolean(resumableConnector?.can_resume))
     && (Boolean(displaySession) || Boolean(lastResult) || Boolean(resumableConnector));
 
   const phase = canStartAnotherPort

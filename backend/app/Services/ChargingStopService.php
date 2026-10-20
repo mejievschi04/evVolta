@@ -681,6 +681,69 @@ class ChargingStopService
         return false;
     }
 
+    public function beginSuspendedEvStop(ChargingSession $session): ChargingSession
+    {
+        $live = is_array($session->live_metrics) ? $session->live_metrics : [];
+        if (empty($live['suspended_ev_stop_at'])) {
+            $live['suspended_ev_stop_at'] = now()->toIso8601String();
+        }
+
+        $session->update([
+            'stop_source' => ChargingSession::STOP_SOURCE_SUSPENDED_EV,
+            'live_metrics' => $live,
+        ]);
+
+        return $session->fresh();
+    }
+
+    public function suspendedEvStopTimedOut(ChargingSession $session): bool
+    {
+        if (! $session->stoppedAfterEvPause() || $session->end_time) {
+            return false;
+        }
+
+        $seconds = max(30, (int) config('services.ocpp.suspended_ev_finalize_seconds', 180));
+        $markedAt = $this->suspendedEvStopMarkedAt($session);
+
+        return $markedAt !== null && $markedAt->lessThanOrEqualTo(now()->subSeconds($seconds));
+    }
+
+    public function finalizeTimedOutSuspendedEvStop(ChargingSession $session, Station $station): ?ChargingSession
+    {
+        $session = $session->fresh();
+        if (! $session || ! $this->suspendedEvStopTimedOut($session)) {
+            return null;
+        }
+
+        $result = $this->finalizeStop(
+            $session,
+            $station,
+            ChargingSession::STOP_SOURCE_SUSPENDED_EV,
+            null,
+            null,
+            'SuspendedEVTimeout',
+            ['trigger' => 'suspended_ev_stop_timeout']
+        );
+
+        return $result['session'] ?? $session->fresh();
+    }
+
+    private function suspendedEvStopMarkedAt(ChargingSession $session): ?Carbon
+    {
+        $live = is_array($session->live_metrics) ? $session->live_metrics : [];
+        if (! empty($live['suspended_ev_stop_at'])) {
+            return Carbon::parse($live['suspended_ev_stop_at']);
+        }
+
+        $firstStop = OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])
+            ->oldest('id')
+            ->first();
+
+        return $firstStop?->created_at ? Carbon::parse($firstStop->created_at) : null;
+    }
+
     private function pendingRemoteStop(ChargingSession $session): ?OcppCommand
     {
         return OcppCommand::query()

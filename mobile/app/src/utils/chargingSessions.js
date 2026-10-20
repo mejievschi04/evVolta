@@ -53,11 +53,7 @@ export function findResumableConnector(station, preferredConnectorId = null) {
   const preferred = preferredConnectorId != null ? Number(preferredConnectorId) : null;
 
   const match = (connector) => {
-    const status = String(connector.status ?? "").toLowerCase();
-    const resumable =
-      Boolean(connector.can_resume) ||
-      ["suspendedev", "suspendedevse", "finishing"].includes(status);
-    if (!resumable) {
+    if (!connector.can_resume) {
       return false;
     }
     if (connector.occupied_by_other_user) {

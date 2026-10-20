@@ -50,6 +50,7 @@ OCPP_START_SYNC_WAIT_MS=1200
 OCPP_START_SYNC_WAIT_CONNECTED_MS=400
 OCPP_SOFT_RESET_ON_STOP_REJECT=true
 OCPP_SUSPENDED_EV_STOP_SECONDS=120
+OCPP_SUSPENDED_EV_FINALIZE_SECONDS=180
 ```
 
 | Variabila | Rol |
@@ -64,7 +65,9 @@ Dupa 120 de secunde consecutive in `SuspendedEV`, gateway-ul cere oprirea
 tranzactiei prin fluxul normal RemoteStop. Notificarile repetate nu reseteaza
 termenul. Inainte de expirare, orice alt status anuleaza temporizatorul. Dupa
 expirare, oprirea este definitiva: revenirea la `Charging` nu anuleaza comanda,
-`Continua` este blocat, iar o pornire noua asteapta finalizarea sesiunii vechi.
+`Continua` este blocat, iar `Porneste` asteapta confirmarea statiei. Daca
+`StopTransaction` nu vine in `OCPP_SUSPENDED_EV_FINALIZE_SECONDS` (implicit 180),
+sesiunea se inchide local pe ultimul contor ca portul sa nu ramana blocat.
 Incarcarea urmatoare foloseste o sesiune noua, cu ID si facturare separate.
 Verificarea ruleaza in gateway, fara sa depinda de aplicatia mobila sau de o noua
 notificare. Sesiunile neconfirmate si statiile deconectate nu sunt oprite de aceasta

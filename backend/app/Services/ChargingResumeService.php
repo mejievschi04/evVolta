@@ -70,7 +70,16 @@ class ChargingResumeService
             ->when($sessionId, fn ($query) => $query->whereKey($sessionId))
             ->where('ocpp_connector_id', $resolvedConnectorId)->latest('id')->first();
         if ($previous?->stoppedAfterEvPause()) {
-            throw new RuntimeException('Sesiunea a fost oprita automat dupa pauza masinii. Asteapta finalizarea opririi, apoi porneste o sesiune noua.', 422);
+            if (! $previous->end_time && $this->chargingStopService->finalizeTimedOutSuspendedEvStop($previous, $station)) {
+                $station = $station->fresh();
+            }
+
+            throw new RuntimeException(
+                $previous->fresh()?->end_time
+                    ? 'Sesiunea a fost oprita automat dupa pauza masinii. Porneste o sesiune noua.'
+                    : 'Sesiunea a fost oprita automat dupa pauza masinii. Asteapta finalizarea opririi, apoi porneste o sesiune noua.',
+                422
+            );
         }
 
         $status = $station->connectorOcppStatus($resolvedConnectorId);

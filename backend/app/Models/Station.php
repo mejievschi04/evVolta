@@ -445,6 +445,18 @@ class Station extends Model
             ->exists();
     }
 
+    private function userSessionBlocksResume(int $connectorId, int $userId): bool
+    {
+        $latest = ChargingSession::query()
+            ->where('station_id', $this->id)
+            ->where('ocpp_connector_id', $connectorId)
+            ->where('user_id', $userId)
+            ->latest('id')
+            ->first();
+
+        return $latest?->stoppedAfterEvPause() ?? false;
+    }
+
     /**
      * Porturi pe care utilizatorul curent poate porni (nu sunt ocupate de alt user).
      *
@@ -929,7 +941,8 @@ class Station extends Model
                     'is_stale_finishing' => $status === 'Finishing' && ! $this->hasActiveSessionOnConnector($id),
                     'can_resume' => $user
                         && in_array($status, ['SuspendedEV', 'SuspendedEVSE', 'Finishing'], true)
-                        && ! $this->connectorOccupiedByOtherUser($id, (int) $user->id),
+                        && ! $this->connectorOccupiedByOtherUser($id, (int) $user->id)
+                        && ! $this->userSessionBlocksResume($id, (int) $user->id),
                     'has_active_session' => $this->hasActiveSessionOnConnector($id),
                     ...$this->connectorTelemetryFields(is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : []),
                 ];

@@ -96,6 +96,8 @@ return [
         'auto_recovery_enabled' => filter_var(env('OCPP_AUTO_RECOVERY_ENABLED', false), FILTER_VALIDATE_BOOL),
         // Stop confirmed transactions after two continuous minutes paused by the EV. Zero disables.
         'suspended_ev_stop_seconds' => (int) env('OCPP_SUSPENDED_EV_STOP_SECONDS', 120),
+        // If StopTransaction never arrives after auto-stop, close locally so the port is not locked.
+        'suspended_ev_finalize_seconds' => (int) env('OCPP_SUSPENDED_EV_FINALIZE_SECONDS', 180),
         'suspended_ev_recovery_seconds' => (int) env('OCPP_SUSPENDED_EV_RECOVERY_SECONDS', 12),
         'remote_start_after_recovery_seconds' => (int) env('OCPP_REMOTE_START_AFTER_RECOVERY_SECONDS', 10),
         'diagnostics_ftp_url' => env('OCPP_DIAGNOSTICS_FTP_URL', 'ftp://diagnostics.local/evolta/'),

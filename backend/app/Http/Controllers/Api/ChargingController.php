@@ -74,9 +74,17 @@ class ChargingController extends Controller
                     ->where('user_id', $user->id)->whereNull('end_time')
                     ->where('stop_source', ChargingSession::STOP_SOURCE_SUSPENDED_EV)
                     ->when($requestedConnector !== null, fn ($query) => $query->where('ocpp_connector_id', $requestedConnector))
-                    ->exists();
+                    ->latest('id')
+                    ->first();
                 if ($automaticStopPending) {
-                    throw new RuntimeException('Asteapta finalizarea opririi automate, apoi porneste o sesiune noua.', 422);
+                    $closed = $this->chargingStopService->finalizeTimedOutSuspendedEvStop(
+                        $automaticStopPending,
+                        $station
+                    );
+                    if (! $closed) {
+                        throw new RuntimeException('Asteapta finalizarea opririi automate, apoi porneste o sesiune noua.', 422);
+                    }
+                    $station = $station->fresh();
                 }
 
 

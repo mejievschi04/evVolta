@@ -30,6 +30,7 @@ class OcppStopTransactionGraceTest extends TestCase
             'services.ocpp.mode' => 'gateway',
             'services.ocpp.stop_transaction_grace_seconds' => 60,
             'services.ocpp.suspended_ev_stop_seconds' => 120,
+            'services.ocpp.suspended_ev_finalize_seconds' => 180,
         ]);
 
         $this->gateway = app(OcppServe::class);
@@ -358,6 +359,8 @@ class OcppStopTransactionGraceTest extends TestCase
         $this->assertTrue($session->fresh()->stoppedAfterEvPause());
         $this->actingAs($session->user, 'api');
         $this->getJson("/api/sessions/{$session->id}/live")->assertOk()->assertJsonPath('can_resume', false);
+        $this->assertFalse(collect($station->fresh()->liveStatus(null, $session->user)['connectors'] ?? [])
+            ->firstWhere('id', 1)['can_resume'] ?? true);
         $this->postJson('/api/charging/resume', ['station_id' => $station->id, 'session_id' => $session->id, 'connector_id' => 1])
             ->assertStatus(422)->assertJsonPath('message', 'Sesiunea a fost oprita automat dupa pauza masinii. Asteapta finalizarea opririi, apoi porneste o sesiune noua.');
 
@@ -391,6 +394,32 @@ class OcppStopTransactionGraceTest extends TestCase
         $this->assertNotSame($session->id, $started->json('session.id'));
         $this->assertDatabaseHas('charging_sessions', ['id' => $started->json('session.id'), 'start_source' => 'app', 'stop_source' => null]);
         $this->assertSame(5.5, $session->fresh()->kwh_consumed);
+    }
+
+    public function test_auto_stop_finalizes_locally_if_station_never_sends_stop_transaction(): void
+    {
+        [$station, $session] = $this->chargingSession();
+        config(['billing.prepaid_wallet_enabled' => false]);
+        $this->statusNotification($station, 'SuspendedEV');
+        $this->setClients($station->fresh());
+        $this->travel(121)->seconds();
+        $this->sweepSuspended($station);
+        $this->assertTrue($session->fresh()->stoppedAfterEvPause());
+        $this->assertNull($session->fresh()->end_time);
+
+        $this->actingAs($session->user, 'api');
+        $this->postJson('/api/charging/start', ['station_id' => $station->id, 'connector_id' => 1])->assertStatus(422);
+
+        $this->travel(180)->seconds();
+        $this->sweepSuspended($station);
+        $this->assertNotNull($session->fresh()->end_time);
+        $this->assertSame('SuspendedEVTimeout', $session->fresh()->ocpp_stop_reason);
+        $this->assertSame(4.0, (float) $session->fresh()->kwh_consumed);
+
+        $this->statusNotification($station, 'Preparing');
+        config(['services.ocpp.mode' => 'simulator']);
+        $started = $this->postJson('/api/charging/start', ['station_id' => $station->id, 'connector_id' => 1])->assertCreated();
+        $this->assertNotSame($session->id, $started->json('session.id'));
     }
 
     private function sweepSuspended(?Station $station = null): void

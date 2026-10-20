@@ -814,10 +814,18 @@ class OcppServe extends Command
         }
 
         $connectorId = max(1, $rawConnectorId);
-        if (ChargingSession::query()->where('station_id', $station->id)
+        $blockingStop = ChargingSession::query()->where('station_id', $station->id)
             ->where('ocpp_connector_id', $connectorId)->whereNull('end_time')
-            ->where('stop_source', ChargingSession::STOP_SOURCE_SUSPENDED_EV)->exists()) {
-            return ['transactionId' => 0, 'idTagInfo' => ['status' => 'Invalid']];
+            ->where('stop_source', ChargingSession::STOP_SOURCE_SUSPENDED_EV)
+            ->latest('id')
+            ->first();
+        if ($blockingStop) {
+            $stopService = app(ChargingStopService::class);
+            if ($stopService->suspendedEvStopTimedOut($blockingStop)) {
+                $stopService->finalizeTimedOutSuspendedEvStop($blockingStop, $station);
+            } else {
+                return ['transactionId' => 0, 'idTagInfo' => ['status' => 'Invalid']];
+            }
         }
         $meterStart = $this->normalizeMeterStartFromOcpp($payload['meterStart'] ?? null);
         $startedAt = $this->parseOcppTime($payload['timestamp'] ?? null);
@@ -1439,6 +1447,7 @@ class OcppServe extends Command
                 $sessions = ChargingSession::query()->where('station_id', $station->id)
                     ->whereNull('end_time')->get();
                 foreach ($sessions as $session) {
+                    $stopService = app(ChargingStopService::class);
                     if (! $session->stoppedAfterEvPause()) {
                         $connector = $connectors[(int) ($session->ocpp_connector_id ?: 1)] ?? [];
                         if (($connector['status'] ?? null) !== 'SuspendedEV' || empty($connector['suspended_ev_since'])) {
@@ -1451,9 +1460,12 @@ class OcppServe extends Command
                             continue;
                         }
                         // Once the deadline expires, the old session must finish even if the EV resumes.
-                        $session->update(['stop_source' => ChargingSession::STOP_SOURCE_SUSPENDED_EV]);
+                        $session = $stopService->beginSuspendedEvStop($session);
                     }
-                    app(ChargingStopService::class)->requestStop($session, $station, ChargingSession::STOP_SOURCE_SUSPENDED_EV);
+                    if ($stopService->finalizeTimedOutSuspendedEvStop($session, $station)) {
+                        continue;
+                    }
+                    $stopService->requestStop($session, $station, ChargingSession::STOP_SOURCE_SUSPENDED_EV);
                 }
             } catch (Throwable $exception) {
                 Log::error('OCPP SuspendedEV auto-stop failed', [
