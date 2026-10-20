@@ -91,6 +91,7 @@ class DashboardController extends Controller
                 'personal_price_per_kwh',
                 'created_at',
             ]),
+            'dailyReports' => \App\Models\ReportSetting::current(),
             'currentUser' => $this->backofficeActor()?->only(['id', 'name', 'first_name', 'last_name', 'currency', 'email']),
         ]);
     }
@@ -1846,6 +1847,9 @@ class DashboardController extends Controller
     public function updateSettings(Request $request): JsonResponse|RedirectResponse
     {
         $data = $request->validate([
+            'daily_reports_enabled' => 'sometimes|boolean',
+            'daily_report_recipients' => 'required_if:daily_reports_enabled,true|present_with:daily_reports_enabled|array|max:100',
+            'daily_report_recipients.*' => 'required|email:rfc|max:254|distinct:ignore_case',
             'first_name' => 'nullable|string|max:100',
             'last_name' => 'nullable|string|max:100',
             'price_per_kwh' => 'required|numeric|min:0',
@@ -1877,6 +1881,13 @@ class DashboardController extends Controller
             ]);
 
             $this->persistCurrentTariff($data);
+
+            if (array_key_exists('daily_reports_enabled', $data)) {
+                \App\Models\ReportSetting::query()->updateOrCreate(['id' => 1], [
+                    'enabled' => $data['daily_reports_enabled'],
+                    'recipients' => array_map(fn ($email) => strtolower(trim($email)), $data['daily_report_recipients'] ?? []),
+                ]);
+            }
         });
 
         $user->refresh();
@@ -1902,6 +1913,7 @@ class DashboardController extends Controller
             'data' => [
                 'user' => $user->only(['id', 'name', 'first_name', 'last_name', 'currency', 'email']),
                 'tariff' => $latestTariff,
+                'dailyReports' => \App\Models\ReportSetting::current(),
             ],
         ]);
     }

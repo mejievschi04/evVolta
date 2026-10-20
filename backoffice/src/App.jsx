@@ -3395,6 +3395,15 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
   const currentUser = dashboard?.currentUser;
   const currentTariff = dashboard?.currentTariff;
   const ocpp = dashboard?.ocpp;
+  const savedRecipients = JSON.stringify(dashboard?.dailyReports?.recipients ?? []);
+  const [reportRecipients, setReportRecipients] = useState([]);
+  const [reportsEnabled, setReportsEnabled] = useState(false);
+  const recipientId = useRef(0);
+
+  useEffect(() => {
+    setReportsEnabled(dashboard?.dailyReports?.enabled ?? false);
+    setReportRecipients(JSON.parse(savedRecipients).map((email) => ({ id: ++recipientId.current, email })));
+  }, [savedRecipients, dashboard?.dailyReports?.enabled]);
   const [pricePerKwh, setPricePerKwh] = useState('');
   const [personalPricePerKwh, setPersonalPricePerKwh] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -3530,6 +3539,41 @@ function SettingsView({ dashboard, compact = false, onSubmit }) {
               value={lastName}
             />
           </label>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-head">
+          <Send size={18} />
+          <div>
+            <h3>Rapoarte zilnice prin email</h3>
+            <p>Alimentari masini si Alimentari cont pentru ziua precedenta, zilnic la 07:00, ora Chisinaului.</p>
+          </div>
+        </div>
+        <div className="settings-grid compact">
+          <label className="checkbox-field">
+            <input type="checkbox" name="daily_reports_enabled" checked={reportsEnabled} onChange={(event) => setReportsEnabled(event.target.checked)} />
+            Trimite automat rapoartele zilnice
+          </label>
+        </div>
+        <div className="report-recipients">
+          {reportRecipients.map((recipient, index) => (
+            <div className="report-recipient-row" key={recipient.id}>
+              <label>
+                Email destinatar {index + 1}
+                <input type="email" name="daily_report_recipients" value={recipient.email} required autoComplete="email"
+                  placeholder="nume@companie.md"
+                  onChange={(event) => setReportRecipients((current) => current.map((item) => item.id === recipient.id ? { ...item, email: event.target.value } : item))} />
+              </label>
+              <button type="button" className="ghost-button" aria-label={`Sterge destinatarul ${index + 1}`}
+                onClick={() => setReportRecipients((current) => current.filter((item) => item.id !== recipient.id))}><X size={18} /></button>
+            </div>
+          ))}
+          <button type="button" className="ghost-button" disabled={reportRecipients.length >= 100}
+            onClick={() => setReportRecipients((current) => [...current, { id: ++recipientId.current, email: '' }])}>
+            <Plus size={18} /> Adauga destinatar
+          </button>
+          {reportsEnabled && reportRecipients.length === 0 ? <p role="status">Adauga cel putin o adresa pentru a activa trimiterea.</p> : null}
         </div>
       </section>
 
@@ -4414,6 +4458,13 @@ export default function App() {
   async function saveSettings(event) {
     event.preventDefault();
     const raw = formDataToObject(event.currentTarget);
+    const settingsForm = new FormData(event.currentTarget);
+    raw.daily_reports_enabled = settingsForm.has('daily_reports_enabled');
+    raw.daily_report_recipients = settingsForm.getAll('daily_report_recipients').map((email) => email.trim().toLowerCase());
+    if (raw.daily_reports_enabled && raw.daily_report_recipients.length === 0) {
+      setActionError('Adauga cel putin un destinatar pentru rapoartele zilnice.');
+      return;
+    }
     const pricePerKwh = parseTariffInput(raw.price_per_kwh);
     const personalPricePerKwh = parseTariffInput(raw.personal_price_per_kwh);
 

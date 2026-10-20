@@ -17,3 +17,9 @@ app(Schedule::class)
     ->command('wallet:reconcile-topups')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+app(Schedule::class)
+    ->command('reports:send-daily')
+    ->timezone('Europe/Chisinau')
+    ->dailyAt('07:00')
+    ->withoutOverlapping();

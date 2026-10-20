@@ -108,9 +108,9 @@
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Backoffice/DashboardController.php": {
-    "mtime": 1792389023.9466324,
-    "seen": 1792389027.731911,
-    "ast_hash": "53eb8c481c242b80cae7804784d5d347",
+    "mtime": 1792479652.0840294,
+    "seen": 1792479685.977379,
+    "ast_hash": "539c8100af7925a107d7df3b045d01fd",
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Backoffice/ReportController.php": {
@@ -870,9 +870,9 @@
     "semantic_hash": ""
   },
   "backend/routes/console.php": {
-    "mtime": 1792055628.0176008,
-    "seen": 1792056001.7011359,
-    "ast_hash": "15b9220d09e3f0fd61d1d6607043a102",
+    "mtime": 1792479445.5400393,
+    "seen": 1792479510.165478,
+    "ast_hash": "7858f4970d0e6afbe44a72a270299a32",
     "semantic_hash": ""
   },
   "backend/routes/web.php": {
@@ -930,9 +930,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/BackofficeSettingsTest.php": {
-    "mtime": 1781600473.2078822,
-    "seen": 1791198508.329528,
-    "ast_hash": "496819d4ee7ea4e579bbca1fb49a3493",
+    "mtime": 1792479669.0932434,
+    "seen": 1792479685.977463,
+    "ast_hash": "924a32a7d0d888e6e4a6ab487428cede",
     "semantic_hash": ""
   },
   "backend/tests/Feature/BackofficeStationDetailTest.php": {
@@ -1362,9 +1362,9 @@
     "semantic_hash": ""
   },
   "backoffice/src/App.jsx": {
-    "mtime": 1792475909.9174435,
-    "seen": 1792475914.4102762,
-    "ast_hash": "b6f6bb9add86b2ad114d7537b04538b9",
+    "mtime": 1792479652.0846891,
+    "seen": 1792479685.977507,
+    "ast_hash": "a9659a79bda45c3537936d0992e4054b",
     "semantic_hash": ""
   },
   "backoffice/src/global.d.ts": {
@@ -1524,9 +1524,9 @@
     "semantic_hash": ""
   },
   "docs/VPS_DEPLOY.md": {
-    "mtime": 1792475909.9215877,
-    "seen": 1792475914.410322,
-    "ast_hash": "9e403a6b40c37db43188b8ea8b5d4a14",
+    "mtime": 1792479682.6018555,
+    "seen": 1792479685.977552,
+    "ast_hash": "815e31c2e458cc449e41004b8f441c6d",
     "semantic_hash": ""
   },
   "docs/report-examples/exemplu-raport-alimentari.html": {
@@ -2277,6 +2277,54 @@
     "mtime": 1792399801.8920798,
     "seen": 1792475914.41024,
     "ast_hash": "efa879f0ffdd40117193e2431dc03bca",
+    "semantic_hash": ""
+  },
+  "backend/app/Console/Commands/SendDailyReports.php": {
+    "mtime": 1792479652.0842135,
+    "seen": 1792479685.977371,
+    "ast_hash": "94d27f0ff620e3583145c71843c350c7",
+    "semantic_hash": ""
+  },
+  "backend/app/Jobs/SendDailyReportsJob.php": {
+    "mtime": 1792479445.5357366,
+    "seen": 1792479510.1654038,
+    "ast_hash": "732a30e981805254934098616e299a0a",
+    "semantic_hash": ""
+  },
+  "backend/app/Mail/DailyReportsMail.php": {
+    "mtime": 1792479445.5311708,
+    "seen": 1792479510.165405,
+    "ast_hash": "b4811b435d10f3aad3ef959f6179aed6",
+    "semantic_hash": ""
+  },
+  "backend/config/reports.php": {
+    "mtime": 1792479445.5286672,
+    "seen": 1792479510.165437,
+    "ast_hash": "1804291cbb471b440ea4f2eed3c0fa76",
+    "semantic_hash": ""
+  },
+  "backend/resources/views/emails/daily-reports.blade.php": {
+    "mtime": 1792479445.5337076,
+    "seen": 1792479510.165474,
+    "ast_hash": "5dfeed0705873b8de415afa51b8eef8b",
+    "semantic_hash": ""
+  },
+  "backend/tests/Feature/DailyReportsTest.php": {
+    "mtime": 1792479506.030668,
+    "seen": 1792479510.165493,
+    "ast_hash": "ca50c36a905d9ca647dd5648a2a474d4",
+    "semantic_hash": ""
+  },
+  "backend/app/Models/ReportSetting.php": {
+    "mtime": 1792479652.0449736,
+    "seen": 1792479685.977391,
+    "ast_hash": "119be97b4d617044376c9e1ef9976164",
+    "semantic_hash": ""
+  },
+  "backend/database/migrations/2026_10_20_080000_create_report_settings_table.php": {
+    "mtime": 1792479652.0424523,
+    "seen": 1792479685.977452,
+    "ast_hash": "2d47ed975494434a28efc044da616ab7",
     "semantic_hash": ""
   }
 }

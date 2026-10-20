@@ -3886,3 +3886,10 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.report-recipients { display: grid; gap: 12px; margin-top: 16px; }
+.report-recipient-row { display: flex; gap: 12px; align-items: end; }
+.report-recipient-row label { display: grid; gap: 8px; flex: 1; min-width: 0; }
+.report-recipient-row input { width: 100%; min-width: 0; }
+.report-recipient-row button { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+.report-recipients > button { justify-self: start; min-height: 44px; }
