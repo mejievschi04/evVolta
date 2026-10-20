@@ -3,13 +3,15 @@ set -euo pipefail
 
 cd /var/www/backend
 
+rm -f /tmp/evvolta-ready
+
 if [ ! -f .env ] && [ -f /run/secrets/laravel-env ]; then
   cp /run/secrets/laravel-env .env
 elif [ ! -f .env ] && [ -f .env.docker ]; then
   cp .env.docker .env
 fi
 
-if [ -f .env ]; then
+if [ -f .env ] && [ "${CACHE_CONFIG:-true}" = "true" ]; then
   php artisan config:clear --no-interaction || true
 fi
 
@@ -36,11 +38,13 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
 fi
 
 if [ "${CACHE_CONFIG:-true}" = "true" ]; then
-  php artisan config:cache --no-interaction || true
-  php artisan route:cache --no-interaction || true
-  php artisan view:cache --no-interaction || true
+  php artisan config:cache --no-interaction
+  php artisan route:cache --no-interaction
+  php artisan view:cache --no-interaction
 fi
 
 chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+
+touch /tmp/evvolta-ready
 
 exec "$@"

@@ -123,7 +123,7 @@ class ReportsAndInvoicePdfTest extends TestCase
             $attachments = $built->rawAttachments ?? [];
             $html = $built->render();
 
-            return $built->subject === 'Confirmare suplinire cont - V CHARGE'
+            return $built->subject === 'Confirmare suplinire cont - V Charge'
                 && $mail->details['amount'] === '100.00 MDL'
                 && $mail->details['balance'] === '150.00 MDL'
                 && $mail->details['name'] === 'Ion Popescu'
@@ -201,7 +201,8 @@ class ReportsAndInvoicePdfTest extends TestCase
         ])
             ->get('/backoffice/reports/stations/monthly?month=' . now()->format('Y-m'))
             ->assertOk()
-            ->assertHeader('Content-Type', 'application/pdf');
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->assertHeader('Content-Disposition', 'attachment; filename="raport-statii-lunar-' . now()->format('Y-m') . '.xlsx"');
     }
 
     public function test_wallet_topups_report_returns_pdf(): void

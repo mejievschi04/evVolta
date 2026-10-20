@@ -166,7 +166,7 @@ class SocialAuthService
                 $fullName = trim(implode(' ', array_filter([$firstName, $lastName])));
             }
             if ($fullName === '') {
-                $fullName = strstr($email, '@', true) ?: 'Utilizator V CHARGE';
+                $fullName = strstr($email, '@', true) ?: 'Utilizator V Charge';
             }
 
             try {

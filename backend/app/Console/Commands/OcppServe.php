@@ -24,7 +24,7 @@ class OcppServe extends Command
 {
     protected $signature = 'ocpp:serve {--host=} {--port=}';
 
-    protected $description = 'Run the V CHARGE OCPP 1.6J WebSocket gateway.';
+    protected $description = 'Run the V Charge OCPP 1.6J WebSocket gateway.';
 
     private array $clients = [];
 
@@ -59,7 +59,7 @@ class OcppServe extends Command
         }
 
         stream_set_blocking($server, false);
-        $this->info("V CHARGE OCPP gateway listening on ws://{$host}:{$port}/ocpp/{ocpp_identity}");
+        $this->info("V Charge OCPP gateway listening on ws://{$host}:{$port}/ocpp/{ocpp_identity}");
 
         if (function_exists('pcntl_async_signals')) {
             pcntl_async_signals(true);
@@ -2414,6 +2414,10 @@ class OcppServe extends Command
         }
 
         if (app(OcppService::class)->hasRecentConnectorRecovery($station->id, $connectorId, 90)) {
+            return;
+        }
+
+        if (! app(OcppService::class)->canAutomaticallyResetForConnector($station->fresh(), $connectorId)) {
             return;
         }
 

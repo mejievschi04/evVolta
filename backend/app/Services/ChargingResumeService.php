@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ChargingSession;
+use App\Models\OcppCommand;
 use App\Models\Station;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,7 @@ class ChargingResumeService
     }
 
     /**
-     * User-initiated Continua: close paused session if needed, recover connector, RemoteStart.
+     * User-initiated Continua: stop station transaction first, then recover connector + RemoteStart.
      *
      * @return array{
      *     session: ChargingSession,
@@ -72,9 +73,33 @@ class ChargingResumeService
             );
         }
 
+        // Sesiune goala (RemoteStart acceptat, fara StartTransaction): reincercam pe aceeasi sesiune.
+        if ($openSession && ! $openSession->hasConfirmedOcppTransaction() && ! $openSession->end_time) {
+            return $this->retryPendingResume($user, $station, $openSession, $resolvedConnectorId, $status);
+        }
+
+        $pendingDuplicate = $this->findRecentEmptySession($user, $station, $resolvedConnectorId, $openSession?->id);
+        if ($pendingDuplicate) {
+            return $this->retryPendingResume($user, $station, $pendingDuplicate, $resolvedConnectorId, $status);
+        }
+
         $previousSession = null;
         $carryBudget = null;
         $carryTargetKwh = null;
+        $stopCommandId = null;
+
+        // Oprire pe statie INAINTE de inchiderea locala — altfel tranzactia OCPP ramane vie
+        // si RemoteStart-ul urmator e respins, iar fiecare Continua creeaza o sesiune de 0 kWh.
+        if ($openSession && $openSession->hasConfirmedOcppTransaction() && $openSession->remoteStopTransactionId() > 0) {
+            if (! $this->chargingStopService->isGatewayMode()) {
+                // simulator: finalize only
+            } elseif ($pendingStop = $this->pendingRemoteStop($openSession)) {
+                $stopCommandId = (int) $pendingStop->id;
+            } else {
+                $stopResponse = $this->ocppService->stopTransaction($station->fresh(), $openSession);
+                $stopCommandId = isset($stopResponse['command_id']) ? (int) $stopResponse['command_id'] : null;
+            }
+        }
 
         $created = DB::transaction(function () use (
             $user,
@@ -118,7 +143,6 @@ class ChargingResumeService
                     $previousSession = $openSession->fresh();
                     $station = $station->fresh();
 
-                    // After settle, charge_budget stores the charged slice — not an estimate.
                     if ($budgetBefore > 0) {
                         $spentSettled = (float) ($previousSession?->charge_budget ?? 0);
                         $carryBudget = round(max(0, $budgetBefore - $spentSettled), 2);
@@ -126,7 +150,6 @@ class ChargingResumeService
                 }
             }
 
-            // Reload user relation for tariff estimate already done before finalize.
             if ($station->hasActiveSessionOnConnector($resolvedConnectorId)) {
                 throw new RuntimeException('Conectorul este deja folosit de alt utilizator.', 422);
             }
@@ -166,27 +189,12 @@ class ChargingResumeService
         });
 
         try {
-            $recoveryIds = $this->ocppService->recoverConnectorForRemoteStart(
+            $ocppResponse = $this->queueResumeStart(
                 $station->fresh(),
-                $resolvedConnectorId,
                 $created,
-                'user_resume_suspended',
-                true
+                $resolvedConnectorId,
+                $stopCommandId
             );
-
-            if ($recoveryIds === []) {
-                $ocppResponse = $this->ocppService->queueRemoteStart($station->fresh(), $created, $user);
-                $ocppResponse['resume_recovery'] = false;
-            } else {
-                $ocppResponse = [
-                    'station_id' => $station->id,
-                    'mode' => config('services.ocpp.mode'),
-                    'status' => 'queued',
-                    'message' => 'Continua: reset conector + RemoteStart.',
-                    'command_ids' => $recoveryIds,
-                    'resume_recovery' => true,
-                ];
-            }
         } catch (\Throwable $exception) {
             $this->chargingStopService->finalizeStop(
                 $created->fresh(),
@@ -229,6 +237,171 @@ class ChargingResumeService
             'ocpp' => $ocppResponse,
             'connector_id' => $resolvedConnectorId,
         ];
+    }
+
+    /**
+     * Reuse the empty pending session instead of spawning another 0 kWh row.
+     *
+     * @return array{
+     *     session: ChargingSession,
+     *     station: Station,
+     *     previous_session: ?ChargingSession,
+     *     ocpp: array<string, mixed>,
+     *     connector_id: int
+     * }
+     */
+    private function retryPendingResume(
+        User $user,
+        Station $station,
+        ChargingSession $session,
+        int $connectorId,
+        string $status,
+    ): array {
+        if ($this->hasInFlightRemoteStart($session)) {
+            return [
+                'session' => $session->fresh(['station']),
+                'station' => $station->fresh(),
+                'previous_session' => null,
+                'ocpp' => [
+                    'status' => 'queued',
+                    'resume_recovery' => false,
+                    'message' => 'Repornirea este deja in curs pe acest port.',
+                ],
+                'connector_id' => $connectorId,
+            ];
+        }
+
+        try {
+            $ocppResponse = $this->queueResumeStart($station->fresh(), $session->fresh(), $connectorId, null);
+        } catch (\Throwable $exception) {
+            throw new RuntimeException(
+                'Nu s-a putut retrimite comanda de continuare catre statie. Incearca din nou peste cateva secunde.',
+                422
+            );
+        }
+
+        $this->auditLogService->record(
+            action: 'charging.resume.retry',
+            actor: $user,
+            subjectType: ChargingSession::class,
+            subjectId: $session->id,
+            station: $station->fresh(),
+            session: $session,
+            metadata: [
+                'connector_id' => $connectorId,
+                'connector_status' => $status,
+                'ocpp' => $ocppResponse,
+            ]
+        );
+
+        return [
+            'session' => $session->fresh(['station']),
+            'station' => $station->fresh(),
+            'previous_session' => null,
+            'ocpp' => $ocppResponse,
+            'connector_id' => $connectorId,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function queueResumeStart(
+        Station $station,
+        ChargingSession $session,
+        int $connectorId,
+        ?int $dependsOnStopCommandId,
+    ): array {
+        if ($this->ocppService->isSimulatorMode()) {
+            $ocppResponse = $this->ocppService->queueRemoteStart($station, $session);
+            $ocppResponse['resume_recovery'] = false;
+
+            return $ocppResponse;
+        }
+
+        // Pe Suspended/Finishing NU facem RemoteStart gol — Soft Reset elibereaza tranzactia veche.
+        $recoveryIds = $this->ocppService->recoverConnectorForRemoteStart(
+            $station,
+            $connectorId,
+            $session,
+            'user_resume_suspended',
+            true
+        );
+
+        if ($recoveryIds === []) {
+            throw new RuntimeException(
+                'Reset conector indisponibil momentan. Asteapta confirmarea comenzilor in curs.',
+                409
+            );
+        }
+
+        if ($dependsOnStopCommandId) {
+            $firstRecovery = OcppCommand::query()->find($recoveryIds[0] ?? null);
+            if ($firstRecovery && ! $firstRecovery->depends_on_command_id) {
+                $firstRecovery->update(['depends_on_command_id' => $dependsOnStopCommandId]);
+            }
+        }
+
+        return [
+            'station_id' => $station->id,
+            'mode' => config('services.ocpp.mode'),
+            'status' => 'queued',
+            'message' => 'Continua: RemoteStop (daca e nevoie) + reset conector + RemoteStart.',
+            'command_ids' => $recoveryIds,
+            'stop_command_id' => $dependsOnStopCommandId,
+            'resume_recovery' => true,
+        ];
+    }
+
+    private function findRecentEmptySession(
+        User $user,
+        Station $station,
+        int $connectorId,
+        ?int $excludeSessionId
+    ): ?ChargingSession {
+        $query = ChargingSession::query()
+            ->where('station_id', $station->id)
+            ->where('user_id', $user->id)
+            ->where('ocpp_connector_id', $connectorId)
+            ->whereNull('end_time')
+            ->whereNull('ocpp_transaction_id')
+            ->whereIn('start_source', ['app', 'app_resume'])
+            ->where('start_time', '>=', now()->subMinutes(10))
+            ->latest('id');
+
+        if ($excludeSessionId) {
+            $query->where('id', '!=', $excludeSessionId);
+        }
+
+        $session = $query->first();
+
+        return $session && ! $session->hasConfirmedOcppTransaction() ? $session : null;
+    }
+
+    private function hasInFlightRemoteStart(ChargingSession $session): bool
+    {
+        return OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->whereIn('action', ['RemoteStartTransaction', 'RequestStartTransaction'])
+            ->whereIn('status', [
+                OcppCommand::STATUS_PENDING,
+                OcppCommand::STATUS_SENT,
+            ])
+            ->exists();
+    }
+
+    private function pendingRemoteStop(ChargingSession $session): ?OcppCommand
+    {
+        return OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])
+            ->whereIn('status', [
+                OcppCommand::STATUS_PENDING,
+                OcppCommand::STATUS_SENT,
+                OcppCommand::STATUS_ACCEPTED,
+            ])
+            ->where('created_at', '>=', now()->subMinutes(3))
+            ->latest('id')->first();
     }
 
     private function resolveOpenSession(

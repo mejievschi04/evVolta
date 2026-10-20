@@ -57,7 +57,7 @@ class UserPrivacyExportService
         return [
             'exported_at' => now()->toIso8601String(),
             'format' => 'application/json',
-            'app_name' => (string) config('legal.app_name', 'V CHARGE'),
+            'app_name' => (string) config('legal.app_name', 'V Charge'),
             'controller' => (string) config('legal.company_name'),
             'legal_version' => (string) config('legal.version'),
             'rights' => [

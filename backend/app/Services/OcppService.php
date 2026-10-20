@@ -408,8 +408,24 @@ class OcppService
         $this->queueConnectorAvailabilityCycle($station, $connectorId);
     }
 
+    /** A Soft Reset affects the entire charger, so protect occupied sibling ports. */
+    public function canAutomaticallyResetForConnector(Station $station, int $connectorId): bool
+    {
+        foreach ($station->expectedConnectorIds() as $otherId) {
+            if ((int) $otherId !== $connectorId
+                && in_array($station->connectorOcppStatus((int) $otherId), Station::VEHICLE_CONNECTED_STATUSES, true)) {
+                return false;
+            }
+        }
+
+        return ! ChargingSession::query()->where('station_id', $station->id)->whereNull('end_time')
+            ->where(function ($query) use ($connectorId): void {
+                $query->where('ocpp_connector_id', '!=', $connectorId)->orWhereNull('ocpp_connector_id');
+            })->exists();
+    }
+
     /**
-     * EU1060: SuspendedEV / RemoteStart Rejected — ChangeAvailability + Soft Reset, apoi RemoteStart.
+     * EU1060: ChangeAvailability, optional station reset, then RemoteStart.
      *
      * @return list<int> command ids
      */
@@ -447,7 +463,8 @@ class OcppService
         $commandIds = $this->queueConnectorAvailabilityCycle($station, $connectorId);
         $previousId = (int) end($commandIds);
 
-        if (config('services.ocpp.soft_reset_on_start_reject', true) || $reason === 'manual') {
+        if ((config('services.ocpp.soft_reset_on_start_reject', true) || $reason === 'manual')
+            && $this->canAutomaticallyResetForConnector($station, $connectorId)) {
             $reset = $this->queueOutboundCommand($station, 'Reset', [
                 'type' => 'Soft',
             ], null, $previousId);

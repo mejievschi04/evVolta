@@ -65,6 +65,65 @@ class TopupPaymentMethodReportTest extends TestCase
             ->assertHeader('Content-Disposition', 'attachment; filename="raport-alimentari-20261015-20261015.xlsx"');
     }
 
+    public function test_workbook_keeps_card_mia_and_unknown_payments_in_separate_groups(): void
+    {
+        $user = $this->createAppUser();
+        $this->topup($user, 'paid', 'Card', '2026-10-15 07:00:00', 100);
+        $this->topup($user, 'paid', 'MiaQr', '2026-10-15 08:00:00', 250);
+        $this->topup($user, 'paid', 'Card', '2026-10-15 09:00:00', 50);
+        $this->topup($user, 'paid', null, '2026-10-15 10:00:00', 25);
+        $report = app(ReportDocumentService::class)->walletTopups(
+            LocalTime::day('2026-10-15'), LocalTime::day('2026-10-15')
+        );
+        $path = tempnam(sys_get_temp_dir(), 'report-test-');
+        $reader = new \OpenSpout\Reader\XLSX\Reader();
+        try {
+            file_put_contents($path, $report['content']);
+            $reader->open($path);
+            $rows = [];
+            foreach ($reader->getSheetIterator() as $sheet) {
+                foreach ($sheet->getRowIterator() as $row) {
+                    $rows[] = $row->toArray();
+                }
+            }
+            $group = null;
+            $methods = [];
+            $totals = [];
+            foreach ($rows as $row) {
+                $label = is_string($row[0] ?? null) ? $row[0] : '';
+                if (str_starts_with($label, 'Plati ')) {
+                    $group = substr($label, 6);
+                }
+                if (is_numeric($row[0] ?? null)) {
+                    $this->assertInstanceOf(\DateTimeInterface::class, $row[1]);
+                    $this->assertInstanceOf(\DateTimeInterface::class, $row[2]);
+                    $this->assertSame('00:00:00', $row[1]->format('H:i:s'));
+                    $this->assertSame($row[2]->format('Y-m-d'), $row[1]->format('Y-m-d'));
+                    $this->assertSame($user->public_id, $row[3]);
+                    $this->assertSame($user->name, $row[4]);
+                    $this->assertSame($group, $row[5]);
+                    $methods[] = $row[5];
+                }
+                if (($row[0] ?? null) === 'Nr.') {
+                    $this->assertSame(['Nr.', 'Data', 'Data achitarii', 'ID client', 'Client', 'Metoda', 'Suma (MDL)'], $row);
+                }
+                if (str_starts_with($label, 'Subtotal ') || str_starts_with($label, 'Suma totala')) {
+                    $totals[$label] = (float) $row[6];
+                }
+            }
+            $this->assertSame(['Card', 'Card', 'MIA', 'Nespecificat'], $methods);
+            $this->assertSame([
+                'Subtotal Card' => 150.0,
+                'Subtotal MIA' => 250.0,
+                'Subtotal Nespecificat' => 25.0,
+                'Suma totala (4 alimentari)' => 425.0,
+            ], $totals);
+        } finally {
+            $reader->close();
+            unlink($path);
+        }
+    }
+
     private function topup(User $user, string $status, ?string $method = null, ?string $paidAtUtc = null, float $amount = 100): WalletTopup
     {
         return WalletTopup::query()->create([

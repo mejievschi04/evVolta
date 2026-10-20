@@ -18,3 +18,6 @@ graphify-out
 graphify-out.*
 *.md
 !README.md
+
+# Generated reports and mobile release artifacts
+/output/

@@ -201,4 +201,193 @@ class ChargingResumeTest extends TestCase
             ->assertJsonPath('can_resume', true)
             ->assertJsonPath('connector_status', 'SuspendedEV');
     }
+
+    public function test_resume_reuses_empty_pending_session_instead_of_creating_another(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'resume-empty@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_identity' => 'resume-station-empty',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'SuspendedEV'],
+                ],
+            ],
+        ]);
+
+        $empty = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'ocpp_transaction_id' => null,
+            'start_source' => 'app_resume',
+            'start_time' => now()->subMinute(),
+            'kwh_consumed' => 0,
+        ]);
+
+        $mock = Mockery::mock(OcppService::class)->makePartial();
+        $mock->shouldReceive('isSimulatorMode')->andReturn(false);
+        $mock->shouldReceive('ensureReadyForRemoteCommands')->andReturnNull();
+        $mock->shouldReceive('remoteStartIdTag')->andReturn('VOLTA00000001');
+        $mock->shouldReceive('recoverConnectorForRemoteStart')
+            ->once()
+            ->andReturn([201, 202, 203]);
+        $this->app->instance(OcppService::class, $mock);
+
+        $response = $this->actingAs($user, 'api')
+            ->postJson('/api/charging/resume', [
+                'station_id' => $station->id,
+                'session_id' => $empty->id,
+                'connector_id' => 1,
+            ])
+            ->assertCreated();
+
+        $this->assertSame($empty->id, (int) $response->json('session.id'));
+        $this->assertNull($empty->fresh()->end_time);
+        $this->assertSame(1, ChargingSession::query()->where('user_id', $user->id)->whereNull('end_time')->count());
+    }
+
+    public function test_resume_queues_remote_stop_before_new_start_when_transaction_exists(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'resume-stop-first@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_identity' => 'resume-station-stop',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'SuspendedEV'],
+                ],
+            ],
+        ]);
+
+        $oldSession = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'ocpp_transaction_id' => '77',
+            'start_source' => 'app',
+            'start_time' => now()->subMinutes(12),
+            'kwh_consumed' => 1.5,
+            'live_metrics' => ['assigned_transaction_id' => 77],
+        ]);
+
+        $mock = Mockery::mock(OcppService::class)->makePartial();
+        $mock->shouldReceive('isSimulatorMode')->andReturn(false);
+        $mock->shouldReceive('ensureReadyForRemoteCommands')->andReturnNull();
+        $mock->shouldReceive('remoteStartIdTag')->andReturn('VOLTA00000001');
+        $mock->shouldReceive('stopTransaction')
+            ->once()
+            ->andReturn([
+                'station_id' => $station->id,
+                'mode' => 'gateway',
+                'status' => 'queued',
+                'command_id' => 55,
+                'message_uid' => 'stop-uid',
+                'message' => 'queued',
+            ]);
+        $mock->shouldReceive('recoverConnectorForRemoteStart')
+            ->once()
+            ->andReturn([101, 102, 103]);
+        $this->app->instance(OcppService::class, $mock);
+
+        $response = $this->actingAs($user, 'api')
+            ->postJson('/api/charging/resume', [
+                'station_id' => $station->id,
+                'session_id' => $oldSession->id,
+                'connector_id' => 1,
+            ])
+            ->assertCreated();
+
+        $this->assertNotNull($oldSession->fresh()->end_time);
+        $this->assertNotSame($oldSession->id, (int) $response->json('session.id'));
+        $this->assertSame(55, $response->json('ocpp.stop_command_id'));
+    }
+
+    public function test_resume_waits_for_an_already_queued_remote_stop(): void
+    {
+        Config::set('services.ocpp.mode', 'gateway');
+        Config::set('billing.prepaid_wallet_enabled', false);
+
+        $user = $this->createPersonalUser(['email' => 'resume-stop-first@example.test']);
+
+        $station = Station::query()->create([
+            'name' => 'Dual charger',
+            'location' => 'Depou',
+            'status' => Station::STATUS_CHARGING,
+            'ocpp_identity' => 'resume-station-stop',
+            'ocpp_version' => '1.6J',
+            'ocpp_connection_status' => Station::OCPP_CONNECTION_CONNECTED,
+            'last_heartbeat_at' => now(),
+            'ocpp_configuration' => [
+                'NumberOfConnectors' => 2,
+                'connectors' => [
+                    1 => ['connectorId' => 1, 'status' => 'SuspendedEV'],
+                ],
+            ],
+        ]);
+
+        $oldSession = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'ocpp_transaction_id' => '77',
+            'start_source' => 'app',
+            'start_time' => now()->subMinutes(12),
+            'kwh_consumed' => 1.5,
+            'live_metrics' => ['assigned_transaction_id' => 77],
+        ]);
+
+        \App\Models\OcppCommand::forceCreate([
+            'id' => 55, 'station_id' => $station->id, 'charging_session_id' => $oldSession->id,
+            'action' => 'RemoteStopTransaction', 'payload' => ['transactionId' => 77],
+            'status' => 'pending', 'message_uid' => 'pending-stop-77',
+        ]);
+        \App\Models\OcppCommand::forceCreate([
+            'id' => 101, 'station_id' => $station->id,
+            'action' => 'ChangeAvailability', 'payload' => ['connectorId' => 1, 'type' => 'Inoperative'],
+            'status' => 'pending', 'message_uid' => 'pending-recovery-101',
+        ]);
+
+        $mock = Mockery::mock(OcppService::class)->makePartial();
+        $mock->shouldReceive('isSimulatorMode')->andReturn(false);
+        $mock->shouldReceive('ensureReadyForRemoteCommands')->andReturnNull();
+        $mock->shouldReceive('remoteStartIdTag')->andReturn('VOLTA00000001');
+        $mock->shouldNotReceive('stopTransaction');
+        $mock->shouldReceive('recoverConnectorForRemoteStart')
+            ->once()
+            ->andReturn([101, 102, 103]);
+        $this->app->instance(OcppService::class, $mock);
+
+        $response = $this->actingAs($user, 'api')
+            ->postJson('/api/charging/resume', [
+                'station_id' => $station->id,
+                'session_id' => $oldSession->id,
+                'connector_id' => 1,
+            ])
+            ->assertCreated();
+
+        $this->assertNotNull($oldSession->fresh()->end_time);
+        $this->assertNotSame($oldSession->id, (int) $response->json('session.id'));
+        $this->assertSame(55, $response->json('ocpp.stop_command_id'));
+    }
 }

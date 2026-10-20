@@ -410,7 +410,7 @@ class MaibWalletPaymentTest extends TestCase
         $this->get('/payments/maib/success?wallet_topup_id='.$topup->id)
             ->assertOk()
             ->assertSee('wallet-topup-'.$topup->id, false)
-            ->assertSee('Alimentare sold V CHARGE', false)
+            ->assertSee('Alimentare sold V Charge', false)
             ->assertSee('150.00', false)
             ->assertSee('MDL', false)
             ->assertSee('Volta SRL', false)

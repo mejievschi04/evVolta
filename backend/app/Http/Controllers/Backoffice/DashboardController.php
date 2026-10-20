@@ -1268,6 +1268,7 @@ class DashboardController extends Controller
 
         $users = $query->get([
             'id',
+            'public_id',
             'name',
             'first_name',
             'last_name',
@@ -1279,6 +1280,7 @@ class DashboardController extends Controller
         ])->map(fn (User $user) => [
             ...$user->only([
                 'id',
+                'public_id',
                 'name',
                 'first_name',
                 'last_name',

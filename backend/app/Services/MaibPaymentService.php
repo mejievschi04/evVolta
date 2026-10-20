@@ -46,7 +46,7 @@ class MaibPaymentService
             'failUrl' => route('payments.maib.fail', ['wallet_topup_id' => $topup->id]),
             'orderInfo' => [
                 'id' => $orderId,
-                'description' => 'Alimentare cont V CHARGE',
+                'description' => 'Alimentare cont V Charge',
                 'date' => now()->toIso8601String(),
             ],
             'payerInfo' => [
@@ -166,7 +166,7 @@ class MaibPaymentService
 
         $body = $this->authorizedJson('POST', '/v2/payments/'.rawurlencode($payId).'/refund', [
             'amount' => round($amount, 2),
-            'reason' => 'Returnare alimentare wallet V CHARGE',
+            'reason' => 'Returnare alimentare wallet V Charge',
         ]);
 
         $result = $body['result'] ?? null;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Adauga V CHARGE ca proiect #3 pe VPS cu Laravel existent (API + Laravel/React).
+# Adauga V Charge ca proiect #3 pe VPS cu Laravel existent (API + Laravel/React).
 # Partajeaza PHP-FPM cu celelalte Laravel; adauga doar vhost, DB, cron si OCPP service.
 # Nu atinge celelalte proiecte nginx, nu sterge default site, nu reinstaleaza pachete.
 #
@@ -36,7 +36,7 @@ fi
 OCPP_PORT="$(pick_ocpp_port "${OCPP_PORT_REQUESTED}")"
 PHP_FPM_SOCKET="$(detect_php_fpm_socket "${PHP_VERSION}")"
 
-echo "==> V CHARGE — add project"
+echo "==> V Charge — add project"
 echo "    DOMAIN=${DOMAIN}"
 echo "    APP_ROOT=${APP_ROOT}"
 echo "    OCPP_PORT=${OCPP_PORT}"

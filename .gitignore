@@ -29,3 +29,11 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Generated reports and mobile release artifacts
+/output/
+
+# Graphify local cache and dated snapshots
+/graphify-out/cache/
+/graphify-out/20??-??-??/
+/graphify-out/.graphify_root

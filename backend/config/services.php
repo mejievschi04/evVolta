@@ -81,6 +81,8 @@ return [
         'stop_transaction_grace_seconds' => (int) env('OCPP_STOP_TRANSACTION_GRACE_SECONDS', 60),
         // App sessions with no StartTransaction after this long (and nothing in flight) are closed.
         'unstarted_session_timeout_minutes' => (int) env('OCPP_UNSTARTED_SESSION_TIMEOUT_MINUTES', 15),
+        // RemoteStart Accepted but StartTransaction never arrived — close sooner to stop empty Continua spam.
+        'accepted_start_without_transaction_minutes' => (int) env('OCPP_ACCEPTED_START_WITHOUT_TX_MINUTES', 3),
         'allow_local_user_start' => filter_var(env('OCPP_ALLOW_LOCAL_USER_START', false), FILTER_VALIDATE_BOOL),
         'refresh_status_seconds' => (int) env('OCPP_REFRESH_STATUS_SECONDS', 3),
         'refresh_telemetry_seconds' => (int) env('OCPP_REFRESH_TELEMETRY_SECONDS', 5),

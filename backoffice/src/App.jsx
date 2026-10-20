@@ -486,8 +486,35 @@ function statusLabel(status) {
     failed: 'Esuata',
     expired: 'Expirata',
     approved: 'Aprobata',
-    rejected: 'Respinsa'
+    rejected: 'Respinsa',
+    completed: 'Retur',
+    needs_review: 'De verificat'
   }[status] ?? status ?? '-';
+}
+
+function topupDisplayStatus(topup) {
+  const refunded = Number(topup?.amount_refunded || 0);
+  const amount = Number(topup?.amount || 0);
+  if (refunded > 0 && amount > 0 && refunded >= amount - 0.001) {
+    return 'refunded';
+  }
+  if (refunded > 0) {
+    return 'partial_refund';
+  }
+  return topup?.status ?? '';
+}
+
+function topupStatusLabel(topup) {
+  const display = topupDisplayStatus(topup);
+  if (display === 'refunded') return 'Retur';
+  if (display === 'partial_refund') return 'Retur partial';
+  return statusLabel(topup?.status);
+}
+
+function topupStatusVariant(topup) {
+  const display = topupDisplayStatus(topup);
+  if (display === 'refunded' || display === 'partial_refund') return 'danger';
+  return statusVariant(topup?.status);
 }
 
 function connectionLabel(status) {
@@ -551,8 +578,8 @@ function diagnosticsResultSummary(command) {
 
 function statusVariant(status) {
   if (['available', 'paid', 'approved', 'connected', 'accepted', 'Uploaded'].includes(status)) return 'success';
-  if (['charging', 'pending', 'unpaid', 'disconnected', 'reserved', 'sent', 'Uploading'].includes(status)) return 'warning';
-  if (['offline', 'rejected', 'faulted', 'unavailable', 'stale', 'failed', 'UploadFailed'].includes(status)) return 'danger';
+  if (['charging', 'pending', 'unpaid', 'disconnected', 'reserved', 'sent', 'Uploading', 'needs_review'].includes(status)) return 'warning';
+  if (['offline', 'rejected', 'faulted', 'unavailable', 'stale', 'failed', 'UploadFailed', 'completed'].includes(status)) return 'danger';
   return 'neutral';
 }
 
@@ -587,10 +614,10 @@ function BrandBlock({ compact = false }) {
   return (
     <div className={`brand ${compact ? 'brand-compact' : ''}`}>
       <span className="brand-logo">
-        <img alt="V CHARGE" src={brandLogo} />
+        <img alt="V Charge" src={brandLogo} />
       </span>
       <div>
-        <strong>V CHARGE</strong>
+        <strong>V Charge</strong>
         {!compact ? <p className="brand-tagline">Backoffice</p> : null}
       </div>
     </div>
@@ -1083,7 +1110,7 @@ function LoginView({ error, loading, onSubmit }) {
         <BrandBlock compact />
         <p className="login-eyebrow">Administrare retea</p>
         <h1>Login admin</h1>
-        <p className="login-copy">Autentifica-te cu un cont existent din backend pentru a administra reteaua V CHARGE.</p>
+        <p className="login-copy">Autentifica-te cu un cont existent din backend pentru a administra reteaua V Charge.</p>
         {error && (
           <div className="flash-banner flash-banner-error login-flash">
             <Bell size={18} />
@@ -1895,7 +1922,7 @@ function ReportsView({ onDownloadReport }) {
         <div className="panel-header ops-panel-header">
           <div>
             <h2>Rapoarte</h2>
-            <p>Export PDF pentru contabilitate: statii si alimentari</p>
+            <p>Export Excel pentru contabilitate: statii, alimentari masini si alimentari sold</p>
           </div>
           <span className="ops-header-icon"><FileText size={20} /></span>
         </div>
@@ -1924,13 +1951,13 @@ function ReportsView({ onDownloadReport }) {
               type="button"
             >
               <Download size={16} />
-              {busyKey === 'monthly' ? 'Se genereaza...' : 'Descarca PDF'}
+              {busyKey === 'monthly' ? 'Se genereaza...' : 'Descarca Excel'}
             </button>
           </article>
 
           <article className="report-card">
-            <h3>Raport alimentari cont</h3>
-            <p>Excel cu fiecare plata: data achitarii, clientul, metoda (Card / MIA) si suma, cu suma totala.</p>
+            <h3>Raport alimentari masini</h3>
+            <p>Fiecare incarcare: data, ID client, client, statie si adresa, cantitate in kWh, tarif aplicat si suma totala facturata.</p>
             <div className="settings-grid">
               <label>
                 De la
@@ -1979,12 +2006,72 @@ function ReportsView({ onDownloadReport }) {
               disabled={busyKey === 'topups' || !topupFrom || !topupTo}
               onClick={() => runDownload(
                 'topups',
-                `/backoffice/reports/wallet-topups?from=${encodeURIComponent(topupFrom)}&to=${encodeURIComponent(topupTo)}`
+                `/backoffice/reports/charging-sessions?from=${encodeURIComponent(topupFrom)}&to=${encodeURIComponent(topupTo)}`
               )}
               type="button"
             >
               <Download size={16} />
               {busyKey === 'topups' ? 'Se genereaza...' : 'Descarca Excel'}
+            </button>
+          </article>
+
+          <article className="report-card">
+            <h3>Raport alimentari sold</h3>
+            <p>Plati grupate Card / MIA: data achitarii, ID client, client, metoda si suma, cu subtotaluri si total general.</p>
+            <div className="settings-grid">
+              <label>
+                De la
+                <input
+                  onChange={(event) => setTopupFrom(event.target.value)}
+                  required
+                  type="date"
+                  value={topupFrom}
+                />
+              </label>
+              <label>
+                Pana la
+                <input
+                  onChange={(event) => setTopupTo(event.target.value)}
+                  required
+                  type="date"
+                  value={topupTo}
+                />
+              </label>
+            </div>
+            <div className="ops-filter-row" style={{ marginTop: 8 }}>
+              <button
+                className="filter-chip"
+                onClick={() => {
+                  setTopupFrom(today);
+                  setTopupTo(today);
+                }}
+                type="button"
+              >
+                Azi
+              </button>
+              <button
+                className="filter-chip"
+                onClick={() => {
+                  const start = `${thisMonth}-01`;
+                  setTopupFrom(start);
+                  setTopupTo(today);
+                }}
+                type="button"
+              >
+                Luna curenta
+              </button>
+            </div>
+            <button
+              className="primary-button"
+              disabled={busyKey === 'wallet-topups' || !topupFrom || !topupTo}
+              onClick={() => runDownload(
+                'wallet-topups',
+                `/backoffice/reports/wallet-topups?from=${encodeURIComponent(topupFrom)}&to=${encodeURIComponent(topupTo)}`
+              )}
+              type="button"
+            >
+              <Download size={16} />
+              {busyKey === 'wallet-topups' ? 'Se genereaza...' : 'Descarca Excel'}
             </button>
           </article>
         </div>
@@ -2518,7 +2605,7 @@ function WalletTopupsView({ rows, refunds, summary, loading, onRefund }) {
                         </span>
                       ) : null}
                     </div>
-                    <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+                    <Badge variant={topupStatusVariant(topup)}>{topupStatusLabel(topup)}</Badge>
                     <div className="ops-cell">
                       <strong>{formatDateTime(topup.paid_at ?? topup.created_at)}</strong>
                     </div>
@@ -2702,7 +2789,7 @@ function ClientsView({ rows, loading, onCreate, onOpenDetail, customerTariff, pe
                   <span className="avatar">{(user.name ?? '?').slice(0, 2).toUpperCase()}</span>
                   <div className="ops-cell">
                     <strong>{user.name ?? '-'}</strong>
-                    <p>{user.email ?? '-'}</p>
+                    <p>ID {user.public_id} · {user.email ?? '-'}</p>
                   </div>
                   <Badge>{accountTypeLabel(user.account_type)}</Badge>
                   <Badge variant="success">
@@ -2964,7 +3051,7 @@ function UserDetailModal({
                               <p className="request-meta">Returnat {formatMoney(topup.amount_refunded)}</p>
                             ) : null}
                           </div>
-                          <Badge variant={statusVariant(topup.status)}>{statusLabel(topup.status)}</Badge>
+                          <Badge variant={topupStatusVariant(topup)}>{topupStatusLabel(topup)}</Badge>
                         </div>
                       ))}
                     </div>

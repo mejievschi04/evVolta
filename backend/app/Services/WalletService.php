@@ -43,7 +43,8 @@ class WalletService
             return 1;
         }
 
-        return round(self::MIN_BUDGET_AMOUNT / $price, 2);
+        // Round upward so the advertised minimum never costs less than MIN_BUDGET_AMOUNT.
+        return ceil((self::MIN_BUDGET_AMOUNT / $price) * 100 - 1e-9) / 100;
     }
 
     /**

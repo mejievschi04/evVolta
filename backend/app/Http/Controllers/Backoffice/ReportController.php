@@ -25,7 +25,20 @@ class ReportController extends Controller
             LocalTime::month($data['month'])
         );
 
-        return $this->pdfResponse($report['pdf'], $report['filename']);
+        return $this->xlsxResponse($report['content'], $report['filename']);
+    }
+
+    public function chargingSessions(Request $request): Response
+    {
+        $data = $request->validate([
+            'from' => 'required|date_format:Y-m-d',
+            'to' => 'required|date_format:Y-m-d|after_or_equal:from',
+        ]);
+        $report = $this->reportDocumentService->chargingSessions(
+            LocalTime::day($data['from']), LocalTime::day($data['to'])
+        );
+
+        return $this->xlsxResponse($report['content'], $report['filename']);
     }
 
     public function walletTopups(Request $request): Response
@@ -40,16 +53,13 @@ class ReportController extends Controller
             LocalTime::day($data['to'])->endOfDay(),
         );
 
-        return response($report['content'], 200, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'Content-Disposition' => 'attachment; filename="' . $report['filename'] . '"',
-        ]);
+        return $this->xlsxResponse($report['content'], $report['filename']);
     }
 
-    private function pdfResponse(string $pdf, string $filename): Response
+    private function xlsxResponse(string $content, string $filename): Response
     {
-        return response($pdf, 200, [
-            'Content-Type' => 'application/pdf',
+        return response($content, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ]);
     }

@@ -47,12 +47,12 @@ class MaibRedirectController extends Controller
             $paidAt = $topup->paid_at ?: ($status === 'success' ? now() : $topup->updated_at);
             $payment = [
                 'order_number' => 'wallet-topup-'.$topup->id,
-                'description' => 'Alimentare sold V CHARGE × 1',
+                'description' => 'Alimentare sold V Charge × 1',
                 'amount' => round((float) $topup->amount, 2),
                 'currency' => $topup->currency ?: 'MDL',
                 'paid_at' => LocalTime::of($paidAt)?->format('d.m.Y H:i'),
                 'company_name' => (string) config('legal.company_name', 'Volta SRL'),
-                'app_name' => (string) config('legal.app_name', 'V CHARGE'),
+                'app_name' => (string) config('legal.app_name', 'V Charge'),
             ];
         }
 
