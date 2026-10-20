@@ -342,9 +342,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/ReportDocumentService.php": {
-    "mtime": 1792475909.89795,
-    "seen": 1792475914.410177,
-    "ast_hash": "c95958030b9ff416a3e311dba7d19ef1",
+    "mtime": 1792479006.5893016,
+    "seen": 1792479029.553051,
+    "ast_hash": "d3b285f519b85576e0dd8ef112e0f790",
     "semantic_hash": ""
   },
   "backend/app/Services/SessionEnergyService.php": {
@@ -1188,9 +1188,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/ReportsAndInvoicePdfTest.php": {
-    "mtime": 1792475909.9136786,
-    "seen": 1792475914.4102578,
-    "ast_hash": "4c1fe6c06b985c748952f409c60569c1",
+    "mtime": 1792479042.010759,
+    "seen": 1792479051.086963,
+    "ast_hash": "f70f54336c9ed84d8df6e0fa8ced1af8",
     "semantic_hash": ""
   },
   "backend/tests/Feature/SecurityTest.php": {

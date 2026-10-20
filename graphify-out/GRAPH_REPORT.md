@@ -1,17 +1,17 @@
 # Graph Report - evVolta  (2026-10-20)
 
 ## Corpus Check
-- 357 files · ~182,257 words
+- 357 files · ~182,659 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 40 file(s) not represented in the graph (top: (none) 26, .example 4, .conf 4)
 
 ## Summary
-- 3251 nodes · 7779 edges · 576 communities (88 shown, 488 thin omitted)
+- 3261 nodes · 7804 edges · 573 communities (88 shown, 485 thin omitted)
 - Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 292 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c62dc364`
+- Built from commit: `28fba516`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -19,8 +19,8 @@
 - Tariff
 - OcppServe
 - TestCase
-- Station
-- OcppSessionDebugService
+- QrStationResolverTest
+- OcppServe.php
 - OcppCommand
 - WalletTopupScreen.js
 - User
@@ -28,14 +28,14 @@
 - App.jsx
 - OcppWebSocketFramingTest
 - DashboardController.php
-- DashboardController
+- Illuminate\Http\Request
 - backoffice/package.json
 - Illuminate\Database\Schema\Blueprint
 - App
 - Invoice
 - WalletTopup
 - UserDetailModal
-- Carbon\Carbon
+- ReportDocumentService.php
 - ChargingController.php
 - OcppMeterValuesParser
 - WalletService
@@ -43,13 +43,13 @@
 - formatNumber
 - V CHARGE OCPP setup
 - WalletChargingTest
-- .now
-- Illuminate\Http\Request
+- Station
+- AuthController
 - ref_react
 - SessionListAndTokenGraceTest
 - LoginScreen.js
 - HistorySessionsScreen.js
-- Controller
+- Illuminate\Http\JsonResponse
 - backoffice/README.md
 - Ghid complet — Deploy Docker pe VPS (V CHARGE)
 - ChargingSession
@@ -59,7 +59,7 @@
 - ChargingStopService
 - BillingService
 - MAIB Checkout API — alimentare wallet (card)
-- SessionEnergyService
+- Carbon\Carbon
 - Illuminate\Http\Response
 - OcppStopTransactionGraceTest
 - ChargingScreen.js
@@ -79,8 +79,8 @@
 - require
 - Social login (Google + Apple)
 - backend/README.md
-- LegalAcceptanceService
-- OcppServe.php
+- InvoiceDocumentService
+- SessionEnergyService
 - config
 - require-dev
 - Analiza hardware — VOLTA EU1060 (dual A/B)
@@ -104,15 +104,14 @@
 - 2026_06_10_140000_add_target_kwh_to_charging_sessions.php
 - 2026_06_16_120000_add_personal_price_per_kwh_to_tariffs_table.php
 - mobile/package.json
-- .onStartTransaction
-- RuntimeException
+- SocialAuthService.php
 - Illuminate\Support\Facades\Schema
 - 2026_06_09_120000_add_live_metrics_to_charging_sessions.php
-- AuditLogService
+- Backoffice/AuthController.php
 - client.js
 - 2026_04_28_102000_create_ocpp_commands_table.php
 - Illuminate\Database\Migrations\Migration
-- WalletTopupConfirmationMail
+- MaibWalletPaymentTest
 - 2026_05_20_120000_add_ocpp_connector_id_to_charging_sessions_table.php
 - Illuminate\Console\Command
 - 5. Configurare `.env.docker`
@@ -123,8 +122,8 @@
 - OcppPendingSessionStartTest
 - 2026_06_23_100000_add_reservation_settings_to_stations_table.php
 - WalletTopupReconcileTest
-- InvoiceMail
-- ApiAuthSecurityTest
+- QrStationResolver
+- AuditLog
 - 2026_10_15_140000_add_token_version_to_users_table.php
 - 10. Plăți (MAIB), OCPP, mobile
 - 7. Verificare
@@ -148,86 +147,90 @@
 - MaibRefundUncertainResponseTest
 - 2026_10_19_130000_add_tariff_type_to_charging_sessions.php
 - 2026_10_15_120000_drop_reservations.php
-- AuditLog
+- RuntimeException
 - 2026_04_16_000003_create_tariffs_table.php
 - BackofficeUsersTest
 - 2026_07_01_100000_add_ocpp_stop_context_to_charging_sessions.php
-- web.php
+- .renderReturnPage
 - 2026_07_25_100000_add_fiscal_fields_to_invoices_table.php
+- ReportDocumentService
 - 2026_04_16_000004_create_invoices_table.php
 - Illuminate\Database\Eloquent\Model
-- OcppSessionDebugService.php
-- OcppMessage
+- ControllerErrorStatusTest.php
+- LocalCalendarTest
 - .handle
 - 2026_07_01_000001_add_ocpp_stop_reason_to_charging_sessions.php
-- StationConfigurationLostUpdateTest
-- .__construct
+- Illuminate\Support\Collection
+- InvoiceMail
 - 2026_10_15_160000_add_payment_method_to_wallet_topups_table.php
 - 2026_04_16_000006_create_audit_logs_table.php
-- OcppCommand.php
-- UserDeletionService.php
-- LegalAcceptanceTest
+- MaibAuthService
+- UserFactory.php
+- PrivacyComplianceTest
 - 2026_04_16_000008_add_invoice_type_and_session_reference_to_invoices_table.php
 - AccountDeletionApiTest
+- TopupPaymentMethodReportTest.php
 - 2026_10_19_120000_add_public_id_to_users.php
 - 2026_04_16_000007_add_billing_period_fields_to_invoices_table.php
 - 2026_07_21_130000_add_legal_acceptance_to_users_table.php
 - 2026_07_27_110000_add_ocpp_auth_password_to_stations_table.php
 - 2026_10_15_100000_add_last_checked_at_to_wallet_topups_table.php
 - 2026_10_15_130000_add_price_per_kwh_to_charging_sessions_table.php
-- ReportsAndInvoicePdfTest
+- ValidationLocaleTest
 - scripts
-- OcppFragmentedFrameTest.php
+- OcppSupersedeAfterBootTest
 - metro.config.js
 - main.jsx
-- InvoiceFiscalDocumentTest
-- SecurityTest
 - 2026_04_16_000001_create_stations_table.php
 
 ## God Nodes (most connected - your core abstractions)
-1. `Station` - 479 edges
+1. `Station` - 480 edges
 2. `ChargingSession` - 326 edges
-3. `User` - 234 edges
+3. `User` - 235 edges
 4. `TestCase` - 196 edges
 5. `OcppCommand` - 109 edges
 6. `WalletTopup` - 105 edges
 7. `OcppServe` - 98 edges
 8. `OcppService` - 97 edges
-9. `Invoice` - 93 edges
+9. `Invoice` - 94 edges
 10. `WalletService` - 60 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `{closure#3}()` --references--> `Station`  [EXTRACTED]
   backend/app/Console/Commands/OcppServe.php → backend/app/Models/Station.php
-- `{closure#1}()` --references--> `User`  [EXTRACTED]
-  backend/app/Http/Controllers/Api/PasswordResetController.php → backend/app/Models/User.php
+- `{closure#2}()` --references--> `ChargingSession`  [EXTRACTED]
+  backend/app/Http/Controllers/Api/SessionController.php → backend/app/Models/ChargingSession.php
+- `{closure#2}()` --references--> `Station`  [EXTRACTED]
+  backend/app/Http/Controllers/Api/StationController.php → backend/app/Models/Station.php
 - `{closure#9}()` --references--> `ChargingSession`  [EXTRACTED]
   backend/app/Http/Controllers/Backoffice/DashboardController.php → backend/app/Models/ChargingSession.php
 - `{closure#10}()` --references--> `ChargingSession`  [EXTRACTED]
   backend/app/Http/Controllers/Backoffice/DashboardController.php → backend/app/Models/ChargingSession.php
-- `{closure#13}()` --references--> `Station`  [EXTRACTED]
-  backend/app/Http/Controllers/Backoffice/DashboardController.php → backend/app/Models/Station.php
 
 ## Import Cycles
 - None detected.
 
-## Communities (576 total, 488 thin omitted)
+## Communities (573 total, 485 thin omitted)
 
 ### Community 0 - "Tariff"
+Cohesion: 0.10
+Nodes (6): {closure#1}(), Tariff, TariffService, DatabaseSeeder, SessionPriceSnapshotTest, UserTariffTest
+
+### Community 1 - "OcppServe"
 Cohesion: 0.07
-Nodes (7): {closure#1}(), Tariff, DatabaseSeeder, BillingServiceTest, SessionPriceSnapshotTest, UserAccountBillingTest, UserTariffTest
+Nodes (5): {closure#1}(), {closure#2}(), OcppServe, OcppStationAuthTest, StationConfigurationLostUpdateTest
 
 ### Community 2 - "TestCase"
-Cohesion: 0.05
-Nodes (25): BackofficeDashboardTest, BackofficeSessionsTest, BackofficeStationDetailTest, ChargingFlowTest, ChargingSessionReconcileTest, ChargingStopFinishingTest, ExampleTest, ForcedAppUpdateTest (+17 more)
-
-### Community 3 - "Station"
 Cohesion: 0.04
-Nodes (16): {closure#2}(), Station, BackofficeStationOcppActionsTest, {closure#1}(), {closure#2}(), {closure#3}(), OcppSessionAttributionSmokeTest, OcppStationAuthTest (+8 more)
+Nodes (38): BackofficeDashboardTest, BackofficeSessionsTest, BackofficeStationDetailTest, BillingServiceTest, ChargingAutoStopTest, ChargingFlowTest, ChargingSessionReconcileTest, ChargingStartGatewayTest (+30 more)
+
+### Community 4 - "OcppServe.php"
+Cohesion: 0.07
+Nodes (10): {closure#13}(), {closure#15}(), {closure#3}(), {closure#6}(), {closure#8}(), {closure#1}(), OcppMessage, {closure#4}() (+2 more)
 
 ### Community 5 - "OcppCommand"
-Cohesion: 0.07
-Nodes (6): OcppCommand, ChargingStartGatewayTest, ChargingStopEu1060Test, OcppCommandTimeoutTest, OcppRemoteStartRetryTest, OcppStartSyncTest
+Cohesion: 0.06
+Nodes (4): OcppCommand, {closure#3}(), ChargingStopEu1060Test, OcppCommandTimeoutTest
 
 ### Community 6 - "WalletTopupScreen.js"
 Cohesion: 0.08
@@ -235,15 +238,15 @@ Nodes (42): CHARGE_MODES, ChargeLimitModal(), ModeCard(), styles, AuthKeyboardCo
 
 ### Community 7 - "User"
 Cohesion: 0.04
-Nodes (9): CreateAdminUser, {closure#2}(), {closure#4}(), User, ChargingAutoStopTest, ProfileApiTest, SessionLiveStreamTest, UserPublicIdTest (+1 more)
+Nodes (10): {closure#1}(), {closure#2}(), {closure#4}(), User, {closure#1}(), {closure#3}(), ProfileApiTest, {closure#1}() (+2 more)
 
 ### Community 9 - "App.jsx"
 Cohesion: 0.07
 Nodes (39): ActionModal(), buildDashboardUrl(), DashboardNetworkCard(), DashboardPeriodBar(), DashboardView(), loadDashboardForPeriod(), DEFAULT_DASHBOARD_PERIOD, DEFAULT_MAP_CENTER (+31 more)
 
 ### Community 12 - "DashboardController.php"
-Cohesion: 0.06
-Nodes (17): {closure#1}(), {closure#10}(), {closure#13}(), {closure#15}(), {closure#16}(), {closure#17}(), {closure#18}(), {closure#19}() (+9 more)
+Cohesion: 0.07
+Nodes (12): {closure#10}(), {closure#13}(), {closure#15}(), {closure#16}(), {closure#18}(), {closure#23}(), {closure#26}(), {closure#27}() (+4 more)
 
 ### Community 14 - "backoffice/package.json"
 Cohesion: 0.06
@@ -258,36 +261,32 @@ Cohesion: 0.13
 Nodes (30): ApiError, App(), deleteInvoice(), deleteSession(), deleteStation(), deleteUserAccount(), downloadReport(), formDataToObject() (+22 more)
 
 ### Community 22 - "Invoice"
-Cohesion: 0.12
-Nodes (3): Invoice, InvoiceDocumentService, InvoicePaymentsTest
+Cohesion: 0.10
+Nodes (4): Invoice, {closure#1}(), InvoiceFiscalDocumentTest, InvoicePaymentsTest
 
 ### Community 23 - "WalletTopup"
 Cohesion: 0.07
-Nodes (5): WalletTopup, BackofficeWalletTopupsTest, MaibWalletPaymentTest, WalletRefundTest, WalletTopupPaymentTest
+Nodes (6): WalletTopupConfirmationMail, WalletTopup, TopupConfirmationDocumentService, BackofficeWalletTopupsTest, WalletRefundTest, WalletTopupPaymentTest
 
 ### Community 24 - "UserDetailModal"
 Cohesion: 0.14
 Nodes (28): accountTypeLabel(), AuditDetailModal(), auditSubjectLabel(), availabilityLabel(), Badge(), connectionLabel(), diagnosticsResultSummary(), diagnosticsUploadLabel() (+20 more)
 
-### Community 25 - "Carbon\Carbon"
-Cohesion: 0.06
-Nodes (14): {closure#1}(), {closure#3}(), QrStationResolver, {closure#1}(), {closure#4}(), {closure#5}(), {closure#6}(), {closure#7}() (+6 more)
-
-### Community 26 - "ChargingController.php"
-Cohesion: 0.13
-Nodes (5): {closure#2}(), {closure#1}(), {closure#1}(), SessionPresentationService, TariffService
+### Community 25 - "ReportDocumentService.php"
+Cohesion: 0.17
+Nodes (12): {closure#1}(), {closure#10}(), {closure#11}(), {closure#12}(), {closure#13}(), {closure#16}(), {closure#4}(), {closure#5}() (+4 more)
 
 ### Community 27 - "OcppMeterValuesParser"
 Cohesion: 0.15
 Nodes (3): OcppMeterValuesParser, ExampleTest, OcppMeterValuesParserTest
 
 ### Community 28 - "WalletService"
-Cohesion: 0.16
-Nodes (3): {closure#1}(), {closure#2}(), WalletService
+Cohesion: 0.10
+Nodes (6): {closure#2}(), SessionController, UsageStatisticsService, {closure#1}(), {closure#2}(), WalletService
 
 ### Community 29 - "Illuminate\Support\Facades\Hash"
-Cohesion: 0.07
-Nodes (5): AccessControlTest, BackofficeAuthSecurityTest, BackofficeSettingsTest, BackofficeStationsTest, ChargingStopPreparingTest
+Cohesion: 0.06
+Nodes (7): AccessControlTest, BackofficeSettingsTest, BackofficeStationsTest, ChargingStopGatewayTest, ChargingStopPreparingTest, LegalAcceptanceTest, StationsApiTest
 
 ### Community 30 - "formatNumber"
 Cohesion: 0.30
@@ -297,13 +296,13 @@ Nodes (18): ActiveView(), AuditView(), ClientsView(), EmptyState(), formatMoney(
 Cohesion: 0.11
 Nodes (19): Checklist acceptanta hardware, Comenzi artisan, Configurare statie VOLTA 1, Conformitate OCPP 1.6J — ce face gateway-ul, Detectare conector A / B, Environment (`backend/.env`), Flux aplicatie, Mesaje suportate (+11 more)
 
-### Community 34 - ".now"
+### Community 34 - "Station"
 Cohesion: 0.04
-Nodes (8): ChargingResumeTest, ChargingStopGatewayTest, DualPortChargingTest, OcppConnectorRecoveryTest, OcppStopTransactionTest, PrivacyComplianceTest, StationLiveStatusTest, UserProcessRiskFixesTest
+Nodes (9): Station, BackofficeStationOcppActionsTest, {closure#1}(), {closure#2}(), {closure#3}(), ChargingResumeTest, DualPortChargingTest, OcppConnectorRecoveryTest (+1 more)
 
-### Community 35 - "Illuminate\Http\Request"
-Cohesion: 0.10
-Nodes (5): AuthController, ChargingController, SessionController, StationController, WalletController
+### Community 35 - "AuthController"
+Cohesion: 0.12
+Nodes (5): AuthController, AuditLogService, LegalAcceptanceService, UserDeletionService, UserPrivacyExportService
 
 ### Community 36 - "ref_react"
 Cohesion: 0.11
@@ -317,9 +316,9 @@ Nodes (30): RememberMeToggle(), styles, SocialAuthButtons(), SocialButton(), sty
 Cohesion: 0.09
 Nodes (52): MonthlyInvoicesPanel(), styles, formatDateTime(), providerLabel(), styles, SummaryPill(), TopupRow(), WalletTopupsPanel() (+44 more)
 
-### Community 41 - "Controller"
-Cohesion: 0.09
-Nodes (8): AppConfigController, InvoiceController, MaibCallbackController, PaymentController, TariffController, Controller, {closure#5}(), UsageStatisticsService
+### Community 41 - "Illuminate\Http\JsonResponse"
+Cohesion: 0.08
+Nodes (9): AppConfigController, InvoiceController, MaibCallbackController, PaymentController, {closure#2}(), StationController, TariffController, WalletController (+1 more)
 
 ### Community 43 - "backoffice/README.md"
 Cohesion: 0.12
@@ -330,16 +329,16 @@ Cohesion: 0.12
 Nodes (17): 11. Update-uri ulterioare, 12. Comenzi utile, 14. Checklist go-live, 1. Arhitectura, 2. Cerinte, 3. Instalare Docker (prima data), 4. Clone / update cod, 6. Pornire containere (+9 more)
 
 ### Community 45 - "ChargingSession"
-Cohesion: 0.09
-Nodes (14): {closure#1}(), {closure#2}(), ChargingSession, {closure#1}(), {closure#1}(), {closure#2}(), {closure#3}(), {closure#4}() (+6 more)
+Cohesion: 0.04
+Nodes (18): {closure#1}(), {closure#2}(), {closure#17}(), {closure#19}(), {closure#20}(), ChargingSession, {closure#1}(), {closure#2}() (+10 more)
 
 ### Community 46 - "Station.php"
-Cohesion: 0.06
+Cohesion: 0.07
 Nodes (9): {closure#12}(), {closure#13}(), {closure#15}(), {closure#17}(), {closure#2}(), {closure#3}(), {closure#4}(), {closure#5}() (+1 more)
 
 ### Community 47 - "SendInvoiceEmailJob"
-Cohesion: 0.17
-Nodes (3): SendInvoiceEmailJob, SendWalletTopupConfirmationJob, {closure#1}()
+Cohesion: 0.19
+Nodes (4): SendInvoiceEmailJob, SendWalletTopupConfirmationJob, {closure#1}(), ReportsAndInvoicePdfTest
 
 ### Community 48 - "compilerOptions"
 Cohesion: 0.12
@@ -349,13 +348,21 @@ Nodes (15): compilerOptions, allowJs, checkJs, esModuleInterop, isolatedModules,
 Cohesion: 0.18
 Nodes (5): ChargingStopService, {closure#1}(), {closure#2}(), {closure#3}(), {closure#4}()
 
+### Community 50 - "BillingService"
+Cohesion: 0.18
+Nodes (3): BillingService, OcppHandshakeBufferTest, OcppSessionAttributionSmokeTest
+
 ### Community 51 - "MAIB Checkout API — alimentare wallet (card)"
 Cohesion: 0.16
 Nodes (9): Card test (sandbox / test MAIB), Firewall, Flux, MAIB Checkout API — alimentare wallet (card), Onboarding bancă, Pe VPS cu Docker — pași, Refund, Unde pui secretele (tu) (+1 more)
 
+### Community 52 - "Carbon\Carbon"
+Cohesion: 0.16
+Nodes (7): {closure#1}(), {closure#3}(), {closure#5}(), {closure#7}(), {closure#14}(), {closure#17}(), LocalTime
+
 ### Community 53 - "Illuminate\Http\Response"
-Cohesion: 0.18
-Nodes (3): {closure#1}(), PasswordResetController, ReportController
+Cohesion: 0.09
+Nodes (3): PasswordResetController, ReportController, LegalController
 
 ### Community 55 - "ChargingScreen.js"
 Cohesion: 0.10
@@ -374,8 +381,8 @@ Cohesion: 0.13
 Nodes (4): AppServiceProvider, {closure#2}(), {closure#3}(), {closure#4}()
 
 ### Community 60 - "Closure"
-Cohesion: 0.21
-Nodes (4): AddSecurityHeaders, EnsureBackofficeAuth, EnsureSupportedAppVersion, EnsureTokenVersion
+Cohesion: 0.17
+Nodes (5): AddSecurityHeaders, EnsureBackofficeAuth, EnsureLegalAccepted, EnsureSupportedAppVersion, EnsureTokenVersion
 
 ### Community 61 - "bootstrap/app.php"
 Cohesion: 0.24
@@ -417,14 +424,6 @@ Nodes (7): API, Apple Developer, Backend (VPS / `.env.docker`), Contract mobil (
 Cohesion: 0.25
 Nodes (7): About Laravel, Agentic Development, Code of Conduct, Contributing, Learning Laravel, License, Security Vulnerabilities
 
-### Community 75 - "LegalAcceptanceService"
-Cohesion: 0.18
-Nodes (3): LegalController, EnsureLegalAccepted, LegalAcceptanceService
-
-### Community 76 - "OcppServe.php"
-Cohesion: 0.12
-Nodes (6): {closure#1}(), {closure#13}(), {closure#2}(), {closure#3}(), {closure#6}(), {closure#8}()
-
 ### Community 77 - "config"
 Cohesion: 0.29
 Nodes (7): pestphp/pest-plugin, php-http/discovery, config, allow-plugins, optimize-autoloader, preferred-install, sort-packages
@@ -443,7 +442,7 @@ Nodes (36): backgroundColor, foregroundImage, adaptiveIcon, package, permissions
 
 ### Community 81 - "WalletRefund"
 Cohesion: 0.18
-Nodes (11): {closure#1}(), ResolveWalletRefund, {closure#27}(), {closure#29}(), WalletRefund, {closure#3}(), {closure#4}(), {closure#5}() (+3 more)
+Nodes (9): {closure#1}(), ResolveWalletRefund, WalletRefund, {closure#3}(), {closure#4}(), {closure#5}(), {closure#6}(), {closure#7}() (+1 more)
 
 ### Community 83 - "VPS cu 2 proiecte Laravel existente (cazul tau — proiect #3)"
 Cohesion: 0.29
@@ -474,24 +473,16 @@ Cohesion: 0.17
 Nodes (3): InvoiceFiscalCalculator, {closure#1}(), InvoiceIssuanceService
 
 ### Community 97 - "StationResetConnectorTest.php"
-Cohesion: 0.13
-Nodes (4): StationDiagnosticsTest, StationRefreshStatusTest, StationResetConnectorTest, StationUnlockConnectorTest
+Cohesion: 0.40
+Nodes (3): {closure#1}(), {closure#2}(), StationResetConnectorTest
 
 ### Community 104 - "mobile/package.json"
 Cohesion: 0.07
 Nodes (29): API_BASE_URL, envApiHost, extractHost(), firstNonLocalhostHost, hostCandidates, isLocalhost(), resolveApiBaseUrl(), react (+21 more)
 
-### Community 107 - "RuntimeException"
-Cohesion: 0.06
-Nodes (5): MaibUncertainResponseException, MaibAuthService, {closure#3}(), SocialAuthService, ControllerErrorStatusTest
-
 ### Community 108 - "Illuminate\Support\Facades\Schema"
 Cohesion: 0.08
 Nodes (6): {closure#1}(), {closure#1}(), {closure#1}(), {closure#1}(), {closure#1}(), {closure#2}()
-
-### Community 110 - "AuditLogService"
-Cohesion: 0.14
-Nodes (5): AuthController, AuditLogService, {closure#1}(), UserDeletionService, UserPrivacyExportService
 
 ### Community 111 - "client.js"
 Cohesion: 0.10
@@ -502,8 +493,8 @@ Cohesion: 0.09
 Nodes (5): {closure#1}(), {closure#1}(), {closure#1}(), {closure#1}(), up()
 
 ### Community 116 - "Illuminate\Console\Command"
-Cohesion: 0.24
-Nodes (3): BackfillTopupPaymentMethods, GenerateMonthlyInvoices, OcppForceStop
+Cohesion: 0.10
+Nodes (6): BackfillTopupPaymentMethods, CreateAdminUser, GenerateMonthlyInvoices, OcppForceStop, PrivacyPurgeExpiredData, PurgeTestData
 
 ### Community 117 - "5. Configurare `.env.docker`"
 Cohesion: 0.40
@@ -513,9 +504,13 @@ Nodes (5): 5.1 Creează fișierul, 5.2 Editează valorile obligatorii, 5.3 Varia
 Cohesion: 0.40
 Nodes (5): 9.1 Creare site, 9.2 Activează site-ul, 9.3 SSL (Let's Encrypt), 9.4 Verificare finală HTTPS, 9. Nginx pe host + SSL
 
-### Community 126 - "InvoiceMail"
-Cohesion: 0.20
-Nodes (3): InvoiceMail, BackofficeInvoicesTest, {closure#1}()
+### Community 126 - "QrStationResolver"
+Cohesion: 0.24
+Nodes (3): {closure#1}(), {closure#3}(), QrStationResolver
+
+### Community 128 - "AuditLog"
+Cohesion: 0.07
+Nodes (4): AuditLog, ApiAuthSecurityTest, AuditLogsTest, BackofficeAuthSecurityTest
 
 ### Community 131 - "10. Plăți (MAIB), OCPP, mobile"
 Cohesion: 0.50
@@ -541,13 +536,17 @@ Nodes (4): {closure#1}(), {closure#3}(), {closure#4}(), SocialAuthTest
 Cohesion: 0.29
 Nodes (4): {closure#2}(), {closure#3}(), {closure#4}(), up()
 
-### Community 175 - "AuditLog"
-Cohesion: 0.17
-Nodes (4): AuditLog, {closure#2}(), {closure#3}(), AuditLogsTest
+### Community 175 - "RuntimeException"
+Cohesion: 0.24
+Nodes (3): MaibUncertainResponseException, {closure#2}(), {closure#3}()
 
-### Community 187 - "OcppMessage"
-Cohesion: 0.15
-Nodes (4): PrivacyPurgeExpiredData, {closure#1}(), PurgeTestData, OcppMessage
+### Community 184 - "Illuminate\Database\Eloquent\Model"
+Cohesion: 0.10
+Nodes (4): {closure#1}(), {closure#1}(), {closure#5}(), StationFavorite
+
+### Community 191 - "InvoiceMail"
+Cohesion: 0.14
+Nodes (4): InvoiceMail, InvoiceMailService, BackofficeInvoicesTest, {closure#1}()
 
 ### Community 200 - "2026_04_16_000008_add_invoice_type_and_session_reference_to_invoices_table.php"
 Cohesion: 0.33
@@ -568,22 +567,22 @@ Nodes (3): config, { getDefaultConfig }, expo
 ## Knowledge Gaps
 - **354 isolated node(s):** `$schema`, `name`, `type`, `description`, `keywords` (+349 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1195 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **488 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **485 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Station` connect `Station` to `Tariff`, `OcppServe`, `TestCase`, `OcppSessionDebugService`, `OcppCommand`, `User`, `OcppService`, `OcppWebSocketFramingTest`, `DashboardController.php`, `DashboardController`, `Invoice`, `WalletTopup`, `Carbon\Carbon`, `ChargingController.php`, `WalletService`, `Illuminate\Support\Facades\Hash`, `WalletChargingTest`, `.now`, `Illuminate\Http\Request`, `SessionListAndTokenGraceTest`, `OcppLocalStartPolicyTest`, `ChargingSession`, `Station.php`, `AuditLog`, `SendInvoiceEmailJob`, `ChargingStopService`, `BillingService`, `SessionEnergyService`, `.handleCall`, `OcppStopTransactionGraceTest`, `Illuminate\Database\Eloquent\Model`, `.handleCallResult`, `OcppSessionDebugService.php`, `OcppMessage`, `UnstartedSessionCleanupTest`, `StationConfigurationLostUpdateTest`, `UserDeletionService.php`, `AccountDeletionApiTest`, `OcppServe.php`, `WalletRefund`, `ReportsAndInvoicePdfTest`, `.onStopTransaction`, `StationResetConnectorTest.php`, `.onStartTransaction`, `RuntimeException`, `AuditLogService`, `Illuminate\Console\Command`, `ChargingResumeService`, `OcppPendingSessionStartTest`?**
-  _High betweenness centrality (0.109) - this node is a cross-community bridge._
+- **Why does `Station` connect `Station` to `Tariff`, `OcppServe`, `TestCase`, `QrStationResolverTest`, `OcppServe.php`, `OcppCommand`, `AuditLog`, `User`, `OcppService`, `OcppWebSocketFramingTest`, `DashboardController.php`, `Illuminate\Http\Request`, `WalletTopup`, `ChargingController.php`, `WalletService`, `Illuminate\Support\Facades\Hash`, `WalletChargingTest`, `SessionListAndTokenGraceTest`, `OcppLocalStartPolicyTest`, `Illuminate\Http\JsonResponse`, `ChargingSession`, `Station.php`, `SendInvoiceEmailJob`, `ChargingStopService`, `BillingService`, `Illuminate\Http\Response`, `OcppStopTransactionGraceTest`, `Illuminate\Database\Eloquent\Model`, `ControllerErrorStatusTest.php`, `LocalCalendarTest`, `UnstartedSessionCleanupTest`, `MaibWalletPaymentTest.php`, `AccountDeletionApiTest`, `SessionEnergyService`, `WalletRefund`, `OcppSupersedeAfterBootTest`, `StationResetConnectorTest.php`, `.onStartTransaction`, `Illuminate\Console\Command`, `ChargingResumeService`, `OcppPendingSessionStartTest`, `QrStationResolver`?**
+  _High betweenness centrality (0.113) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `ChargingSession` (e.g. with `.connectorOccupiedByOtherUser()` and `.hasActiveSessionOnConnector()`) actually correct?**
   _`ChargingSession` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `name`, `type` to the rest of the system?**
   _354 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Tariff` be split into smaller, more focused modules?**
-  _Cohesion score 0.06976744186046512 - nodes in this community are weakly interconnected._
-- **Why does `User` connect `User` to `Tariff`, `TestCase`, `Station`, `OcppCommand`, `OcppService`, `DashboardController.php`, `DashboardController`, `Carbon\Carbon`, `ChargingController.php`, `WalletService`, `Illuminate\Support\Facades\Hash`, `WalletChargingTest`, `.now`, `Illuminate\Http\Request`, `SessionListAndTokenGraceTest`, `OcppLocalStartPolicyTest`, `PasswordResetTest`, `Controller`, `SocialAuthTest.php`, `ChargingSession`, `Station.php`, `AuditLog`, `SendInvoiceEmailJob`, `ChargingStopService`, `BillingService`, `SessionEnergyService`, `Illuminate\Http\Response`, `OcppMessage`, `Closure`, `MaibPaymentService`, `UserDeletionService.php`, `LegalAcceptanceTest`, `AccountDeletionApiTest`, `LegalAcceptanceService`, `OcppServe.php`, `WalletRefund`, `StationResetConnectorTest.php`, `.onStartTransaction`, `RuntimeException`, `AuditLogService`, `ChargingResumeService`, `OcppPendingSessionStartTest`, `WalletTopupReconcileTest`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
-- **Should `TestCase` be split into smaller, more focused modules?**
-  _Cohesion score 0.04649947753396029 - nodes in this community are weakly interconnected._
-- **Why does `TestCase` connect `TestCase` to `ApiAuthSecurityTest`, `Tariff`, `Station`, `OcppCommand`, `User`, `OcppWebSocketFramingTest`, `Invoice`, `WalletTopup`, `Carbon\Carbon`, `WalletService`, `Illuminate\Support\Facades\Hash`, `WalletChargingTest`, `.now`, `SessionListAndTokenGraceTest`, `OcppLocalStartPolicyTest`, `PasswordResetTest`, `SocialAuthTest.php`, `MaibRefundUncertainResponseTest`, `InvoiceFiscalDocumentTest`, `ChargingSession`, `SecurityTest`, `AuditLog`, `SendInvoiceEmailJob`, `BackofficeUsersTest`, `BillingService`, `SessionEnergyService`, `OcppStopTransactionGraceTest`, `UnstartedSessionCleanupTest`, `StationConfigurationLostUpdateTest`, `UserDeletionService.php`, `LegalAcceptanceTest`, `AccountDeletionApiTest`, `ReportsAndInvoicePdfTest`, `OcppFragmentedFrameTest.php`, `InvoiceIssuanceService`, `StationResetConnectorTest.php`, `RuntimeException`, `OcppPendingSessionStartTest`, `WalletTopupReconcileTest`, `InvoiceMail`?**
-  _High betweenness centrality (0.046) - this node is a cross-community bridge._
+  _Cohesion score 0.09682539682539683 - nodes in this community are weakly interconnected._
+- **Why does `User` connect `User` to `Tariff`, `OcppServe`, `AuditLog`, `TestCase`, `OcppServe.php`, `OcppCommand`, `OcppService`, `DashboardController.php`, `Illuminate\Http\Request`, `WalletTopup`, `ReportDocumentService.php`, `WalletService`, `Illuminate\Support\Facades\Hash`, `Station`, `AuthController`, `OcppLocalStartPolicyTest`, `PasswordResetTest`, `Illuminate\Http\JsonResponse`, `SocialAuthTest.php`, `ChargingSession`, `Station.php`, `RuntimeException`, `ChargingStopService`, `BillingService`, `Illuminate\Http\Response`, `Illuminate\Database\Eloquent\Model`, `MaibWalletPaymentTest.php`, `Closure`, `Illuminate\Support\Collection`, `MaibPaymentService`, `UserFactory.php`, `PrivacyComplianceTest`, `AccountDeletionApiTest`, `TopupPaymentMethodReportTest.php`, `SessionEnergyService`, `WalletRefund`, `StationResetConnectorTest.php`, `.onStartTransaction`, `SocialAuthService.php`, `Backoffice/AuthController.php`, `Illuminate\Console\Command`, `ChargingResumeService`, `OcppPendingSessionStartTest`, `WalletTopupReconcileTest`?**
+  _High betweenness centrality (0.049) - this node is a cross-community bridge._
+- **Should `OcppServe` be split into smaller, more focused modules?**
+  _Cohesion score 0.06713286713286713 - nodes in this community are weakly interconnected._
+- **Why does `V Charge OCPP setup` connect `V CHARGE OCPP setup` to `MAIB Checkout API — alimentare wallet (card)`, `Analiza hardware — VOLTA EU1060 (dual A/B)`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
