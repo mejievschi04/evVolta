@@ -21,7 +21,7 @@ class WalletTopupConfirmationMail extends Mailable
     public function build(): self
     {
         $mail = $this
-            ->subject('Confirmare suplinire cont - V CHARGE')
+            ->subject('Confirmare suplinire cont - V Charge')
             ->view('emails.wallet-topup-confirmation');
 
         if ($this->attachmentPdf !== null && $this->attachmentName !== null) {

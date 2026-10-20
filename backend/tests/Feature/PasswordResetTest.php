@@ -28,7 +28,7 @@ class PasswordResetTest extends TestCase
             $token = $notification->token;
             $mail = $notification->toMail($user);
 
-            return $mail->subject === 'Resetare parola - V CHARGE'
+            return $mail->subject === 'Resetare parola - V Charge'
                 && str_contains($mail->actionUrl, '/api/password/reset/'.$token);
         });
 

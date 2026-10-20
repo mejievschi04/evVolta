@@ -94,6 +94,8 @@ return [
         'soft_reset_on_start_reject' => filter_var(env('OCPP_SOFT_RESET_ON_START_REJECT', true), FILTER_VALIDATE_BOOL),
         'soft_reset_on_suspended_ev' => filter_var(env('OCPP_SOFT_RESET_ON_SUSPENDED_EV', true), FILTER_VALIDATE_BOOL),
         'auto_recovery_enabled' => filter_var(env('OCPP_AUTO_RECOVERY_ENABLED', false), FILTER_VALIDATE_BOOL),
+        // Stop confirmed transactions after two continuous minutes paused by the EV. Zero disables.
+        'suspended_ev_stop_seconds' => (int) env('OCPP_SUSPENDED_EV_STOP_SECONDS', 120),
         'suspended_ev_recovery_seconds' => (int) env('OCPP_SUSPENDED_EV_RECOVERY_SECONDS', 12),
         'remote_start_after_recovery_seconds' => (int) env('OCPP_REMOTE_START_AFTER_RECOVERY_SECONDS', 10),
         'diagnostics_ftp_url' => env('OCPP_DIAGNOSTICS_FTP_URL', 'ftp://diagnostics.local/evolta/'),

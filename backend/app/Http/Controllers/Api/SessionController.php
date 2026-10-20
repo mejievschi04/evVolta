@@ -158,6 +158,7 @@ class SessionController extends Controller
             'live_status' => $liveStatus,
             'can_resume' => $station
                 && ! $session->end_time
+                && ! $session->stoppedAfterEvPause()
                 && app(ChargingResumeService::class)->connectorCanResume($station, $connectorId),
             ...($session->end_time ? [
                 'session_completed' => [

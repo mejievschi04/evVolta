@@ -1,4 +1,4 @@
-# Deploy pe VPS (V CHARGE)
+# Deploy pe VPS (V Charge)
 
 Ghid pentru Ubuntu 24.04 + nginx + PHP 8.3 + PostgreSQL.
 
@@ -33,16 +33,16 @@ nginx (443) ──► PHP-FPM ──► Laravel (PostgreSQL)
 
 ## VPS cu 2 proiecte Laravel existente (cazul tau — proiect #3)
 
-Presupunere: pe VPS ai deja **doua aplicatii Laravel** — una doar API/backend, una **Laravel + React** (acelasi pattern ca V CHARGE: static frontend + rute JSON Laravel).
+Presupunere: pe VPS ai deja **doua aplicatii Laravel** — una doar API/backend, una **Laravel + React** (acelasi pattern ca V Charge: static frontend + rute JSON Laravel).
 
-V CHARGE se aliniaza la al doilea model:
+V Charge se aliniaza la al doilea model:
 
 ```
 Proiect 1 (Laravel API)     → domeniu A, /api → PHP-FPM
 Proiect 2 (Laravel + React) → domeniu B, / → React dist, /api → PHP-FPM
-Proiect 3 (V CHARGE)        → ocpp.volta.md, / → backoffice dist,
+Proiect 3 (V Charge)        → ocpp.volta.md, / → backoffice dist,
                               /api + /backoffice + /payments → PHP-FPM,
-                              /ocpp → WebSocket (unic V CHARGE)
+                              /ocpp → WebSocket (unic V Charge)
 ```
 
 **Ce e comun (OK sa fie partajat):**
@@ -54,9 +54,9 @@ Proiect 3 (V CHARGE)        → ocpp.volta.md, / → backoffice dist,
 | PostgreSQL | Cate o baza + user per proiect |
 | Composer / Node | Aceleasi versiuni ca la celelalte proiecte |
 
-**Ce e doar la V CHARGE (nu exista la celelalte 2):**
+**Ce e doar la V Charge (nu exista la celelalte 2):**
 
-| Resursa | V CHARGE |
+| Resursa | V Charge |
 |---------|-------|
 | `evvolta-ocpp.service` | Gateway OCPP WebSocket |
 | Port intern `9010` | `ocpp:serve` (nginx proxy `/ocpp/`) |
@@ -70,11 +70,11 @@ Proiect 3 (V CHARGE)        → ocpp.volta.md, / → backoffice dist,
 * * * * * cd /var/www/evvolta/backend && php artisan schedule:run >> /dev/null 2>&1 # evvolta-scheduler
 ```
 
-Scriptul `vps-add-project.sh` adauga **doar** linia V CHARGE; nu modifica cronul celorlalte doua.
+Scriptul `vps-add-project.sh` adauga **doar** linia V Charge; nu modifica cronul celorlalte doua.
 
-V CHARGE ruleaza **izolat** de celelalte 2 proiecte:
+V Charge ruleaza **izolat** de celelalte 2 proiecte:
 
-| Resursa | V CHARGE | Note |
+| Resursa | V Charge | Note |
 |---------|----------|------|
 | Domeniu | `ocpp.volta.md` | vhost nginx separat |
 | Cod | `/var/www/evvolta` | nu atinge `/var/www/proiect1` etc. |
@@ -127,7 +127,7 @@ free -h
 
 Recomandare path: `/var/www/evvolta` (paralel cu `/var/www/proiect2` etc.).
 
-Daca celalalt proiect Laravel+React foloseste `BACKOFFICE_UI_URL` + proxy `/api`, V CHARGE e configurat la fel — vezi `deploy/nginx/evvolta.conf`.
+Daca celalalt proiect Laravel+React foloseste `BACKOFFICE_UI_URL` + proxy `/api`, V Charge e configurat la fel — vezi `deploy/nginx/evvolta.conf`.
 
 ### VPS gol (prima instalare ever)
 
@@ -251,3 +251,37 @@ In browser: `https://ocpp.volta.md` → login backoffice.
 - `deploy/deploy.sh` — update aplicatie
 - `deploy/vps-add-project.sh` — **VPS cu proiecte existente** (recomandat)
 - `deploy/vps-bootstrap.sh` — VPS gol + dependinte sistem
+
+## Rapoarte zilnice prin email
+
+La 07:00, ora `Europe/Chisinau` (inclusiv trecerea vara/iarna), comanda
+`reports:send-daily` pune in coada cate un email pentru fiecare destinatar, cu
+rapoartele Excel **Alimentari masini** si **Alimentari cont** pentru ziua
+calendaristica precedenta. Se trimit si rapoartele fara activitate.
+
+Dupa migrare, configureaza destinatarii din **Setari → Rapoarte zilnice prin email**.
+Foloseste **+ Adauga destinatar**, activeaza trimiterea si apasa **Salveaza setarile**.
+Lista salvata se aplica tuturor operatorilor si are prioritate fata de configuratia
+din mediu, inclusiv cand trimiterea este oprita sau lista este goala.
+
+Optional, doar pentru configuratia initiala inainte de prima salvare in Setari,
+in `.env.docker` (Docker) sau `backend/.env` (VPS clasic):
+
+```dotenv
+DAILY_REPORTS_ENABLED=true
+DAILY_REPORTS_RECIPIENTS=contabilitate@example.com,administrator@example.com
+```
+
+Configureaza SMTP prin variabilele `MAIL_*` existente si foloseste
+`QUEUE_CONNECTION=database`. Pentru Docker, recreeaza serviciile dupa schimbarea
+mediului: `docker compose --env-file .env.docker up -d`. Scheduler-ul si worker-ul
+`queue` trebuie sa ruleze. Pe VPS clasic, actualizeaza configuratia cu
+`php artisan config:cache`, reporneste worker-ul cu `php artisan queue:restart`
+si verifica cron-ul `schedule:run`.
+
+Retrimitere pentru o zi care nu a fost livrata:
+`php artisan reports:send-daily --date=2026-10-19`.
+Aceasta comanda trimite emailuri reale cand functia este activata.
+Joburile reincearca de trei ori la erori; verifica `php artisan queue:failed`.
+Protectia din cache impiedica repetarea unei livrari reusite pentru aceeasi zi si
+adresa timp de 35 de zile; golirea cache-ului elimina aceasta protectie.

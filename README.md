@@ -1,4 +1,4 @@
-# V CHARGE
+# V Charge
 
 Sistem de management incarcare EV (backend Laravel + backoffice React + gateway OCPP 1.6J).
 

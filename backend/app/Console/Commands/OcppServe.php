@@ -24,7 +24,7 @@ class OcppServe extends Command
 {
     protected $signature = 'ocpp:serve {--host=} {--port=}';
 
-    protected $description = 'Run the V CHARGE OCPP 1.6J WebSocket gateway.';
+    protected $description = 'Run the V Charge OCPP 1.6J WebSocket gateway.';
 
     private array $clients = [];
 
@@ -37,6 +37,8 @@ class OcppServe extends Command
     private float $lastCommandExpiryAt = 0;
 
     private float $lastReleasedSweepAt = 0;
+
+    private float $lastSuspendedSweepAt = 0;
 
     private float $lastUnstartedSweepAt = 0;
 
@@ -59,7 +61,7 @@ class OcppServe extends Command
         }
 
         stream_set_blocking($server, false);
-        $this->info("V CHARGE OCPP gateway listening on ws://{$host}:{$port}/ocpp/{ocpp_identity}");
+        $this->info("V Charge OCPP gateway listening on ws://{$host}:{$port}/ocpp/{ocpp_identity}");
 
         if (function_exists('pcntl_async_signals')) {
             pcntl_async_signals(true);
@@ -84,6 +86,7 @@ class OcppServe extends Command
             $this->flushPendingCommands();
             $this->expireUnansweredCommands();
             $this->flushOutboxes();
+            $this->stopSuspendedEvSessions();
             $this->finalizeReleasedSessions();
             $this->closeUnstartedSessions();
             usleep(50000);
@@ -681,6 +684,15 @@ class OcppServe extends Command
                 unset($connectors[$connectorId]['released_at']);
             }
 
+            if ($ocppStatus === 'SuspendedEV') {
+                $connectors[$connectorId]['suspended_ev_since'] =
+                    ($previousConnector['status'] ?? null) === 'SuspendedEV'
+                        ? ($previousConnector['suspended_ev_since'] ?? now()->toIso8601String())
+                        : now()->toIso8601String();
+            } else {
+                unset($connectors[$connectorId]['suspended_ev_since']);
+            }
+
             $configuration['connectors'] = $connectors;
             $configuration['connector'] = $connectors[$connectorId];
 
@@ -802,6 +814,11 @@ class OcppServe extends Command
         }
 
         $connectorId = max(1, $rawConnectorId);
+        if (ChargingSession::query()->where('station_id', $station->id)
+            ->where('ocpp_connector_id', $connectorId)->whereNull('end_time')
+            ->where('stop_source', ChargingSession::STOP_SOURCE_SUSPENDED_EV)->exists()) {
+            return ['transactionId' => 0, 'idTagInfo' => ['status' => 'Invalid']];
+        }
         $meterStart = $this->normalizeMeterStartFromOcpp($payload['meterStart'] ?? null);
         $startedAt = $this->parseOcppTime($payload['timestamp'] ?? null);
         $user = $this->userFromIdTag($idTag);
@@ -1395,6 +1412,58 @@ class OcppServe extends Command
         }
     }
 
+    /** Request a normal stop after a continuous EV pause; final billing waits for the meter. */
+    private function stopSuspendedEvSessions(): void
+    {
+        $now = microtime(true);
+        if ($now - $this->lastSuspendedSweepAt < 1) {
+            return;
+        }
+        $this->lastSuspendedSweepAt = $now;
+        $seconds = (int) config('services.ocpp.suspended_ev_stop_seconds', 120);
+        if ($seconds <= 0) {
+            return;
+        }
+
+        foreach ($this->clients as $client) {
+            $station = $client['station'] ?? null;
+            if (! ($client['handshaken'] ?? false) || ! ($client['boot_received'] ?? false) || ! $station instanceof Station) {
+                continue;
+            }
+            try {
+                $station = $station->fresh();
+                if (! $station || ! $station->isOcppOnline()) {
+                    continue;
+                }
+                $connectors = $station->ocpp_configuration['connectors'] ?? [];
+                $sessions = ChargingSession::query()->where('station_id', $station->id)
+                    ->whereNull('end_time')->get();
+                foreach ($sessions as $session) {
+                    if (! $session->stoppedAfterEvPause()) {
+                        $connector = $connectors[(int) ($session->ocpp_connector_id ?: 1)] ?? [];
+                        if (($connector['status'] ?? null) !== 'SuspendedEV' || empty($connector['suspended_ev_since'])) {
+                            continue;
+                        }
+                        $since = Carbon::parse($connector['suspended_ev_since']);
+                        if ($since->greaterThan(now()->subSeconds($seconds))
+                            || ! $session->hasConfirmedOcppTransaction() || ! $session->start_time
+                            || $session->start_time->greaterThan(now()->subSeconds($seconds))) {
+                            continue;
+                        }
+                        // Once the deadline expires, the old session must finish even if the EV resumes.
+                        $session->update(['stop_source' => ChargingSession::STOP_SOURCE_SUSPENDED_EV]);
+                    }
+                    app(ChargingStopService::class)->requestStop($session, $station, ChargingSession::STOP_SOURCE_SUSPENDED_EV);
+                }
+            } catch (Throwable $exception) {
+                Log::error('OCPP SuspendedEV auto-stop failed', [
+                    'station_id' => $station?->id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+    }
+
     /**
      * Inchide sesiunile cu tranzactie OCPP al caror conector e eliberat, dupa ce
      * fereastra de asteptare pentru StopTransaction a expirat fara ca acesta sa vina.
@@ -1867,6 +1936,10 @@ class OcppServe extends Command
      */
     private function isProtectedFinishingSession(Station $station, ChargingSession $session): bool
     {
+        if ($session->stoppedAfterEvPause()) {
+            return true;
+        }
+
         $connectorId = (int) ($session->ocpp_connector_id ?? 0);
         if ($connectorId <= 0) {
             return false;
@@ -2386,6 +2459,10 @@ class OcppServe extends Command
 
     private function resolveStopSourceForSession(ChargingSession $session, string $reason): string
     {
+        if ($session->stoppedAfterEvPause()) {
+            return ChargingSession::STOP_SOURCE_SUSPENDED_EV;
+        }
+
         $appRequested = OcppCommand::query()
             ->where('charging_session_id', $session->id)
             ->whereIn('action', ['RemoteStopTransaction', 'RequestStopTransaction'])

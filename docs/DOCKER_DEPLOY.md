@@ -1,4 +1,4 @@
-# Ghid complet — Deploy Docker pe VPS (V CHARGE)
+# Ghid complet — Deploy Docker pe VPS (V Charge)
 
 Document pas-cu-pas pentru productie: **PostgreSQL + Laravel + OCPP + Backoffice**, totul in containere Docker.
 
@@ -176,7 +176,7 @@ nano .env.docker
 **SMTP:** după ce pui datele în `.env.docker`, repornește `app` + `queue` (email-urile ies pe queue). Test rapid:
 
 ```bash
-docker compose exec app php artisan tinker --execute="Mail::raw('test V CHARGE', fn (\$m) => \$m->to('tu@email.md')->subject('SMTP OK'));"
+docker compose exec app php artisan tinker --execute="Mail::raw('test V Charge', fn (\$m) => \$m->to('tu@email.md')->subject('SMTP OK'));"
 docker compose logs --tail=50 queue
 ```
 

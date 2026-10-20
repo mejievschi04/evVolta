@@ -18,7 +18,7 @@ class OcppHandshakeBufferTest extends TestCase
     public function test_handshake_preserves_boot_notification_sent_in_same_tcp_packet(): void
     {
         $station = Station::query()->create([
-            'name' => 'Statia V CHARGE 1',
+            'name' => 'Statia V Charge 1',
             'location' => 'Depou',
             'status' => Station::STATUS_AVAILABLE,
             'ocpp_identity' => '5D419400481F59D750010067',

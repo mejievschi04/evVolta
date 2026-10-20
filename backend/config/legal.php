@@ -11,7 +11,7 @@ return [
     'company_name' => env('LEGAL_COMPANY_NAME', 'Volta SRL'),
 
     /** Brandul aplicatiei mobile afisat utilizatorilor. */
-    'app_name' => env('LEGAL_APP_NAME', 'V CHARGE'),
+    'app_name' => env('LEGAL_APP_NAME', 'V Charge'),
 
     'contact_email' => env('LEGAL_CONTACT_EMAIL', 'support@volta.md'),
 

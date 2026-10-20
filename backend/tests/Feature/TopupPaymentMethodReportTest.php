@@ -124,6 +124,51 @@ class TopupPaymentMethodReportTest extends TestCase
         }
     }
 
+    public function test_report_recovers_card_and_mia_from_maib_and_persists_without_crediting_again(): void
+    {
+        $user = $this->createAppUser(['wallet_balance' => 425]);
+        $card = $this->topup($user, 'paid', null, '2026-10-15 07:00:00', 100);
+        $mia = $this->topup($user, 'paid', '', '2026-10-15 08:00:00', 250);
+        $card->update(['payment_session_id' => 'checkout-card']);
+        $mia->update(['payment_session_id' => 'checkout-mia']);
+        $maib = \Mockery::mock(\App\Services\MaibPaymentService::class)->makePartial();
+        $maib->shouldReceive('isConfigured')->twice()->andReturn(true);
+        $maib->shouldReceive('getPaymentInfo')->once()->with('checkout-card')
+            ->andReturn(['payment' => ['paymentMethod' => 'Card']]);
+        $maib->shouldReceive('getPaymentInfo')->once()->with('checkout-mia')
+            ->andReturn(['payment' => ['paymentMethod' => 'MiaQr']]);
+        $this->app->instance(\App\Services\MaibPaymentService::class, $maib);
+        $method = new \ReflectionMethod(ReportDocumentService::class, 'topupRows');
+        $service = app(ReportDocumentService::class);
+        for ($run = 0; $run < 2; $run++) {
+            $rows = $method->invoke($service, LocalTime::day('2026-10-15'), LocalTime::day('2026-10-15')->endOfDay());
+            $this->assertSame(['Card', 'MIA'], $rows->pluck('method')->all());
+            $this->assertSame(350.0, $rows->sum('amount'));
+        }
+        $this->assertSame('Card', $card->fresh()->payment_method);
+        $this->assertSame('MiaQr', $mia->fresh()->payment_method);
+        $this->assertSame(425.0, $user->fresh()->wallet_balance);
+    }
+
+    public function test_backfill_rotates_failed_rows_and_fills_blank_methods_without_guessing(): void
+    {
+        $user = $this->createAppUser();
+        $failed = $this->topup($user, 'paid', null, '2026-10-15 07:00:00');
+        $blank = $this->topup($user, 'paid', '  ', '2026-10-15 08:00:00');
+        $failed->update(['payment_session_id' => 'unavailable']);
+        $blank->update(['payment_session_id' => 'recoverable']);
+        $maib = \Mockery::mock(\App\Services\MaibPaymentService::class)->makePartial();
+        $maib->shouldReceive('isConfigured')->andReturn(true);
+        $maib->shouldReceive('getPaymentInfo')->once()->with('unavailable')->andThrow(new \RuntimeException('Unavailable'));
+        $maib->shouldReceive('getPaymentInfo')->once()->with('recoverable')
+            ->andReturn(['payment' => ['paymentMethod' => 'MiaQr']]);
+        $this->app->instance(\App\Services\MaibPaymentService::class, $maib);
+        $this->artisan('wallet:backfill-payment-methods', ['--limit' => 1])->assertSuccessful();
+        $this->artisan('wallet:backfill-payment-methods', ['--limit' => 1])->assertSuccessful();
+        $this->assertNull($failed->fresh()->payment_method);
+        $this->assertSame('MiaQr', $blank->fresh()->payment_method);
+    }
+
     private function topup(User $user, string $status, ?string $method = null, ?string $paidAtUtc = null, float $amount = 100): WalletTopup
     {
         return WalletTopup::query()->create([

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\ChargingSession;
 use App\Models\WalletTopup;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use App\Support\LocalTime;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -109,7 +111,7 @@ class ReportDocumentService
     {
         $from = LocalTime::of($from)->startOfDay();
         $to = LocalTime::of($to)->endOfDay();
-        $sessions = ChargingSession::query()
+        $sessions = $this->reportableSessions()
             ->with(['user' => fn ($query) => $query->withTrashed(), 'station', 'invoice'])
             ->whereNotNull('end_time')
             ->whereBetween('end_time', [LocalTime::utc($from), LocalTime::utc($to)])
@@ -272,9 +274,33 @@ class ReportDocumentService
      *
      * @return Collection<int, array{date: string, station_id: int|null, station_name: string, sessions_count: int, total_kwh: float, revenue: float}>
      */
+    private function reportableSessions(): Builder
+    {
+        // Service charging is free and intentionally has no invoice.
+        // For legacy sessions, use the account tariff only when no snapshot exists.
+        $tariffMatches = static function (Builder $query, array $types): void {
+            $query->whereIn('tariff_type', $types)
+                ->orWhere(fn (Builder $legacy) => $legacy->whereNull('tariff_type')
+                    ->whereHas('user', fn (Builder $user) => $user->withTrashed()->whereIn('account_type', $types)));
+        };
+
+        return ChargingSession::query()
+            ->whereNotNull('start_time')
+            ->whereNotNull('end_time')
+            ->whereColumn('end_time', '>', 'start_time')
+            ->where('kwh_consumed', '>', 0)
+            ->where(function (Builder $query) use ($tariffMatches): void {
+                $query->where(fn (Builder $service) => $tariffMatches($service, [User::ACCOUNT_TYPE_SERVICE]))
+                    ->orWhere(function (Builder $paid) use ($tariffMatches): void {
+                        $paid->where(fn (Builder $tariff) => $tariffMatches($tariff, [User::ACCOUNT_TYPE_CUSTOMER, User::ACCOUNT_TYPE_PERSONAL]))
+                            ->whereHas('invoice', fn (Builder $invoice) => $invoice->where('invoice_type', 'session'));
+                    });
+            });
+    }
+
     private function stationDayAggregates(Carbon $from, Carbon $to): Collection
     {
-        $sessions = ChargingSession::query()
+        $sessions = $this->reportableSessions()
             ->with(['station:id,name,location', 'invoice:id,source_session_id,total_amount,invoice_type'])
             ->whereNotNull('end_time')
             ->whereBetween('end_time', [LocalTime::utc($from), LocalTime::utc($to)])
@@ -335,6 +361,7 @@ class ReportDocumentService
             ->orderBy('paid_at')
             ->orderBy('id')
             ->get()
+            ->each(fn (WalletTopup $topup) => app(TopupPaymentMethodService::class)->fillMissing($topup))
             ->map(fn (WalletTopup $topup) => [
                 'id' => (int) $topup->id,
                 'paid_at' => LocalTime::of($topup->paid_at)->format('d.m.Y H:i'),
@@ -389,7 +416,7 @@ class ReportDocumentService
             $this->writeStyledRow($writer, Row::fromValues([]));
             $this->writeStyledRow($writer, Row::fromValues([$title], (new Style())->setFontBold()->setFontSize(18)->setFontColor('17324D')));
             $this->writeStyledRow($writer, Row::fromValues([sprintf(
-                '%s · Generat: %s · V CHARGE',
+                '%s · Generat: %s · V Charge',
                 $period,
                 LocalTime::now()->format('d.m.Y H:i')
             )]));

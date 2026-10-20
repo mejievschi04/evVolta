@@ -24,7 +24,7 @@ class InvoiceMailService
             : (string) ($invoice->user?->email ?? '');
         $name = filled($invoice->buyer_name)
             ? (string) $invoice->buyer_name
-            : (string) ($invoice->user?->name ?? 'Client V CHARGE');
+            : (string) ($invoice->user?->name ?? 'Client V Charge');
 
         if ($email === '') {
             return false;
@@ -32,7 +32,7 @@ class InvoiceMailService
 
         $pdf = $this->invoiceDocumentService->pdf($invoice);
         $filename = $this->invoiceDocumentService->filename($invoice);
-        $subject = 'Factura ' . ($invoice->invoice_number ?: '#' . $invoice->id) . ' - V CHARGE';
+        $subject = 'Factura ' . ($invoice->invoice_number ?: '#' . $invoice->id) . ' - V Charge';
         $body = $this->invoiceDocumentService->emailBody($invoice);
 
         Mail::to($email, $name)

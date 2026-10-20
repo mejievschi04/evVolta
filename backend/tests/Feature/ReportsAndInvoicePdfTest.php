@@ -18,6 +18,85 @@ class ReportsAndInvoicePdfTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_charging_reports_only_include_successful_billable_tariffs_and_free_service(): void
+    {
+        $station = Station::query()->create(['name' => 'Report station', 'location' => 'Chisinau', 'status' => Station::STATUS_AVAILABLE, 'qr_code' => 'station:report-filter']);
+        $cases = [
+            ['customer', true, 2, true, 'customer', true],
+            ['personal', true, 3, true, 'personal', true],
+            ['service', false, 4, true, 'service', true],
+            ['customer', false, 10, true, 'customer', false],
+            ['personal', false, 10, true, 'personal', false],
+            ['customer', true, 0, true, 'customer', false],
+            ['customer', true, 10, false, 'customer', false],
+            ['customer', true, 10, true, 'unknown', false],
+            ['customer', true, 1, true, null, true],
+        ];
+        $expectedNames = [];
+        foreach ($cases as $index => [$type, $invoiced, $energy, $ended, $snapshot, $included]) {
+            $user = $this->createAppUser(['name' => 'Report driver '.$index, 'account_type' => $type]);
+            $session = ChargingSession::query()->create([
+                'user_id' => $user->id,
+                'station_id' => $station->id,
+                'start_time' => '2026-10-15 09:00:00',
+                'end_time' => $ended ? '2026-10-15 10:00:00' : null,
+                'kwh_consumed' => $energy,
+                'price_per_kwh' => 4,
+            ]);
+            $session->forceFill(['tariff_type' => $snapshot])->save();
+            if ($invoiced) {
+                Invoice::query()->create([
+                    'user_id' => $user->id, 'source_session_id' => $session->id,
+                    'month' => '2026-10', 'currency' => 'MDL', 'invoice_type' => 'session',
+                    'total_kwh' => $energy, 'total_amount' => $energy * 4,
+                    'sessions_count' => 1, 'status' => 'paid',
+                ]);
+            }
+            if ($included) {
+                $expectedNames[] = $user->name;
+            }
+        }
+        $service = app(\App\Services\ReportDocumentService::class);
+        $day = \App\Support\LocalTime::day('2026-10-15');
+        foreach (['sessions', 'monthly'] as $kind) {
+            $report = $kind === 'sessions'
+                ? $service->chargingSessions($day, $day)
+                : $service->stationsMonthly($day);
+            $path = tempnam(sys_get_temp_dir(), 'charging-report-');
+            $reader = new \OpenSpout\Reader\XLSX\Reader();
+            try {
+                file_put_contents($path, $report['content']);
+                $reader->open($path);
+                $names = [];
+                $total = null;
+                foreach ($reader->getSheetIterator() as $sheet) {
+                    foreach ($sheet->getRowIterator() as $row) {
+                        $cells = $row->toArray();
+                        if ($kind === 'sessions' && ($cells[0] ?? null) instanceof \DateTimeInterface) {
+                            $names[] = $cells[2];
+                        }
+                        if (($cells[0] ?? null) === ($kind === 'sessions' ? 'Total (4 alimentari)' : 'Total luna')) {
+                            $total = $cells;
+                        }
+                    }
+                }
+                $this->assertNotNull($total);
+                if ($kind === 'sessions') {
+                    $this->assertSame($expectedNames, $names);
+                    $this->assertEquals(10, $total[5]);
+                    $this->assertEquals(24, $total[8]);
+                } else {
+                    $this->assertEquals(4, $total[3]);
+                    $this->assertEquals(10, $total[4]);
+                    $this->assertEquals(24, $total[5]);
+                }
+            } finally {
+                $reader->close();
+                unlink($path);
+            }
+        }
+    }
+
     public function test_api_invoice_download_returns_pdf(): void
     {
         $user = $this->createAppUser(['email' => 'driver.pdf@example.test']);
@@ -123,7 +202,7 @@ class ReportsAndInvoicePdfTest extends TestCase
             $attachments = $built->rawAttachments ?? [];
             $html = $built->render();
 
-            return $built->subject === 'Confirmare suplinire cont - V CHARGE'
+            return $built->subject === 'Confirmare suplinire cont - V Charge'
                 && $mail->details['amount'] === '100.00 MDL'
                 && $mail->details['balance'] === '150.00 MDL'
                 && $mail->details['name'] === 'Ion Popescu'

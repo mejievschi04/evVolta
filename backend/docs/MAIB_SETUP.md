@@ -98,3 +98,21 @@ Returnările din backoffice pe topup `payment_provider=maib` folosesc `paymentId
 (`payment_intent_id`) și apelează `POST /v2/payments/{payId}/refund`.
 `payment_session_id` păstrează `checkoutId`. Pentru topup-uri vechi unde `paymentId`
 a fost salvat greșit în `payment_session_id`, returul face fallback pe acel id.
+
+
+## Metoda de plata in raportul alimentarilor
+
+Raportul afiseaza `Card` sau `MIA` folosind metoda efectiva returnata de MAIB
+(`payment.paymentMethod` in [detaliile checkout-ului](https://docs.maibmerchants.md/checkout/api-reference/endpoints/get-checkout-details)).
+Inainte de export, metodele lipsa pentru alimentarile MAIB platite se recupereaza
+prin GET si se salveaza, fara a modifica soldul, suma sau data platii.
+Aceeasi recuperare ruleaza automat in fiecare ora la minutul 40, in loturi de 100.
+Pentru completarea manuala a datelor istorice:
+
+```bash
+php artisan wallet:backfill-payment-methods --limit=500
+```
+
+Dupa deploy, regenereaza raportul Excel. Un fisier deja descarcat nu se modifica.
+Daca MAIB nu raspunde sau nu furnizeaza metoda, plata ramane in raport cu metoda
+nespecificata pana la o verificare reusita; totalurile includ in continuare plata.

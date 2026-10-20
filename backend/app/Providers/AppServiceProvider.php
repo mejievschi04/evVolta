@@ -56,14 +56,14 @@ class AppServiceProvider extends ServiceProvider
             $minutes = (int) config('auth.passwords.users.expire', 60);
 
             return (new MailMessage)
-                ->subject('Resetare parola - V CHARGE')
+                ->subject('Resetare parola - V Charge')
                 ->greeting('Buna'.($user->name ? ', '.$user->name : '').'.')
-                ->line('Am primit o cerere de resetare a parolei pentru contul tau V CHARGE.')
+                ->line('Am primit o cerere de resetare a parolei pentru contul tau V Charge.')
                 // Served under /api: the only prefix every deploy's nginx routes to PHP.
                 ->action('Seteaza o parola noua', url('/api/password/reset/'.$token).'?email='.urlencode($user->email))
                 ->line("Linkul este valabil {$minutes} de minute.")
                 ->line('Daca nu ai cerut resetarea, ignora acest email. Parola ta ramane neschimbata.')
-                ->salutation('Echipa V CHARGE');
+                ->salutation('Echipa V Charge');
         });
     }
 

@@ -31,7 +31,7 @@ class LegalAcceptanceTest extends TestCase
         $this->get('/legal/terms')
             ->assertOk()
             ->assertSee('Termeni si conditii', false)
-            ->assertSee('V CHARGE', false)
+            ->assertSee('V Charge', false)
             ->assertSee('Volta SRL', false)
             ->assertSee('IDNO: 1002600000000', false)
             ->assertSee('str. Exemplu 1, Chisinau', false)
@@ -41,7 +41,7 @@ class LegalAcceptanceTest extends TestCase
         $this->get('/legal/privacy')
             ->assertOk()
             ->assertSee('Politica de confidentialitate', false)
-            ->assertSee('V CHARGE', false)
+            ->assertSee('V Charge', false)
             ->assertSee('Volta SRL', false)
             ->assertHeader('Content-Security-Policy');
 
@@ -49,14 +49,14 @@ class LegalAcceptanceTest extends TestCase
             ->assertOk()
             ->assertSee('Termeni si conditii', false)
             ->assertSee('Sold, plati, prestarea serviciului si retururi', false)
-            ->assertSee('V CHARGE', false)
+            ->assertSee('V Charge', false)
             ->assertSee('Volta SRL', false)
             ->assertHeader('Content-Security-Policy');
 
         $this->get('/api/legal/privacy?app=1')
             ->assertOk()
             ->assertSee('Politica de confidentialitate', false)
-            ->assertSee('V CHARGE', false)
+            ->assertSee('V Charge', false)
             ->assertSee('Volta SRL', false)
             ->assertHeader('Content-Security-Policy');
     }

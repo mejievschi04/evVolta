@@ -32,7 +32,7 @@ class EnsureSupportedAppVersion
         $platform = self::platform($request);
 
         return response()->json([
-            'message' => 'Este disponibila o versiune noua V CHARGE. Actualizeaza aplicatia pentru a continua.',
+            'message' => 'Este disponibila o versiune noua V Charge. Actualizeaza aplicatia pentru a continua.',
             'code' => 'update_required',
             'min_version' => $minVersion,
             'store_url' => $platform ? config('mobile.store_urls.'.$platform) : null,

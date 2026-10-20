@@ -65,6 +65,14 @@ class ChargingResumeService
             throw new RuntimeException('Conectorul este deja folosit de alt utilizator.', 422);
         }
 
+        $previous = ChargingSession::query()->where('station_id', $station->id)
+            ->where('user_id', $user->id)
+            ->when($sessionId, fn ($query) => $query->whereKey($sessionId))
+            ->where('ocpp_connector_id', $resolvedConnectorId)->latest('id')->first();
+        if ($previous?->stoppedAfterEvPause()) {
+            throw new RuntimeException('Sesiunea a fost oprita automat dupa pauza masinii. Asteapta finalizarea opririi, apoi porneste o sesiune noua.', 422);
+        }
+
         $status = $station->connectorOcppStatus($resolvedConnectorId);
         if (! in_array($status, self::RESUMABLE_STATUSES, true)) {
             throw new RuntimeException(

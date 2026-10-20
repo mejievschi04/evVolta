@@ -114,7 +114,7 @@ class InvoiceFiscalDocumentTest extends TestCase
         config([
             'invoice.vat_rate' => 20,
             'invoice.vat_included' => true,
-            'invoice.seller.name' => 'V CHARGE SRL',
+            'invoice.seller.name' => 'V Charge SRL',
             'invoice.seller.address' => 'str. Exemplu 1, Chisinau',
             'invoice.seller.idno' => '1002600000000',
             'invoice.seller.vat_code' => '0200000',
@@ -150,7 +150,7 @@ class InvoiceFiscalDocumentTest extends TestCase
             'amount_vat' => 20,
             'buyer_name' => 'Ion Popescu',
             'buyer_email' => 'ion@exemplu.com',
-            'seller_name' => 'V CHARGE SRL',
+            'seller_name' => 'V Charge SRL',
             'seller_idno' => '1002600000000',
             'seller_vat_code' => '0200000',
             'status' => 'paid',
@@ -176,7 +176,7 @@ class InvoiceFiscalDocumentTest extends TestCase
     public function test_download_endpoint_returns_fiscal_pdf(): void
     {
         config([
-            'invoice.seller.name' => 'V CHARGE SRL',
+            'invoice.seller.name' => 'V Charge SRL',
             'invoice.seller.idno' => '1002600000000',
         ]);
 

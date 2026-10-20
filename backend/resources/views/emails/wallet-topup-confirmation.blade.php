@@ -2,13 +2,13 @@
 <html lang="ro">
 <head>
     <meta charset="utf-8">
-    <title>Confirmare suplinire cont V CHARGE</title>
+    <title>Confirmare suplinire cont V Charge</title>
 </head>
 <body style="margin:0;padding:24px;background:#f4f5f7;color:#111827;font-family:Arial,sans-serif;line-height:1.5">
     <main style="max-width:620px;margin:0 auto;padding:28px;background:#ffffff;border:1px solid #e5e7eb">
         <h1 style="margin:0 0 18px;font-size:24px">Confirmare suplinire cont</h1>
         <p>Bună, {{ $details['name'] ?: 'client' }}.</p>
-        <p>Soldul contului tău V CHARGE a fost suplinit.</p>
+        <p>Soldul contului tău V Charge a fost suplinit.</p>
 
         <table role="presentation" style="width:100%;border-collapse:collapse;margin:22px 0">
             <tr><td style="padding:9px 0;border-bottom:1px solid #e5e7eb;color:#6b7280">Sumă</td><td style="padding:9px 0;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:bold">{{ $details['amount'] }}</td></tr>

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex">
-    <title>Resetare parola V CHARGE</title>
+    <title>Resetare parola V Charge</title>
     <style>
         body { margin: 0; padding: 24px 16px; background: #f4f5f7; color: #111827; font-family: Arial, sans-serif; line-height: 1.5; }
         main { max-width: 420px; margin: 0 auto; padding: 28px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; }
@@ -20,10 +20,10 @@
 <main>
     @if (! empty($done))
         <h1>Parola a fost schimbata</h1>
-        <p>Te poti autentifica acum in aplicatia V CHARGE cu parola noua.</p>
+        <p>Te poti autentifica acum in aplicatia V Charge cu parola noua.</p>
     @elseif (! empty($invalid))
         <h1>Link invalid sau expirat</h1>
-        <p>Cere un link nou din aplicatia V CHARGE: ecranul de autentificare, „Ai uitat parola?”.</p>
+        <p>Cere un link nou din aplicatia V Charge: ecranul de autentificare, „Ai uitat parola?”.</p>
     @else
         <h1>Seteaza o parola noua</h1>
         @if (! empty($error))

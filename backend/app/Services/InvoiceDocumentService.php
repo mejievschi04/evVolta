@@ -168,7 +168,7 @@ HTML;
         $cfg = config('invoice.seller', []);
 
         return [
-            'name' => (string) ($invoice->seller_name ?: ($cfg['name'] ?? 'V CHARGE')),
+            'name' => (string) ($invoice->seller_name ?: ($cfg['name'] ?? 'V Charge')),
             'address' => (string) ($cfg['address'] ?? ''),
             'idno' => (string) ($invoice->seller_idno ?: ($cfg['idno'] ?? '')),
             'vat_code' => (string) ($invoice->seller_vat_code ?: ($cfg['vat_code'] ?? '')),
