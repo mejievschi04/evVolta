@@ -141,4 +141,37 @@ class BackofficeSessionsTest extends TestCase
         // Open hold must be settled/released (not abandoned with the deleted session).
         $this->assertGreaterThanOrEqual(80.0, (float) $user->fresh()->wallet_balance);
     }
+
+    public function test_backoffice_sessions_list_shows_zero_cost_for_service_accounts(): void
+    {
+        \App\Models\Tariff::query()->create(['price_per_kwh' => 0.50, 'personal_price_per_kwh' => 0.20]);
+
+        $admin = $this->createAdminUser(['email' => 'admin-sessions@example.test']);
+        $user = $this->createServiceUser(['email' => 'service-sessions@example.test']);
+        $station = Station::query()->create([
+            'name' => 'VOLTA Service',
+            'location' => 'Chisinau',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'station:bo-service',
+        ]);
+        ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'kwh_consumed' => 10,
+            'price_per_kwh' => 0.50,
+        ]);
+
+        $this->withSession([
+            'backoffice_user_id' => $admin->id,
+            'backoffice_user_name' => $admin->name,
+        ])
+            ->getJson('/backoffice/sessions')
+            ->assertOk()
+            ->assertJsonPath('data.0.user.account_type', User::ACCOUNT_TYPE_SERVICE)
+            ->assertJsonPath('data.0.billing.free_charging', true)
+            ->assertJsonPath('data.0.billing.amount_spent', 0)
+            ->assertJsonPath('data.0.billing.price_per_kwh', 0);
+    }
 }

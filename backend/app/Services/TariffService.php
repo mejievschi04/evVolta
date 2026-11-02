@@ -47,9 +47,11 @@ class TariffService
      */
     public function pricePerKwhForSession(ChargingSession $session): float
     {
-        $session->loadMissing('user');
+        if ($session->isFreeCharging()) {
+            return $this->servicePricePerKwh();
+        }
 
-        if ($session->price_per_kwh !== null && ! $session->user?->isFreeCharging()) {
+        if ($session->price_per_kwh !== null) {
             return Tariff::normalizePrice($session->price_per_kwh);
         }
 

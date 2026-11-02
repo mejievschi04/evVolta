@@ -15,6 +15,17 @@ class ChargingSession extends Model
         return $this->stop_source === self::STOP_SOURCE_SUSPENDED_EV;
     }
 
+    public function isFreeCharging(): bool
+    {
+        if ($this->tariff_type === User::ACCOUNT_TYPE_SERVICE) {
+            return true;
+        }
+
+        $this->loadMissing('user');
+
+        return (bool) $this->user?->isFreeCharging();
+    }
+
     protected $fillable = [
         'user_id',
         'station_id',

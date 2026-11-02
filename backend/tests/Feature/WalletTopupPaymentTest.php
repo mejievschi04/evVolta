@@ -55,7 +55,11 @@ class WalletTopupPaymentTest extends TestCase
         $this->assertSame(150.0, (float) $user->fresh()->wallet_balance);
         $this->assertSame('pay-wallet-1', $topup->fresh()->payment_intent_id);
         $this->assertSame('MiaQr', $topup->fresh()->payment_method);
-        $this->assertDatabaseMissing('invoices', ['wallet_topup_id' => $topup->id]);
+        $this->assertDatabaseHas('invoices', [
+            'wallet_topup_id' => $topup->id,
+            'invoice_type' => 'wallet_topup',
+            'total_amount' => 100,
+        ]);
     }
 
     public function test_verify_wallet_topup_is_idempotent_when_already_paid(): void

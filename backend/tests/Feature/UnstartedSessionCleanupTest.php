@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\ChargingSession;
+use App\Models\Invoice;
 use App\Models\OcppCommand;
 use App\Models\Station;
+use App\Models\Tariff;
 use App\Services\ChargingStopService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -98,6 +100,93 @@ class UnstartedSessionCleanupTest extends TestCase
         $this->assertSame(1, $closed);
         $this->assertNotNull($session->fresh()->end_time);
         $this->assertSame('NeverStarted', $session->fresh()->ocpp_stop_reason);
+    }
+
+    public function test_accepted_start_without_transaction_does_not_bill_stale_connector_meter(): void
+    {
+        config(['services.ocpp.accepted_start_without_transaction_minutes' => 3]);
+        Tariff::query()->create(['price_per_kwh' => 0.43, 'personal_price_per_kwh' => 0.15]);
+
+        $user = $this->createAppUser(['wallet_balance' => 50]);
+        $station = $this->station('Preparing');
+        $station->update([
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => [
+                        'connectorId' => 1,
+                        'status' => 'Preparing',
+                        'live_meter' => [
+                            'energy_kwh' => 0.12,
+                            'sampled_at' => now()->toIso8601String(),
+                        ],
+                    ],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+                'connector' => [
+                    'connectorId' => 1,
+                    'live_meter' => [
+                        'energy_kwh' => 8.813,
+                        'sampled_at' => now()->subDay()->toIso8601String(),
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertEquals(0.12, $station->fresh()->connectorLiveMeterEnergy(1));
+
+        $session = $this->openSession($user->id, $station, minutesAgo: 5, budget: 100);
+        $session->update(['price_per_kwh' => 0.43]);
+        $this->command($station, $session, OcppCommand::STATUS_ACCEPTED, minutesAgo: 4);
+        OcppCommand::query()
+            ->where('charging_session_id', $session->id)
+            ->update(['acknowledged_at' => now()->subMinutes(4)]);
+
+        $closed = app(ChargingStopService::class)->closeUnstartedSessions($station->fresh());
+        $session = $session->fresh();
+
+        $this->assertSame(1, $closed);
+        $this->assertNotNull($session->end_time);
+        $this->assertSame('NeverStarted', $session->ocpp_stop_reason);
+        $this->assertSame(0.0, (float) $session->kwh_consumed);
+        $this->assertNull($session->meter_stop_kwh);
+        $this->assertSame(0, Invoice::query()->where('source_session_id', $session->id)->count());
+    }
+
+    public function test_finalize_stop_ignores_meter_sampled_before_session_start(): void
+    {
+        $user = $this->createAppUser();
+        $station = $this->station('Charging');
+        $station->update([
+            'ocpp_configuration' => [
+                'connectors' => [
+                    1 => [
+                        'connectorId' => 1,
+                        'status' => 'Charging',
+                        'live_meter' => [
+                            'energy_kwh' => 0.4,
+                            'sampled_at' => now()->subDay()->toIso8601String(),
+                        ],
+                    ],
+                    2 => ['connectorId' => 2, 'status' => 'Available'],
+                ],
+            ],
+        ]);
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'ocpp_connector_id' => 1,
+            'ocpp_transaction_id' => '88',
+            'start_source' => 'app',
+            'start_time' => now()->subMinutes(20),
+            'kwh_consumed' => 0,
+            'meter_start_kwh' => null,
+            'live_metrics' => [],
+        ]);
+
+        app(ChargingStopService::class)->finalizeStop($session, $station->fresh(), 'app', now());
+
+        $this->assertSame(0.0, (float) $session->fresh()->kwh_consumed);
+        $this->assertNull($session->fresh()->meter_stop_kwh);
     }
 
     public function test_simulator_mode_never_closes_sessions(): void

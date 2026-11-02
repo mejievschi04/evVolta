@@ -239,6 +239,8 @@ class SessionEnergyServiceTest extends TestCase
         $this->assertSame(0.0, $result['kwh_consumed']);
         $this->assertTrue($service->looksLikeLifetimeRegisterFlash($session, 34.941));
         $this->assertFalse($service->looksLikeLifetimeRegisterFlash($session, 0.068));
+        $this->assertTrue($service->looksLikeLifetimeRegisterFlash($session, 8.813, now()->subSeconds(4)));
+        $this->assertFalse($service->looksLikeLifetimeRegisterFlash($session, 8.813, now()->addMinutes(20)));
 
         $session->update([
             'kwh_consumed' => 34.941,

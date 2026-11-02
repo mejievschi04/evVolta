@@ -126,7 +126,7 @@ class BillingServiceTest extends TestCase
         $this->assertSame('session', $invoice->invoice_type);
     }
 
-    public function test_credit_topup_does_not_issue_wallet_invoice(): void
+    public function test_credit_topup_issues_wallet_invoice(): void
     {
         config(['billing.prepaid_wallet_enabled' => true]);
 
@@ -144,6 +144,37 @@ class BillingServiceTest extends TestCase
         app(WalletService::class)->creditTopup($topup->fresh(), 'cs_test_topup_invoice', 'pi_test_topup_invoice');
 
         $this->assertSame(250.0, (float) $user->fresh()->wallet_balance);
-        $this->assertDatabaseMissing('invoices', ['wallet_topup_id' => $topup->id]);
+        $this->assertDatabaseHas('invoices', [
+            'wallet_topup_id' => $topup->id,
+            'invoice_type' => 'wallet_topup',
+            'total_amount' => 250,
+            'status' => 'paid',
+        ]);
+    }
+
+    public function test_backfill_issues_invoices_for_paid_topups_without_documents(): void
+    {
+        config(['billing.prepaid_wallet_enabled' => true]);
+
+        $user = $this->createAppUser(['wallet_balance' => 100]);
+        $topup = WalletTopup::query()->create([
+            'user_id' => $user->id,
+            'amount' => 100,
+            'currency' => 'MDL',
+            'status' => 'paid',
+            'payment_provider' => 'maib',
+            'paid_at' => now(),
+        ]);
+
+        $this->artisan('invoices:backfill-wallet-topups')->assertSuccessful();
+
+        $this->assertDatabaseHas('invoices', [
+            'wallet_topup_id' => $topup->id,
+            'invoice_type' => 'wallet_topup',
+            'total_amount' => 100,
+        ]);
+
+        $this->artisan('invoices:backfill-wallet-topups')->assertSuccessful();
+        $this->assertSame(1, Invoice::query()->where('wallet_topup_id', $topup->id)->count());
     }
 }

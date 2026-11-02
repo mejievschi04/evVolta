@@ -98,4 +98,37 @@ class SessionBillingTest extends TestCase
             'total_amount' => 2,
         ]);
     }
+
+    public function test_service_sessions_report_zero_cost_even_without_account_type_on_user_relation(): void
+    {
+        Tariff::query()->create(['price_per_kwh' => 0.50, 'personal_price_per_kwh' => 0.20]);
+
+        $user = $this->createServiceUser(['email' => 'service.sessions@example.test']);
+        $station = Station::query()->create([
+            'name' => 'VOLTA Service',
+            'location' => 'Chisinau',
+            'status' => Station::STATUS_AVAILABLE,
+            'qr_code' => 'station:service-cost',
+        ]);
+        $session = ChargingSession::query()->create([
+            'user_id' => $user->id,
+            'station_id' => $station->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'kwh_consumed' => 8,
+            'price_per_kwh' => 0.50,
+        ]);
+        $session->forceFill(['tariff_type' => \App\Models\User::ACCOUNT_TYPE_SERVICE])->save();
+
+        $partial = ChargingSession::query()
+            ->with(['user:id,name,email', 'invoice'])
+            ->findOrFail($session->id);
+
+        $payload = app(\App\Services\SessionPresentationService::class)->presentForUser($partial);
+
+        $this->assertTrue($payload['billing']['free_charging']);
+        $this->assertSame(0.0, $payload['billing']['amount_spent']);
+        $this->assertSame(0.0, $payload['billing']['price_per_kwh']);
+        $this->assertSame(0.0, $payload['telemetry']['price_per_kwh']);
+    }
 }

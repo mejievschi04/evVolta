@@ -381,7 +381,9 @@ export default function ChargingScreen() {
     : (sessionTelemetry.soc_percent ?? liveStatus?.soc_percent ?? null);
 
   const kwhConsumed = Number(sessionTelemetry.kwh_consumed ?? displaySession?.kwh_consumed ?? 0);
-  const estimatedCost = (budgetSpent > 0 ? budgetSpent : kwhConsumed * pricePerKwh).toFixed(2);
+  const estimatedCost = freeCharging
+    ? "Gratuit"
+    : (budgetSpent > 0 ? budgetSpent : kwhConsumed * pricePerKwh).toFixed(2);
   const kwhParts = kwhConsumed.toFixed(2).split(".");
 
   const handleQrCodeScanned = useCallback(
@@ -703,6 +705,7 @@ export default function ChargingScreen() {
             durationLabel={durationLabel}
             kwhParts={kwhParts}
             estimatedCost={estimatedCost}
+            freeCharging={freeCharging}
             pricePerKwh={pricePerKwh}
             priceChipLabel={priceChipLabel}
             currency={currency}
@@ -836,6 +839,7 @@ function SessionDashboard({
   durationLabel,
   kwhParts,
   estimatedCost,
+  freeCharging,
   pricePerKwh,
   priceChipLabel,
   currency,
@@ -931,7 +935,7 @@ function SessionDashboard({
           </View>
 
           <View style={styles.bentoRow}>
-            <BentoCell icon="cash-multiple" label="Cost estimat" value={estimatedCost} suffix={currency} accent />
+            <BentoCell icon="cash-multiple" label="Cost estimat" value={estimatedCost} suffix={freeCharging ? undefined : currency} accent />
             <BentoCell icon="clock-outline" label="Durata" value={durationLabel} />
           </View>
           <View style={styles.bentoRow}>

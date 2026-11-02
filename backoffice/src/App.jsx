@@ -1677,6 +1677,11 @@ function SessionOpsRow({ session, onStop, onDelete, onDownloadInvoice, onDebug }
   const powerKw = sessionPowerKw(session);
   const stopInfo = formatSessionStopInfo(session);
   const spent = session.billing?.amount_spent;
+  const freeCharging = Boolean(
+    session.billing?.free_charging
+    || session.user?.account_type === 'service'
+    || session.tariff_type === 'service'
+  );
   const userLabel = session.user?.name ?? session.user?.email ?? 'Utilizator necunoscut';
   const stationLabel = [
     session.station?.name ?? 'Statie necunoscuta',
@@ -1714,7 +1719,9 @@ function SessionOpsRow({ session, onStop, onDelete, onDownloadInvoice, onDebug }
       </div>
 
       <div className="session-ops-cost">
-        {!isActive && spent != null ? (
+        {freeCharging ? (
+          <strong>Gratuit</strong>
+        ) : !isActive && spent != null ? (
           <strong>{formatMoney(spent)}</strong>
         ) : (
           <span className="session-ops-muted">—</span>

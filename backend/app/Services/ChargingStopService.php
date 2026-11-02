@@ -9,6 +9,7 @@ use App\Models\Station;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class ChargingStopService
@@ -181,9 +182,16 @@ class ChargingStopService
 
         $liveMetrics = is_array($session->live_metrics) ? $session->live_metrics : [];
         $connectorId = (int) ($session->ocpp_connector_id ?: 1);
+        $meter = $station->connectorLiveMeter($connectorId);
+        $stationMeter = isset($meter['energy_kwh'], $meter['sampled_at'])
+            && $session->start_time
+            && Carbon::parse($meter['sampled_at'])->greaterThanOrEqualTo($session->start_time)
+                ? (float) $meter['energy_kwh']
+                : null;
+
         $meterStop = $meterStopKwh
             ?? ($liveMetrics['energy_kwh'] ?? null)
-            ?? $station->connectorLiveMeterEnergy($connectorId);
+            ?? $stationMeter;
         $meterStart = SessionEnergyService::effectiveMeterStart($session->meter_start_kwh);
 
         if ($meterStop !== null && SessionEnergyService::usesSessionRelativeRegister($session)) {
@@ -199,6 +207,20 @@ class ChargingStopService
             ) {
                 $kwhConsumed = $this->resolveKwhConsumed($session, $station);
             }
+        }
+
+        // Statia n-a confirmat niciodata tranzactia: nu exista energie de facturat.
+        if ($ocppStopReason === 'NeverStarted') {
+            $meterStop = null;
+            $kwhConsumed = 0.0;
+        }
+
+        if ($kwhConsumed > 0 && app(SessionEnergyService::class)->looksLikeLifetimeRegisterFlash($session, $kwhConsumed, $endTime)) {
+            Log::warning('billing.implausible_kwh', [
+                'session_id' => $session->id,
+                'kwh' => $kwhConsumed,
+            ]);
+            $kwhConsumed = 0.0;
         }
 
         $update = [

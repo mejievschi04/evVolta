@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\SendInvoiceEmailJob;
 use App\Models\ChargingSession;
 use App\Models\Invoice;
+use App\Models\WalletTopup;
 use App\Support\LocalTime;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -84,6 +85,70 @@ class InvoiceIssuanceService
             'paid_at' => $end,
             'issued_at' => $end,
             'payment_provider' => 'wallet',
+        ], $seller);
+
+        $invoice = $this->createWithUniqueInvoiceNumber($attributes);
+        $this->queueInvoiceEmail($invoice);
+
+        return $invoice;
+    }
+
+    public function createWalletTopupInvoice(WalletTopup $topup): ?Invoice
+    {
+        $topup->loadMissing('user');
+
+        if ($topup->status !== 'paid' || ! $topup->user?->usesCardPayment()) {
+            return null;
+        }
+
+        $existing = Invoice::query()
+            ->where('wallet_topup_id', $topup->id)
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        $amount = round(max(0, (float) $topup->amount), 2);
+        if ($amount <= 0) {
+            return null;
+        }
+
+        $paidAt = $topup->paid_at ? Carbon::parse($topup->paid_at) : now();
+        $localPaid = LocalTime::of($paidAt);
+        $fiscal = $this->fiscalCalculator->breakdown($amount, 1.0);
+        $seller = $this->fiscalCalculator->sellerSnapshot();
+
+        $attributes = array_merge([
+            'user_id' => $topup->user_id,
+            'wallet_topup_id' => $topup->id,
+            'invoice_type' => 'wallet_topup',
+            'series' => null,
+            'month' => $localPaid->format('Y-m'),
+            'currency' => $topup->currency ?: ($topup->user->currency ?? 'MDL'),
+            'period_start' => $localPaid->toDateString(),
+            'period_end' => $localPaid->toDateString(),
+            'total_kwh' => 0,
+            'total_amount' => $fiscal['amount_gross'],
+            'sessions_count' => 0,
+            'line_description' => sprintf(
+                'Alimentare sold preplatit pentru servicii de incarcare EV · %.2f %s',
+                $amount,
+                $topup->currency ?: 'MDL'
+            ),
+            'unit' => 'buc',
+            'quantity' => 1.0,
+            'unit_price' => $fiscal['unit_price'],
+            'vat_rate' => $fiscal['vat_rate'],
+            'amount_net' => $fiscal['amount_net'],
+            'amount_vat' => $fiscal['amount_vat'],
+            'buyer_name' => $topup->user->name,
+            'buyer_email' => $topup->user->email,
+            'status' => 'paid',
+            'paid_at' => $paidAt,
+            'issued_at' => $paidAt,
+            'payment_provider' => $topup->payment_provider ?: 'maib',
+            'payment_session_id' => $topup->payment_session_id,
         ], $seller);
 
         $invoice = $this->createWithUniqueInvoiceNumber($attributes);

@@ -30,11 +30,16 @@ class SessionPresentationService
             $session->load('invoice');
         }
 
-        $pricePerKwh ??= $this->tariffService->pricePerKwhForSession($session);
+        $freeCharging = $session->isFreeCharging();
+        $pricePerKwh = $freeCharging
+            ? 0.0
+            : ($pricePerKwh ?? $this->tariffService->pricePerKwhForSession($session));
         $invoice = $session->invoice;
         $currency = $invoice?->currency ?: $session->user?->currency ?: 'MDL';
         $amountSpent = $session->end_time
-            ? ($invoice?->total_amount ?? $this->billingService->estimatedSessionCharge($session, $pricePerKwh))
+            ? ($freeCharging
+                ? 0.0
+                : ($invoice?->total_amount ?? $this->billingService->estimatedSessionCharge($session, $pricePerKwh)))
             : null;
 
         if ($session->station) {
@@ -50,6 +55,7 @@ class SessionPresentationService
             'amount_spent' => $amountSpent !== null ? round((float) $amountSpent, 2) : null,
             'currency' => $currency,
             'price_per_kwh' => $pricePerKwh,
+            'free_charging' => $freeCharging,
         ];
         $payload['invoice'] = $this->invoiceSummary($invoice);
 
@@ -73,9 +79,11 @@ class SessionPresentationService
             $userKey = (int) $session->user_id;
             $prices[$userKey] ??= $this->tariffService->pricePerKwhForUser($session->user);
             // The tariff captured at start wins; the cached current tariff only covers older sessions.
-            $price = $session->price_per_kwh !== null && ! $session->user?->isFreeCharging()
-                ? $this->tariffService->pricePerKwhForSession($session)
-                : $prices[$userKey];
+            $price = $session->isFreeCharging()
+                ? 0.0
+                : ($session->price_per_kwh !== null
+                    ? $this->tariffService->pricePerKwhForSession($session)
+                    : $prices[$userKey]);
 
             $liveStatus = null;
             if ($session->station) {

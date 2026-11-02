@@ -148,14 +148,15 @@ class SessionEnergyService
     /**
      * Absolute / lifetime Wh from the previous charge, before the charger resets the session counter.
      */
-    public function looksLikeLifetimeRegisterFlash(ChargingSession $session, float $meterKwh): bool
+    public function looksLikeLifetimeRegisterFlash(ChargingSession $session, float $meterKwh, ?Carbon $at = null): bool
     {
         if ($meterKwh <= 0.35) {
             return false;
         }
 
         $start = $session->start_time ?? now();
-        $ageSeconds = max(0, now()->getTimestamp() - $start->getTimestamp());
+        $at ??= now();
+        $ageSeconds = max(0, $at->getTimestamp() - $start->getTimestamp());
         // Allow continuous ~50 kW from start, plus a small sampling buffer.
         $maxPlausible = max(0.35, (50.0 * $ageSeconds / 3600) + 0.2);
 

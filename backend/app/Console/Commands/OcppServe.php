@@ -1196,6 +1196,7 @@ class OcppServe extends Command
         $releaseConnectorId = (int) ($session?->ocpp_connector_id ?: $connectorId);
         if ($releaseConnectorId > 0) {
             $station->markConnectorAvailable($releaseConnectorId);
+            $this->clearConnectorLiveMeterEnergy($station->fresh(), $releaseConnectorId);
         }
 
         return ['idTagInfo' => ['status' => 'Accepted']];
@@ -2122,22 +2123,7 @@ class OcppServe extends Command
 
     private function clearConnectorLiveMeterEnergy(Station $station, int $connectorId): void
     {
-        $station->updateOcppConfigurationAtomically(function (array $configuration) use ($connectorId): ?array {
-            $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
-            $meter = is_array($connectors[$connectorId]['live_meter'] ?? null)
-                ? $connectors[$connectorId]['live_meter']
-                : null;
-
-            if ($meter === null || ! array_key_exists('energy_kwh', $meter)) {
-                return null;
-            }
-
-            unset($meter['energy_kwh']);
-            $connectors[$connectorId]['live_meter'] = $meter;
-            $configuration['connectors'] = $connectors;
-
-            return ['ocpp_configuration' => $configuration];
-        });
+        $station->clearLiveMeterEnergy($connectorId);
     }
 
     private function activatePendingSessionForConnector(Station $station, int $connectorId): void

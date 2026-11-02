@@ -288,6 +288,10 @@ class WalletService
             $justCredited = true;
         });
 
+        if ($paidTopup) {
+            app(InvoiceIssuanceService::class)->createWalletTopupInvoice($paidTopup);
+        }
+
         if (! $justCredited || ! $paidTopup?->user?->email) {
             return;
         }

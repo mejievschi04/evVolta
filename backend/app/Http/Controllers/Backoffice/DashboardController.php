@@ -421,7 +421,7 @@ class DashboardController extends Controller
         $activeSessions = ChargingSession::query()
             ->where('station_id', $station->id)
             ->whereNull('end_time')
-            ->with(['user:id,name,email'])
+            ->with(['user:id,name,email,account_type'])
             ->latest('id')
             ->get();
 
@@ -1054,7 +1054,7 @@ class DashboardController extends Controller
     public function sessions(Request $request): JsonResponse
     {
         $sessions = ChargingSession::query()
-            ->with(['user:id,name,email', 'station', 'invoice'])
+            ->with(['user:id,name,email,account_type,currency', 'station', 'invoice'])
             ->latest('start_time')
             ->limit(100)
             ->get()

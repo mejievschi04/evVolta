@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "backend/app/Console/Commands/OcppServe.php": {
-    "mtime": 1792483087.703299,
-    "seen": 1792483145.3390038,
-    "ast_hash": "1e655fcdc3f118eabe79a80c53f1ee6d",
+    "mtime": 1793601778.486466,
+    "seen": 1793601856.70749,
+    "ast_hash": "04511e557d8f138952247dabcf455828",
     "semantic_hash": ""
   },
   "backend/app/Console/Commands/PrivacyPurgeExpiredData.php": {
@@ -108,9 +108,9 @@
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Backoffice/DashboardController.php": {
-    "mtime": 1792482681.1472182,
-    "seen": 1792482774.104971,
-    "ast_hash": "539c8100af7925a107d7df3b045d01fd",
+    "mtime": 1793601994.8946018,
+    "seen": 1793602041.7973828,
+    "ast_hash": "f04c63e778ff3eba03923ef1b8b4e904",
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Backoffice/ReportController.php": {
@@ -186,9 +186,9 @@
     "semantic_hash": ""
   },
   "backend/app/Models/ChargingSession.php": {
-    "mtime": 1792484878.917067,
-    "seen": 1792484911.4385521,
-    "ast_hash": "c05f7390453cc67cb84664bedc6659a4",
+    "mtime": 1793601988.532543,
+    "seen": 1793602041.7973928,
+    "ast_hash": "ad2372d5080e2827aefbf4336eff61db",
     "semantic_hash": ""
   },
   "backend/app/Models/Invoice.php": {
@@ -210,9 +210,9 @@
     "semantic_hash": ""
   },
   "backend/app/Models/Station.php": {
-    "mtime": 1792483098.4646337,
-    "seen": 1792483145.339027,
-    "ast_hash": "e483a062c1479ad78fbbe33ec4ba8961",
+    "mtime": 1793601775.561693,
+    "seen": 1793601856.707517,
+    "ast_hash": "4ce74bbdd9838d225a508ea157050a18",
     "semantic_hash": ""
   },
   "backend/app/Models/StationFavorite.php": {
@@ -240,9 +240,9 @@
     "semantic_hash": ""
   },
   "backend/app/Models/WalletTopup.php": {
-    "mtime": 1792482680.7576296,
-    "seen": 1792482774.104984,
-    "ast_hash": "78c836d1af6509f090f9d75f813f52a4",
+    "mtime": 1793601796.7869058,
+    "seen": 1793601856.707521,
+    "ast_hash": "af4c6aeab1afab586bf72afc84701b2e",
     "semantic_hash": ""
   },
   "backend/app/Providers/AppServiceProvider.php": {
@@ -258,9 +258,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/BillingService.php": {
-    "mtime": 1792482680.7580101,
-    "seen": 1792482774.104985,
-    "ast_hash": "4120247b47a318585a7e0b879212e5d5",
+    "mtime": 1793601991.114903,
+    "seen": 1793602041.7974,
+    "ast_hash": "92e88e71920bf35212e720841e2e72a7",
     "semantic_hash": ""
   },
   "backend/app/Services/ChargingResumeService.php": {
@@ -270,9 +270,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/ChargingStopService.php": {
-    "mtime": 1792483082.5269182,
-    "seen": 1792483145.3390322,
-    "ast_hash": "d69edb7f39e16cd71593a605cab397ce",
+    "mtime": 1793601754.46622,
+    "seen": 1793601856.707524,
+    "ast_hash": "29103e2e58d56204aef4c89c50fa757f",
     "semantic_hash": ""
   },
   "backend/app/Services/InvoiceDocumentService.php": {
@@ -288,9 +288,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/InvoiceIssuanceService.php": {
-    "mtime": 1792482680.7590945,
-    "seen": 1792482774.104987,
-    "ast_hash": "679181ea11a4de484ebe05eef23d5b41",
+    "mtime": 1793601784.8754869,
+    "seen": 1793601856.707526,
+    "ast_hash": "b165c376db0dba48d13d39c48eb6ebe6",
     "semantic_hash": ""
   },
   "backend/app/Services/InvoiceMailService.php": {
@@ -342,21 +342,21 @@
     "semantic_hash": ""
   },
   "backend/app/Services/ReportDocumentService.php": {
-    "mtime": 1792484876.9871726,
-    "seen": 1792484911.438567,
+    "mtime": 1792582540.5461469,
+    "seen": 1793601856.707531,
     "ast_hash": "3ef2002174be4179300775e489f4085f",
     "semantic_hash": ""
   },
   "backend/app/Services/SessionEnergyService.php": {
-    "mtime": 1786096283.7327213,
-    "seen": 1791198508.329489,
-    "ast_hash": "ca26bac3f3a5e485f4f1adac7b9d8110",
+    "mtime": 1793601756.9207487,
+    "seen": 1793601856.707531,
+    "ast_hash": "b616b695a8db24d79248a8479e63560f",
     "semantic_hash": ""
   },
   "backend/app/Services/SessionPresentationService.php": {
-    "mtime": 1792482680.7597702,
-    "seen": 1792482774.104992,
-    "ast_hash": "60265bf246444dc7c662b7dd4b56af39",
+    "mtime": 1793601999.4833233,
+    "seen": 1793602041.797407,
+    "ast_hash": "c872808226c0f68358d85378851d04e8",
     "semantic_hash": ""
   },
   "backend/app/Services/SocialAuthService.php": {
@@ -366,9 +366,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/TariffService.php": {
-    "mtime": 1792482680.7600303,
-    "seen": 1792482774.104993,
-    "ast_hash": "7194ca9928a370cf06f831307ad0a008",
+    "mtime": 1793601989.88684,
+    "seen": 1793602041.797408,
+    "ast_hash": "d30ddbf1f003e68fc6ee30e6495205d7",
     "semantic_hash": ""
   },
   "backend/app/Services/UsageStatisticsService.php": {
@@ -390,9 +390,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/WalletService.php": {
-    "mtime": 1792482680.7615528,
-    "seen": 1792482774.1049962,
-    "ast_hash": "e50ce3117127c40e13d8ed5480fbf58d",
+    "mtime": 1793601785.85054,
+    "seen": 1793601856.707536,
+    "ast_hash": "b7b35b6b5b04cd9229a9be9c6e61ed07",
     "semantic_hash": ""
   },
   "backend/app/Support/MoneyToWordsRo.php": {
@@ -924,9 +924,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/BackofficeSessionsTest.php": {
-    "mtime": 1790580491.1315913,
-    "seen": 1791198508.3295271,
-    "ast_hash": "debcc3aa42af181e8c8b5311341b55c5",
+    "mtime": 1793602024.825674,
+    "seen": 1793602041.797465,
+    "ast_hash": "3cacde3e379be7a951deee3baa1a743e",
     "semantic_hash": ""
   },
   "backend/tests/Feature/BackofficeSettingsTest.php": {
@@ -966,9 +966,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/BillingServiceTest.php": {
-    "mtime": 1792482680.7695801,
-    "seen": 1792482774.1050508,
-    "ast_hash": "dca1d52bdf5b76aaac0b426319f7b975",
+    "mtime": 1793601824.9230433,
+    "seen": 1793601856.707602,
+    "ast_hash": "ec0d6d23a447462f283df6aaa7109d63",
     "semantic_hash": ""
   },
   "backend/tests/Feature/ChargingAutoStopTest.php": {
@@ -1014,9 +1014,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/ChargingStopGatewayTest.php": {
-    "mtime": 1792482680.7699296,
-    "seen": 1792482774.105054,
-    "ast_hash": "3ed54ae03186f0215d70db9419a5dd9b",
+    "mtime": 1793601823.1674595,
+    "seen": 1793601856.707606,
+    "ast_hash": "0f9b9ab4f0c0e16ee80e9f1e455cc02c",
     "semantic_hash": ""
   },
   "backend/tests/Feature/ChargingStopPreparingTest.php": {
@@ -1200,9 +1200,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/SessionBillingTest.php": {
-    "mtime": 1782202270.8423152,
-    "seen": 1791198508.32955,
-    "ast_hash": "7007865d226d8fda06349fe8d8dc898e",
+    "mtime": 1793602015.2629786,
+    "seen": 1793602041.797492,
+    "ast_hash": "09523924d4ff422db1adde9f275bfa03",
     "semantic_hash": ""
   },
   "backend/tests/Feature/SessionLiveStreamTest.php": {
@@ -1278,9 +1278,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/UserProcessRiskFixesTest.php": {
-    "mtime": 1792482680.7752934,
-    "seen": 1792482774.105083,
-    "ast_hash": "cb94b1938fd6e8043f76f51353f7b422",
+    "mtime": 1793601809.4905934,
+    "seen": 1793601856.707639,
+    "ast_hash": "f80ccc128cb1a8e8a80b2bc774761f10",
     "semantic_hash": ""
   },
   "backend/tests/Feature/UserTariffTest.php": {
@@ -1308,9 +1308,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/WalletTopupPaymentTest.php": {
-    "mtime": 1792482680.775953,
-    "seen": 1792482774.105087,
-    "ast_hash": "17dd01e5406020fe4220b975e62bcf5e",
+    "mtime": 1793601810.298594,
+    "seen": 1793601856.7076428,
+    "ast_hash": "e37e408c6e69f4368e666f2642ec8f21",
     "semantic_hash": ""
   },
   "backend/tests/Feature/WalletTopupsHistoryTest.php": {
@@ -1344,9 +1344,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Unit/SessionEnergyServiceTest.php": {
-    "mtime": 1786096270.4636388,
-    "seen": 1791198508.329559,
-    "ast_hash": "e0d1209c47086a97246ae6114658185f",
+    "mtime": 1793601811.3252566,
+    "seen": 1793601856.707647,
+    "ast_hash": "b266d25ec04bda7ee31d44ae3b7dba1c",
     "semantic_hash": ""
   },
   "backoffice/.eslintrc.cjs": {
@@ -1362,9 +1362,9 @@
     "semantic_hash": ""
   },
   "backoffice/src/App.jsx": {
-    "mtime": 1792482681.1539,
-    "seen": 1792482774.105093,
-    "ast_hash": "a9659a79bda45c3537936d0992e4054b",
+    "mtime": 1793602001.053931,
+    "seen": 1793602041.79751,
+    "ast_hash": "e36b3d090fc8dfe973a1f9f96c6575cb",
     "semantic_hash": ""
   },
   "backoffice/src/global.d.ts": {
@@ -1686,8 +1686,8 @@
     "semantic_hash": ""
   },
   "mobile/app/src/components/ui/KeyboardAwareScroll.js": {
-    "mtime": 1792482680.8038857,
-    "seen": 1792482774.105108,
+    "mtime": 1793601554.8695316,
+    "seen": 1793601856.7076669,
     "ast_hash": "4993d2d436d758c12fd39fc620509539",
     "semantic_hash": ""
   },
@@ -1704,8 +1704,8 @@
     "semantic_hash": ""
   },
   "mobile/app/src/components/ui/Skeleton.js": {
-    "mtime": 1792482680.8046005,
-    "seen": 1792482774.10511,
+    "mtime": 1793601554.8696578,
+    "seen": 1793601856.707668,
     "ast_hash": "5bb2b70f236e36a4caf07b44f6f58c92",
     "semantic_hash": ""
   },
@@ -1716,8 +1716,8 @@
     "semantic_hash": ""
   },
   "mobile/app/src/hooks/useAndroidNavButtons.js": {
-    "mtime": 1792482680.8048403,
-    "seen": 1792482774.10511,
+    "mtime": 1793601554.8696396,
+    "seen": 1793601856.70767,
     "ast_hash": "98efe279a7242635696fe4130de47ff4",
     "semantic_hash": ""
   },
@@ -1740,14 +1740,14 @@
     "semantic_hash": ""
   },
   "mobile/app/src/hooks/useKeyboardScrollToInput.js": {
-    "mtime": 1792482680.8052502,
-    "seen": 1792482774.105112,
+    "mtime": 1793601554.8697124,
+    "seen": 1793601856.707672,
     "ast_hash": "6410af475a106f649d2ab360b7ded7a3",
     "semantic_hash": ""
   },
   "mobile/app/src/hooks/useKeyboardVisible.js": {
-    "mtime": 1792482680.8053308,
-    "seen": 1792482774.105112,
+    "mtime": 1793601554.869538,
+    "seen": 1793601856.707672,
     "ast_hash": "346fde9b7dd35f127971ff01b1551a4d",
     "semantic_hash": ""
   },
@@ -1776,8 +1776,8 @@
     "semantic_hash": ""
   },
   "mobile/app/src/hooks/useTabScreenBottomPadding.js": {
-    "mtime": 1792482680.8061,
-    "seen": 1792482774.105115,
+    "mtime": 1793601554.869545,
+    "seen": 1793601856.707675,
     "ast_hash": "bdd83c7cc71df3829812287cabfa8dbc",
     "semantic_hash": ""
   },
@@ -1794,15 +1794,15 @@
     "semantic_hash": ""
   },
   "mobile/app/src/navigation/navigationRef.js": {
-    "mtime": 1792482680.8064368,
-    "seen": 1792482774.105116,
+    "mtime": 1793601554.8694386,
+    "seen": 1793601856.707677,
     "ast_hash": "530482bf13f198e14b066dcccfc2c706",
     "semantic_hash": ""
   },
   "mobile/app/src/screens/ChargingScreen.js": {
-    "mtime": 1792483099.9899871,
-    "seen": 1792483145.3391669,
-    "ast_hash": "d52018f3548de30d77722ea395b8d646",
+    "mtime": 1793602012.3401656,
+    "seen": 1793602041.797534,
+    "ast_hash": "186bc397ace99975eff402368d3f4785",
     "semantic_hash": ""
   },
   "mobile/app/src/screens/HistorySessionsScreen.js": {
@@ -1818,14 +1818,14 @@
     "semantic_hash": ""
   },
   "mobile/app/src/screens/LegalDocumentScreen.js": {
-    "mtime": 1792482680.8072734,
-    "seen": 1792482774.105118,
+    "mtime": 1793601554.8695579,
+    "seen": 1793601856.707679,
     "ast_hash": "dce6cfa9cb7e557662125f992fb4bd2b",
     "semantic_hash": ""
   },
   "mobile/app/src/screens/LegalGateScreen.js": {
-    "mtime": 1792482680.8073852,
-    "seen": 1792482774.105118,
+    "mtime": 1793601554.869707,
+    "seen": 1793601856.70768,
     "ast_hash": "f3b7b4cb9b09bee731481e998b806dc5",
     "semantic_hash": ""
   },
@@ -1908,20 +1908,20 @@
     "semantic_hash": ""
   },
   "mobile/app/src/utils/keyboard.js": {
-    "mtime": 1792482680.8106172,
-    "seen": 1792482774.1051252,
+    "mtime": 1793601554.8695185,
+    "seen": 1793601856.7076879,
     "ast_hash": "1a6a3fbe5fceb9d6961d1ff82c76a7c9",
     "semantic_hash": ""
   },
   "mobile/app/src/utils/legal.js": {
-    "mtime": 1792482680.8107302,
-    "seen": 1792482774.1051252,
+    "mtime": 1793601554.8696122,
+    "seen": 1793601856.7076879,
     "ast_hash": "e395b631a6dd53228aa562a187e32ea7",
     "semantic_hash": ""
   },
   "mobile/app/src/utils/openCheckoutBrowser.js": {
-    "mtime": 1792482680.8109224,
-    "seen": 1792482774.105126,
+    "mtime": 1793601554.8696454,
+    "seen": 1793601856.707689,
     "ast_hash": "08140708b5a201e60243f332e12e2775",
     "semantic_hash": ""
   },
@@ -2124,9 +2124,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/UnstartedSessionCleanupTest.php": {
-    "mtime": 1792482680.775029,
-    "seen": 1792482774.105082,
-    "ast_hash": "4c5d3f495846a1741bb94c923d46dff3",
+    "mtime": 1793601837.5452306,
+    "seen": 1793601856.707638,
+    "ast_hash": "d267f3b500ca49e1e57b21bdf961f169",
     "semantic_hash": ""
   },
   "backend/app/Http/Controllers/Api/PasswordResetController.php": {
@@ -2286,14 +2286,14 @@
     "semantic_hash": ""
   },
   "backend/app/Jobs/SendDailyReportsJob.php": {
-    "mtime": 1792482681.1476102,
-    "seen": 1792482774.104976,
+    "mtime": 1792582540.545173,
+    "seen": 1793601856.70751,
     "ast_hash": "732a30e981805254934098616e299a0a",
     "semantic_hash": ""
   },
   "backend/app/Mail/DailyReportsMail.php": {
-    "mtime": 1792482681.147719,
-    "seen": 1792482774.104977,
+    "mtime": 1792582540.5454848,
+    "seen": 1793601856.7075121,
     "ast_hash": "b4811b435d10f3aad3ef959f6179aed6",
     "semantic_hash": ""
   },
@@ -2304,8 +2304,8 @@
     "semantic_hash": ""
   },
   "backend/resources/views/emails/daily-reports.blade.php": {
-    "mtime": 1792482681.1512434,
-    "seen": 1792482774.1050398,
+    "mtime": 1792582540.5464456,
+    "seen": 1793601856.7075882,
     "ast_hash": "5dfeed0705873b8de415afa51b8eef8b",
     "semantic_hash": ""
   },
@@ -2337,6 +2337,18 @@
     "mtime": 1792482680.7787347,
     "seen": 1792482774.1051369,
     "ast_hash": "d82d7ce1c708c4a438a91b5be8734b93",
+    "semantic_hash": ""
+  },
+  "backend/app/Console/Commands/BackfillWalletTopupInvoices.php": {
+    "mtime": 1793601797.1761968,
+    "seen": 1793601856.7074828,
+    "ast_hash": "14a6130b4f33dca6cc064d0433f739ce",
+    "semantic_hash": ""
+  },
+  "backend/app/Console/Commands/ClearStaleLiveMeterEnergy.php": {
+    "mtime": 1793601792.075393,
+    "seen": 1793601856.707485,
+    "ast_hash": "c4999bed602c5d518319c14d9132358a",
     "semantic_hash": ""
   }
 }

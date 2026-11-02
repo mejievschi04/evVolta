@@ -747,6 +747,51 @@ class Station extends Model
         }
     }
 
+    /**
+     * Sterge energy_kwh din live_meter (connectors[id] si cheia veche connector)
+     * ca o citire de la sesiunea anterioara sa nu fie facturata pe urmatoarea.
+     */
+    public function clearLiveMeterEnergy(?int $connectorId = null): void
+    {
+        $this->updateOcppConfigurationAtomically(function (array $configuration) use ($connectorId): ?array {
+            $changed = false;
+            $connectors = is_array($configuration['connectors'] ?? null) ? $configuration['connectors'] : [];
+
+            foreach ($connectors as $id => $connector) {
+                if ($connectorId !== null && (int) $id !== $connectorId) {
+                    continue;
+                }
+
+                $meter = is_array($connector['live_meter'] ?? null) ? $connector['live_meter'] : null;
+                if ($meter !== null && array_key_exists('energy_kwh', $meter)) {
+                    unset($meter['energy_kwh']);
+                    $connectors[$id]['live_meter'] = $meter;
+                    $changed = true;
+                }
+            }
+
+            $legacy = is_array($configuration['connector'] ?? null) ? $configuration['connector'] : [];
+            $legacyId = (int) ($legacy['connectorId'] ?? $legacy['connector_id'] ?? 1);
+            $legacyMeter = is_array($legacy['live_meter'] ?? null) ? $legacy['live_meter'] : [];
+            if (
+                $legacy !== []
+                && ($connectorId === null || $legacyId === $connectorId)
+                && array_key_exists('energy_kwh', $legacyMeter)
+            ) {
+                unset($legacyMeter['energy_kwh']);
+                $legacy['live_meter'] = $legacyMeter;
+                $configuration['connector'] = $legacy;
+                $changed = true;
+            }
+
+            if ($changed) {
+                $configuration['connectors'] = $connectors;
+            }
+
+            return $changed ? ['ocpp_configuration' => $configuration] : null;
+        });
+    }
+
     public function updateConnectorOcppStatus(int $connectorId, string $status): void
     {
         if ($connectorId <= 0 || $status === '') {
@@ -855,7 +900,7 @@ class Station extends Model
 
         if ($legacy !== []) {
             $legacyId = (int) ($legacy['connectorId'] ?? $legacy['connector_id'] ?? 1);
-            $connectors[$legacyId] = array_merge($connectors[$legacyId] ?? [], $legacy);
+            $connectors[$legacyId] = array_merge($legacy, $connectors[$legacyId] ?? []);
         }
 
         foreach ($this->expectedConnectorIdsFromConfiguration($configuration) as $connectorId) {

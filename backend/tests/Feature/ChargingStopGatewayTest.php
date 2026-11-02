@@ -170,6 +170,8 @@ class ChargingStopGatewayTest extends TestCase
             ->assertJsonPath('status', 'completed');
 
         $this->assertNotNull($session->fresh()->end_time);
+        $this->assertSame('NeverStarted', $session->fresh()->ocpp_stop_reason);
+        $this->assertSame(0.0, (float) $session->fresh()->kwh_consumed);
         $this->assertDatabaseMissing('ocpp_commands', [
             'station_id' => $station->id,
             'action' => 'RemoteStopTransaction',

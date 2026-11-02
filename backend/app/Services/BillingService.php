@@ -50,6 +50,11 @@ class BillingService
     public function estimatedSessionCharge(ChargingSession $session, ?float $pricePerKwh = null): float
     {
         $session->loadMissing('user');
+
+        if ($session->isFreeCharging()) {
+            return 0.0;
+        }
+
         $pricePerKwh ??= app(TariffService::class)->pricePerKwhForSession($session);
         $actualCost = round((float) $session->kwh_consumed * $pricePerKwh, 2);
         $budget = (float) ($session->charge_budget ?? 0);
