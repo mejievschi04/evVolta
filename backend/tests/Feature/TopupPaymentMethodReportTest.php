@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\WalletRefund;
 use App\Models\WalletTopup;
 use App\Services\ReportDocumentService;
 use App\Services\WalletService;
@@ -107,7 +108,12 @@ class TopupPaymentMethodReportTest extends TestCase
                 if (($row[0] ?? null) === 'Nr.') {
                     $this->assertSame(['Nr.', 'Data', 'Data achitarii', 'ID client', 'Client', 'Metoda', 'Suma (MDL)'], $row);
                 }
-                if (str_starts_with($label, 'Subtotal ') || str_starts_with($label, 'Suma totala')) {
+                if (
+                    str_starts_with($label, 'Subtotal ')
+                    || str_starts_with($label, 'Suma alimentari')
+                    || str_starts_with($label, 'Suma retururi')
+                    || $label === 'Net (alimentari - retururi)'
+                ) {
                     $totals[$label] = (float) $row[6];
                 }
             }
@@ -116,8 +122,92 @@ class TopupPaymentMethodReportTest extends TestCase
                 'Subtotal Card' => 150.0,
                 'Subtotal MIA' => 250.0,
                 'Subtotal Nespecificat' => 25.0,
-                'Suma totala (4 alimentari)' => 425.0,
+                'Suma alimentari (4)' => 425.0,
+                'Suma retururi (0)' => 0.0,
+                'Net (alimentari - retururi)' => 425.0,
             ], $totals);
+        } finally {
+            $reader->close();
+            unlink($path);
+        }
+    }
+
+    public function test_workbook_subtracts_completed_refunds_from_net_total(): void
+    {
+        $user = $this->createAppUser(['name' => 'Ion Retur']);
+        $this->topup($user, 'paid', 'Card', '2026-10-15 07:00:00', 100);
+        $this->topup($user, 'paid', 'MiaQr', '2026-10-15 08:00:00', 250);
+        $cardTopup = WalletTopup::query()->where('payment_method', 'Card')->firstOrFail();
+        $refund = WalletRefund::query()->create([
+            'user_id' => $user->id,
+            'wallet_topup_id' => $cardTopup->id,
+            'amount' => 40,
+            'currency' => 'MDL',
+            'status' => 'completed',
+            'payment_provider' => 'maib',
+        ]);
+        $refund->forceFill([
+            'created_at' => Carbon::parse('2026-10-15 12:00:00', 'UTC'),
+            'updated_at' => Carbon::parse('2026-10-15 12:00:00', 'UTC'),
+        ])->saveQuietly();
+
+        $pending = WalletRefund::query()->create([
+            'user_id' => $user->id,
+            'wallet_topup_id' => $cardTopup->id,
+            'amount' => 10,
+            'currency' => 'MDL',
+            'status' => 'pending',
+            'payment_provider' => 'maib',
+        ]);
+        $pending->forceFill([
+            'created_at' => Carbon::parse('2026-10-15 13:00:00', 'UTC'),
+            'updated_at' => Carbon::parse('2026-10-15 13:00:00', 'UTC'),
+        ])->saveQuietly();
+
+        $report = app(ReportDocumentService::class)->walletTopups(
+            LocalTime::day('2026-10-15'), LocalTime::day('2026-10-15')
+        );
+        $path = tempnam(sys_get_temp_dir(), 'report-refund-');
+        $reader = new \OpenSpout\Reader\XLSX\Reader();
+        try {
+            file_put_contents($path, $report['content']);
+            $reader->open($path);
+            $totals = [];
+            $refundAmounts = [];
+            $methodNets = [];
+            $inMethodSummary = false;
+            foreach ($reader->getSheetIterator() as $sheet) {
+                foreach ($sheet->getRowIterator() as $row) {
+                    $cells = $row->toArray();
+                    $label = is_string($cells[0] ?? null) ? $cells[0] : '';
+                    if ($label === 'Pe metode de plata') {
+                        $inMethodSummary = true;
+                        continue;
+                    }
+                    if (str_starts_with($label, 'Suma ') || $label === 'Net (alimentari - retururi)' || str_starts_with($label, 'Subtotal')) {
+                        $totals[$label] = (float) $cells[6];
+                    }
+                    if (str_starts_with($label, 'Retururi ')) {
+                        continue;
+                    }
+                    if (is_numeric($cells[0] ?? null) && ($cells[5] ?? null) === 'Card' && (float) $cells[6] < 0) {
+                        $refundAmounts[] = (float) $cells[6];
+                    }
+                    if ($inMethodSummary && in_array($label, ['Card', 'MIA'], true)) {
+                        $methodNets[$label] = [
+                            'payments' => (int) $cells[4],
+                            'refunds' => (int) $cells[5],
+                            'net' => (float) $cells[6],
+                        ];
+                    }
+                }
+            }
+            $this->assertSame([-40.0], $refundAmounts);
+            $this->assertSame(350.0, $totals['Suma alimentari (2)']);
+            $this->assertSame(-40.0, $totals['Suma retururi (1)']);
+            $this->assertSame(310.0, $totals['Net (alimentari - retururi)']);
+            $this->assertSame(['payments' => 1, 'refunds' => 1, 'net' => 60.0], $methodNets['Card']);
+            $this->assertSame(['payments' => 1, 'refunds' => 0, 'net' => 250.0], $methodNets['MIA']);
         } finally {
             $reader->close();
             unlink($path);

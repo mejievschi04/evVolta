@@ -2024,7 +2024,7 @@ function ReportsView({ onDownloadReport }) {
 
           <article className="report-card">
             <h3>Raport alimentari sold</h3>
-            <p>Plati grupate Card / MIA: data achitarii, ID client, client, metoda si suma, cu subtotaluri si total general.</p>
+            <p>Plati si retururi grupate Card / MIA: data, ID client, client, metoda si suma, cu subtotaluri, total retururi si net.</p>
             <div className="settings-grid">
               <label>
                 De la

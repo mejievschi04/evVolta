@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ChargingSession;
 use App\Models\Tariff;
 use App\Models\User;
+use App\Models\WalletRefund;
 use App\Models\WalletTopup;
 use Illuminate\Database\Eloquent\Builder;
 use App\Support\LocalTime;
@@ -179,7 +180,7 @@ class ReportDocumentService
     }
 
     /**
-     * One row per paid top-up.
+     * Paid top-ups and completed refunds for the period (net cash in).
      *
      * @return array{content: string, filename: string}
      */
@@ -188,6 +189,7 @@ class ReportDocumentService
         $from = LocalTime::of($from)->startOfDay();
         $to = LocalTime::of($to)->endOfDay();
         $rows = $this->topupRows($from, $to);
+        $refunds = $this->refundRows($from, $to);
 
         $bold = (new Style())->setFontBold();
         $header = $this->headerStyle();
@@ -200,7 +202,7 @@ class ReportDocumentService
             [8, 16, 24, 16, 28, 18, 22],
             'RAPORT ALIMENTARI CONT',
             sprintf('Perioada: %s – %s', $from->format('d.m.Y'), $to->format('d.m.Y')),
-            function (Writer $writer) use ($rows, $bold, $header, $money, $moneyBold, $date, $day): void {
+            function (Writer $writer) use ($rows, $refunds, $bold, $header, $money, $moneyBold, $date, $day): void {
                 $index = 0;
                 $byMethod = $rows->groupBy('method')->sortKeys();
                 foreach ($byMethod as $method => $group) {
@@ -231,31 +233,88 @@ class ReportDocumentService
 
                 if ($rows->isEmpty()) {
                     $this->writeStyledRow($writer, Row::fromValues(['Nicio alimentare in interval.']));
+                    $this->writeStyledRow($writer, Row::fromValues([]));
                 }
 
+                $paymentsTotal = round((float) $rows->sum('amount'), 2);
                 $this->writeStyledRow($writer, new Row([
-                    Cell::fromValue(sprintf('Suma totala (%d alimentari)', $rows->count()), $bold),
+                    Cell::fromValue(sprintf('Suma alimentari (%d)', $rows->count()), $bold),
                     Cell::fromValue(''),
                     Cell::fromValue(''),
                     Cell::fromValue(''),
                     Cell::fromValue(''),
                     Cell::fromValue(''),
-                    Cell::fromValue(round((float) $rows->sum('amount'), 2), $moneyBold),
+                    Cell::fromValue($paymentsTotal, $moneyBold),
                 ]));
 
-                $byMethod = $rows->groupBy('method')->sortKeys();
-                if ($byMethod->isNotEmpty()) {
+                $refundIndex = 0;
+                $refundsByMethod = $refunds->groupBy('method')->sortKeys();
+                if ($refunds->isNotEmpty()) {
                     $this->writeStyledRow($writer, Row::fromValues([]));
-                    $this->writeStyledRow($writer, Row::fromValues(['Pe metode de plata', '', '', '', '', 'Alimentari', 'Suma (MDL)'], $header));
-                    foreach ($byMethod as $method => $group) {
+                    foreach ($refundsByMethod as $method => $group) {
+                        $this->writeStyledRow($writer, Row::fromValues(['Retururi '.$method], $header));
+                        $this->writeStyledRow($writer, Row::fromValues(['Nr.', 'Data', 'Data retur', 'ID client', 'Client', 'Metoda', 'Suma (MDL)'], $header));
+                        foreach ($group as $row) {
+                            $this->writeStyledRow($writer, new Row([
+                                Cell::fromValue(++$refundIndex),
+                                Cell::fromValue($row['refunded_at_local']->setTime(0, 0), $day),
+                                Cell::fromValue($row['refunded_at_local'], $date),
+                                Cell::fromValue($row['user_public_id']),
+                                Cell::fromValue($row['user_name']),
+                                Cell::fromValue($row['method']),
+                                Cell::fromValue(-1 * $row['amount'], $money),
+                            ]));
+                        }
+                        $this->writeStyledRow($writer, new Row([
+                            Cell::fromValue('Subtotal retur '.$method, $bold),
+                            Cell::fromValue(''),
+                            Cell::fromValue(''),
+                            Cell::fromValue(''),
+                            Cell::fromValue(''),
+                            Cell::fromValue(''),
+                            Cell::fromValue(-1 * round((float) $group->sum('amount'), 2), $moneyBold),
+                        ]));
+                        $this->writeStyledRow($writer, Row::fromValues([]));
+                    }
+                }
+
+                $refundsTotal = round((float) $refunds->sum('amount'), 2);
+                $this->writeStyledRow($writer, new Row([
+                    Cell::fromValue(sprintf('Suma retururi (%d)', $refunds->count()), $bold),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(-1 * $refundsTotal, $moneyBold),
+                ]));
+                $this->writeStyledRow($writer, new Row([
+                    Cell::fromValue('Net (alimentari - retururi)', $bold),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(''),
+                    Cell::fromValue(round($paymentsTotal - $refundsTotal, 2), $moneyBold),
+                ]));
+
+                $methods = $rows->pluck('method')->merge($refunds->pluck('method'))->unique()->sort()->values();
+                if ($methods->isNotEmpty()) {
+                    $this->writeStyledRow($writer, Row::fromValues([]));
+                    $this->writeStyledRow($writer, Row::fromValues(['Pe metode de plata', '', '', '', 'Alimentari', 'Retururi', 'Net (MDL)'], $header));
+                    foreach ($methods as $method) {
+                        $paidGroup = $rows->where('method', $method);
+                        $refundGroup = $refunds->where('method', $method);
+                        $paidSum = round((float) $paidGroup->sum('amount'), 2);
+                        $refundSum = round((float) $refundGroup->sum('amount'), 2);
                         $this->writeStyledRow($writer, new Row([
                             Cell::fromValue((string) $method),
                             Cell::fromValue(''),
                             Cell::fromValue(''),
                             Cell::fromValue(''),
-                            Cell::fromValue(''),
-                            Cell::fromValue($group->count()),
-                            Cell::fromValue(round((float) $group->sum('amount'), 2), $money),
+                            Cell::fromValue($paidGroup->count()),
+                            Cell::fromValue($refundGroup->count()),
+                            Cell::fromValue(round($paidSum - $refundSum, 2), $money),
                         ]));
                     }
                 }
@@ -414,6 +473,44 @@ class ReportDocumentService
                 'method' => WalletTopup::paymentMethodLabel($topup->payment_method),
                 'amount' => round((float) $topup->amount, 2),
             ])
+            ->values();
+    }
+
+    /**
+     * Completed refunds in the period (by confirmation time), with method from the original top-up.
+     *
+     * @return Collection<int, array{id: int, refunded_at: string, refunded_at_local: \DateTimeImmutable, user_name: string, user_public_id: int|null, method: string, amount: float}>
+     */
+    private function refundRows(Carbon $from, Carbon $to): Collection
+    {
+        return WalletRefund::query()
+            ->with([
+                'user:id,public_id,name,email',
+                'walletTopup:id,payment_method,payment_session_id,payment_provider,status',
+            ])
+            ->where('status', 'completed')
+            ->whereBetween('updated_at', [LocalTime::utc($from), LocalTime::utc($to)])
+            ->orderBy('updated_at')
+            ->orderBy('id')
+            ->get()
+            ->each(function (WalletRefund $refund): void {
+                if ($refund->walletTopup) {
+                    app(TopupPaymentMethodService::class)->fillMissing($refund->walletTopup);
+                }
+            })
+            ->map(function (WalletRefund $refund) {
+                $at = LocalTime::of($refund->updated_at);
+
+                return [
+                    'id' => (int) $refund->id,
+                    'refunded_at' => $at->format('d.m.Y H:i'),
+                    'refunded_at_local' => new \DateTimeImmutable($at->format('Y-m-d H:i:s')),
+                    'user_name' => (string) ($refund->user?->name ?? ($refund->user_id ? 'User #'.$refund->user_id : 'Fara utilizator')),
+                    'user_public_id' => $refund->user?->public_id,
+                    'method' => WalletTopup::paymentMethodLabel($refund->walletTopup?->payment_method),
+                    'amount' => round((float) $refund->amount, 2),
+                ];
+            })
             ->values();
     }
 
