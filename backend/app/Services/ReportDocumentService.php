@@ -247,74 +247,41 @@ class ReportDocumentService
                     Cell::fromValue($paymentsTotal, $moneyBold),
                 ]));
 
-                $refundIndex = 0;
-                $refundsByMethod = $refunds->groupBy('method')->sortKeys();
+                $refundsTotal = round((float) $refunds->sum('amount'), 2);
                 if ($refunds->isNotEmpty()) {
                     $this->writeStyledRow($writer, Row::fromValues([]));
-                    foreach ($refundsByMethod as $method => $group) {
-                        $this->writeStyledRow($writer, Row::fromValues(['Retururi '.$method], $header));
-                        $this->writeStyledRow($writer, Row::fromValues(['Nr.', 'Data', 'Data retur', 'ID client', 'Client', 'Metoda', 'Suma (MDL)'], $header));
-                        foreach ($group as $row) {
-                            $this->writeStyledRow($writer, new Row([
-                                Cell::fromValue(++$refundIndex),
-                                Cell::fromValue($row['refunded_at_local']->setTime(0, 0), $day),
-                                Cell::fromValue($row['refunded_at_local'], $date),
-                                Cell::fromValue($row['user_public_id']),
-                                Cell::fromValue($row['user_name']),
-                                Cell::fromValue($row['method']),
-                                Cell::fromValue(-1 * $row['amount'], $money),
-                            ]));
-                        }
+                    $this->writeStyledRow($writer, Row::fromValues(['Retururi'], $header));
+                    $this->writeStyledRow($writer, Row::fromValues(['Data', 'Client', 'ID client', 'Suma (MDL)'], $header));
+                    foreach ($refunds as $row) {
                         $this->writeStyledRow($writer, new Row([
-                            Cell::fromValue('Subtotal retur '.$method, $bold),
-                            Cell::fromValue(''),
-                            Cell::fromValue(''),
-                            Cell::fromValue(''),
-                            Cell::fromValue(''),
-                            Cell::fromValue(''),
-                            Cell::fromValue(-1 * round((float) $group->sum('amount'), 2), $moneyBold),
+                            Cell::fromValue($row['refunded_at_local'], $date),
+                            Cell::fromValue($row['user_name']),
+                            Cell::fromValue($row['user_public_id']),
+                            Cell::fromValue(-1 * $row['amount'], $money),
                         ]));
-                        $this->writeStyledRow($writer, Row::fromValues([]));
                     }
                 }
 
-                $refundsTotal = round((float) $refunds->sum('amount'), 2);
                 $this->writeStyledRow($writer, new Row([
                     Cell::fromValue(sprintf('Suma retururi (%d)', $refunds->count()), $bold),
                     Cell::fromValue(''),
                     Cell::fromValue(''),
-                    Cell::fromValue(''),
-                    Cell::fromValue(''),
-                    Cell::fromValue(''),
                     Cell::fromValue(-1 * $refundsTotal, $moneyBold),
                 ]));
-                $this->writeStyledRow($writer, new Row([
-                    Cell::fromValue('Net (alimentari - retururi)', $bold),
-                    Cell::fromValue(''),
-                    Cell::fromValue(''),
-                    Cell::fromValue(''),
-                    Cell::fromValue(''),
-                    Cell::fromValue(''),
-                    Cell::fromValue(round($paymentsTotal - $refundsTotal, 2), $moneyBold),
-                ]));
 
-                $methods = $rows->pluck('method')->merge($refunds->pluck('method'))->unique()->sort()->values();
-                if ($methods->isNotEmpty()) {
+                $byMethod = $rows->groupBy('method')->sortKeys();
+                if ($byMethod->isNotEmpty()) {
                     $this->writeStyledRow($writer, Row::fromValues([]));
-                    $this->writeStyledRow($writer, Row::fromValues(['Pe metode de plata', '', '', '', 'Alimentari', 'Retururi', 'Net (MDL)'], $header));
-                    foreach ($methods as $method) {
-                        $paidGroup = $rows->where('method', $method);
-                        $refundGroup = $refunds->where('method', $method);
-                        $paidSum = round((float) $paidGroup->sum('amount'), 2);
-                        $refundSum = round((float) $refundGroup->sum('amount'), 2);
+                    $this->writeStyledRow($writer, Row::fromValues(['Pe metode de plata', '', '', '', '', 'Alimentari', 'Suma (MDL)'], $header));
+                    foreach ($byMethod as $method => $group) {
                         $this->writeStyledRow($writer, new Row([
                             Cell::fromValue((string) $method),
                             Cell::fromValue(''),
                             Cell::fromValue(''),
                             Cell::fromValue(''),
-                            Cell::fromValue($paidGroup->count()),
-                            Cell::fromValue($refundGroup->count()),
-                            Cell::fromValue(round($paidSum - $refundSum, 2), $money),
+                            Cell::fromValue(''),
+                            Cell::fromValue($group->count()),
+                            Cell::fromValue(round((float) $group->sum('amount'), 2), $money),
                         ]));
                     }
                 }

@@ -342,9 +342,9 @@
     "semantic_hash": ""
   },
   "backend/app/Services/ReportDocumentService.php": {
-    "mtime": 1795418956.5757685,
-    "seen": 1795418992.764419,
-    "ast_hash": "2caab7e016fe444d2f7041b81b0ea07e",
+    "mtime": 1795420157.0019877,
+    "seen": 1795420171.9438238,
+    "ast_hash": "9bddf33b66787ab383016bb4fb5f680d",
     "semantic_hash": ""
   },
   "backend/app/Services/SessionEnergyService.php": {
@@ -1362,9 +1362,9 @@
     "semantic_hash": ""
   },
   "backoffice/src/App.jsx": {
-    "mtime": 1795418971.8633795,
-    "seen": 1795418992.764533,
-    "ast_hash": "daae7ecb50947a69f260e8025426f214",
+    "mtime": 1795420158.0016828,
+    "seen": 1795420171.943939,
+    "ast_hash": "c73df4ebd7fa10065fe398be773af638",
     "semantic_hash": ""
   },
   "backoffice/src/global.d.ts": {
@@ -2250,9 +2250,9 @@
     "semantic_hash": ""
   },
   "backend/tests/Feature/TopupPaymentMethodReportTest.php": {
-    "mtime": 1795418982.935753,
-    "seen": 1795418992.764522,
-    "ast_hash": "6656c8b0118f235c83b8faf2ca3f7a79",
+    "mtime": 1795420164.402504,
+    "seen": 1795420171.943928,
+    "ast_hash": "857d462554c0091e2a6af1faaa3201b5",
     "semantic_hash": ""
   },
   "backend/database/migrations/2026_10_19_120000_add_public_id_to_users.php": {

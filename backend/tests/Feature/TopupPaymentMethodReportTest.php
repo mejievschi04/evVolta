@@ -108,13 +108,14 @@ class TopupPaymentMethodReportTest extends TestCase
                 if (($row[0] ?? null) === 'Nr.') {
                     $this->assertSame(['Nr.', 'Data', 'Data achitarii', 'ID client', 'Client', 'Metoda', 'Suma (MDL)'], $row);
                 }
-                if (
-                    str_starts_with($label, 'Subtotal ')
-                    || str_starts_with($label, 'Suma alimentari')
-                    || str_starts_with($label, 'Suma retururi')
-                    || $label === 'Net (alimentari - retururi)'
-                ) {
+                if (str_starts_with($label, 'Subtotal ')) {
                     $totals[$label] = (float) $row[6];
+                }
+                if (str_starts_with($label, 'Suma alimentari')) {
+                    $totals[$label] = (float) $row[6];
+                }
+                if (str_starts_with($label, 'Suma retururi')) {
+                    $totals[$label] = (float) $row[3];
                 }
             }
             $this->assertSame(['Card', 'Card', 'MIA', 'Nespecificat'], $methods);
@@ -124,7 +125,6 @@ class TopupPaymentMethodReportTest extends TestCase
                 'Subtotal Nespecificat' => 25.0,
                 'Suma alimentari (4)' => 425.0,
                 'Suma retururi (0)' => 0.0,
-                'Net (alimentari - retururi)' => 425.0,
             ], $totals);
         } finally {
             $reader->close();
@@ -173,41 +173,36 @@ class TopupPaymentMethodReportTest extends TestCase
             file_put_contents($path, $report['content']);
             $reader->open($path);
             $totals = [];
-            $refundAmounts = [];
-            $methodNets = [];
-            $inMethodSummary = false;
+            $refundRows = [];
+            $inRefunds = false;
             foreach ($reader->getSheetIterator() as $sheet) {
                 foreach ($sheet->getRowIterator() as $row) {
                     $cells = $row->toArray();
                     $label = is_string($cells[0] ?? null) ? $cells[0] : '';
-                    if ($label === 'Pe metode de plata') {
-                        $inMethodSummary = true;
+                    if ($label === 'Retururi') {
+                        $inRefunds = true;
                         continue;
                     }
-                    if (str_starts_with($label, 'Suma ') || $label === 'Net (alimentari - retururi)' || str_starts_with($label, 'Subtotal')) {
+                    if ($label === 'Data' && $inRefunds) {
+                        $this->assertSame(['Data', 'Client', 'ID client', 'Suma (MDL)'], array_slice($cells, 0, 4));
+                        continue;
+                    }
+                    if ($inRefunds && ($cells[1] ?? null) === 'Ion Retur') {
+                        $this->assertInstanceOf(\DateTimeInterface::class, $cells[0]);
+                        $refundRows[] = [$cells[0]->format('d.m.Y H:i'), $cells[1], $cells[2], (float) $cells[3]];
+                    }
+                    if (str_starts_with($label, 'Suma alimentari') || str_starts_with($label, 'Subtotal')) {
                         $totals[$label] = (float) $cells[6];
                     }
-                    if (str_starts_with($label, 'Retururi ')) {
-                        continue;
-                    }
-                    if (is_numeric($cells[0] ?? null) && ($cells[5] ?? null) === 'Card' && (float) $cells[6] < 0) {
-                        $refundAmounts[] = (float) $cells[6];
-                    }
-                    if ($inMethodSummary && in_array($label, ['Card', 'MIA'], true)) {
-                        $methodNets[$label] = [
-                            'payments' => (int) $cells[4],
-                            'refunds' => (int) $cells[5],
-                            'net' => (float) $cells[6],
-                        ];
+                    if (str_starts_with($label, 'Suma retururi')) {
+                        $totals[$label] = (float) $cells[3];
+                        $inRefunds = false;
                     }
                 }
             }
-            $this->assertSame([-40.0], $refundAmounts);
+            $this->assertSame([['15.10.2026 15:00', 'Ion Retur', $user->public_id, -40.0]], $refundRows);
             $this->assertSame(350.0, $totals['Suma alimentari (2)']);
             $this->assertSame(-40.0, $totals['Suma retururi (1)']);
-            $this->assertSame(310.0, $totals['Net (alimentari - retururi)']);
-            $this->assertSame(['payments' => 1, 'refunds' => 1, 'net' => 60.0], $methodNets['Card']);
-            $this->assertSame(['payments' => 1, 'refunds' => 0, 'net' => 250.0], $methodNets['MIA']);
         } finally {
             $reader->close();
             unlink($path);

@@ -7842,7 +7842,7 @@
       "file_type": "code",
       "norm_label": ".test_backfill_rotates_failed_rows_and_fills_blank_methods_without_guessing()",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L243"
+      "source_location": "L238"
     },
     {
       "id": "backend_tests_feature_topuppaymentmethodreporttest_topuppaymentmethodreporttest_test_method_labels",
@@ -7890,7 +7890,7 @@
       "file_type": "code",
       "norm_label": ".test_report_recovers_card_and_mia_from_maib_and_persists_without_crediting_again()",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L217"
+      "source_location": "L212"
     },
     {
       "id": "backend_tests_feature_topuppaymentmethodreporttest_topuppaymentmethodreporttest_test_workbook_keeps_card_mia_and_unknown_payments_in_separate_groups",
@@ -7926,7 +7926,7 @@
       "file_type": "code",
       "norm_label": ".topup()",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L262"
+      "source_location": "L257"
     },
     {
       "id": "backend_tests_feature_passwordresettest_closure_1",
@@ -8730,7 +8730,7 @@
       "file_type": "code",
       "norm_label": "{closure#19}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L496"
+      "source_location": "L463"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_20",
@@ -8742,7 +8742,7 @@
       "file_type": "code",
       "norm_label": "{closure#20}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L501"
+      "source_location": "L468"
     },
     {
       "id": "backend_app_services_walletservice_walletservice_resolveuncertainrefund",
@@ -12342,7 +12342,7 @@
       "file_type": "code",
       "norm_label": "{closure#10}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L351"
+      "source_location": "L318"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_11",
@@ -12354,7 +12354,7 @@
       "file_type": "code",
       "norm_label": "{closure#11}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L352"
+      "source_location": "L319"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_12",
@@ -12366,7 +12366,7 @@
       "file_type": "code",
       "norm_label": "{closure#12}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L353"
+      "source_location": "L320"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_13",
@@ -12378,7 +12378,7 @@
       "file_type": "code",
       "norm_label": "{closure#13}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L354"
+      "source_location": "L321"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_16",
@@ -12390,7 +12390,7 @@
       "file_type": "code",
       "norm_label": "{closure#16}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L423"
+      "source_location": "L390"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_17",
@@ -12402,7 +12402,7 @@
       "file_type": "code",
       "norm_label": "{closure#17}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L464"
+      "source_location": "L431"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_2",
@@ -12450,7 +12450,7 @@
       "file_type": "code",
       "norm_label": "{closure#6}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L339"
+      "source_location": "L306"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_7",
@@ -12462,7 +12462,7 @@
       "file_type": "code",
       "norm_label": "{closure#7}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L341"
+      "source_location": "L308"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_8",
@@ -12474,7 +12474,7 @@
       "file_type": "code",
       "norm_label": "{closure#8}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L342"
+      "source_location": "L309"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_9",
@@ -12486,7 +12486,7 @@
       "file_type": "code",
       "norm_label": "{closure#9}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L350"
+      "source_location": "L317"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_writestyledrow",
@@ -12498,7 +12498,7 @@
       "file_type": "code",
       "norm_label": ".writestyledrow()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L582"
+      "source_location": "L549"
     },
     {
       "id": "backend_app_jobs_sendinvoiceemailjob_sendinvoiceemailjob_handle",
@@ -16638,7 +16638,7 @@
       "file_type": "code",
       "norm_label": "{closure#15}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L416"
+      "source_location": "L383"
     },
     {
       "id": "backend_app_services_sessionpresentationservice_sessionpresentationservice_presentmanyforuser",
@@ -18558,7 +18558,7 @@
       "file_type": "code",
       "norm_label": "{closure#14}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L409"
+      "source_location": "L376"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_18",
@@ -18570,7 +18570,7 @@
       "file_type": "code",
       "norm_label": "{closure#18}()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L465"
+      "source_location": "L432"
     },
     {
       "id": "backend_app_services_reportdocumentservice_closure_4",
@@ -18594,7 +18594,7 @@
       "file_type": "code",
       "norm_label": ".bodystyle()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L574"
+      "source_location": "L541"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_chargingsessions",
@@ -18618,7 +18618,7 @@
       "file_type": "code",
       "norm_label": ".headerstyle()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L632"
+      "source_location": "L599"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_refundrows",
@@ -18630,7 +18630,7 @@
       "file_type": "code",
       "norm_label": ".refundrows()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L484"
+      "source_location": "L451"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_reportablesessions",
@@ -18642,7 +18642,7 @@
       "file_type": "code",
       "norm_label": ".reportablesessions()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L335"
+      "source_location": "L302"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_resolvedtariffprice",
@@ -18654,7 +18654,7 @@
       "file_type": "code",
       "norm_label": ".resolvedtariffprice()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L382"
+      "source_location": "L349"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_resolvedtarifftype",
@@ -18666,7 +18666,7 @@
       "file_type": "code",
       "norm_label": ".resolvedtarifftype()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L359"
+      "source_location": "L326"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_seller",
@@ -18678,7 +18678,7 @@
       "file_type": "code",
       "norm_label": ".seller()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L642"
+      "source_location": "L609"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_stationdayaggregates",
@@ -18690,7 +18690,7 @@
       "file_type": "code",
       "norm_label": ".stationdayaggregates()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L401"
+      "source_location": "L368"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_stationsmonthly",
@@ -18714,7 +18714,7 @@
       "file_type": "code",
       "norm_label": ".tarifftypelabel()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L372"
+      "source_location": "L339"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_topuprows",
@@ -18726,7 +18726,7 @@
       "file_type": "code",
       "norm_label": ".topuprows()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L454"
+      "source_location": "L421"
     },
     {
       "id": "backend_app_services_reportdocumentservice_reportdocumentservice_wallettopups",
@@ -18750,7 +18750,7 @@
       "file_type": "code",
       "norm_label": ".writeworkbook()",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L526"
+      "source_location": "L493"
     },
     {
       "id": "backend_app_support_localtime_localtime_day",
@@ -47333,7 +47333,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L410",
+      "source_location": "L377",
       "weight": 1.0
     },
     {
@@ -47345,7 +47345,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L467",
+      "source_location": "L434",
       "weight": 1.0
     },
     {
@@ -47357,7 +47357,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L502",
+      "source_location": "L469",
       "weight": 1.0
     },
     {
@@ -47369,7 +47369,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L510",
+      "source_location": "L477",
       "weight": 1.0
     },
     {
@@ -47501,7 +47501,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L634",
+      "source_location": "L601",
       "weight": 1.0
     },
     {
@@ -47513,7 +47513,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L486",
+      "source_location": "L453",
       "weight": 1.0
     },
     {
@@ -47525,7 +47525,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L492",
+      "source_location": "L459",
       "weight": 1.0
     },
     {
@@ -47537,7 +47537,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L345",
+      "source_location": "L312",
       "weight": 1.0
     },
     {
@@ -47549,7 +47549,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L389",
+      "source_location": "L356",
       "weight": 1.0
     },
     {
@@ -47561,7 +47561,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L403",
+      "source_location": "L370",
       "weight": 1.0
     },
     {
@@ -47573,7 +47573,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L406",
+      "source_location": "L373",
       "weight": 1.0
     },
     {
@@ -47633,7 +47633,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L456",
+      "source_location": "L423",
       "weight": 1.0
     },
     {
@@ -47645,7 +47645,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L460",
+      "source_location": "L427",
       "weight": 1.0
     },
     {
@@ -47717,7 +47717,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L528",
+      "source_location": "L495",
       "weight": 1.0
     },
     {
@@ -47729,7 +47729,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L533",
+      "source_location": "L500",
       "weight": 1.0
     },
     {
@@ -47741,7 +47741,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L553",
+      "source_location": "L520",
       "weight": 1.0
     },
     {
@@ -47753,7 +47753,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L559",
+      "source_location": "L526",
       "weight": 1.0
     },
     {
@@ -55613,7 +55613,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L246",
+      "source_location": "L241",
       "weight": 1.0
     },
     {
@@ -55673,7 +55673,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L220",
+      "source_location": "L215",
       "weight": 1.0
     },
     {
@@ -55685,7 +55685,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L234",
+      "source_location": "L229",
       "weight": 1.0
     },
     {
@@ -93785,7 +93785,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L351",
+      "source_location": "L318",
       "weight": 1.0
     },
     {
@@ -93797,7 +93797,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L352",
+      "source_location": "L319",
       "weight": 1.0
     },
     {
@@ -93809,7 +93809,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L353",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -93821,7 +93821,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L354",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -93833,7 +93833,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L409",
+      "source_location": "L376",
       "weight": 1.0
     },
     {
@@ -93845,7 +93845,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L416",
+      "source_location": "L383",
       "weight": 1.0
     },
     {
@@ -93857,7 +93857,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L423",
+      "source_location": "L390",
       "weight": 1.0
     },
     {
@@ -93869,7 +93869,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L464",
+      "source_location": "L431",
       "weight": 1.0
     },
     {
@@ -93881,7 +93881,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L465",
+      "source_location": "L432",
       "weight": 1.0
     },
     {
@@ -93893,7 +93893,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L496",
+      "source_location": "L463",
       "weight": 1.0
     },
     {
@@ -93905,7 +93905,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L501",
+      "source_location": "L468",
       "weight": 1.0
     },
     {
@@ -93941,7 +93941,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L339",
+      "source_location": "L306",
       "weight": 1.0
     },
     {
@@ -93953,7 +93953,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L341",
+      "source_location": "L308",
       "weight": 1.0
     },
     {
@@ -93965,7 +93965,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L342",
+      "source_location": "L309",
       "weight": 1.0
     },
     {
@@ -93977,7 +93977,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L350",
+      "source_location": "L317",
       "weight": 1.0
     },
     {
@@ -94001,7 +94001,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L484",
+      "source_location": "L451",
       "weight": 1.0
     },
     {
@@ -94013,7 +94013,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L382",
+      "source_location": "L349",
       "weight": 1.0
     },
     {
@@ -94025,7 +94025,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L382",
+      "source_location": "L349",
       "weight": 1.0
     },
     {
@@ -94037,7 +94037,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L359",
+      "source_location": "L326",
       "weight": 1.0
     },
     {
@@ -94049,7 +94049,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L401",
+      "source_location": "L368",
       "weight": 1.0
     },
     {
@@ -94073,7 +94073,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L454",
+      "source_location": "L421",
       "weight": 1.0
     },
     {
@@ -94097,7 +94097,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L582",
+      "source_location": "L549",
       "weight": 1.0
     },
     {
@@ -94109,7 +94109,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L582",
+      "source_location": "L549",
       "weight": 1.0
     },
     {
@@ -96605,7 +96605,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L262",
+      "source_location": "L257",
       "weight": 1.0
     },
     {
@@ -98909,7 +98909,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L574",
+      "source_location": "L541",
       "weight": 1.0
     },
     {
@@ -98921,7 +98921,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L632",
+      "source_location": "L599",
       "weight": 1.0
     },
     {
@@ -98933,7 +98933,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L484",
+      "source_location": "L451",
       "weight": 1.0
     },
     {
@@ -98945,7 +98945,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L335",
+      "source_location": "L302",
       "weight": 1.0
     },
     {
@@ -98957,7 +98957,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L401",
+      "source_location": "L368",
       "weight": 1.0
     },
     {
@@ -98969,7 +98969,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L454",
+      "source_location": "L421",
       "weight": 1.0
     },
     {
@@ -99197,7 +99197,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L262",
+      "source_location": "L257",
       "weight": 1.0
     },
     {
@@ -101650,7 +101650,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L339",
+      "source_location": "L306",
       "weight": 1.0
     },
     {
@@ -101661,7 +101661,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L341",
+      "source_location": "L308",
       "weight": 1.0
     },
     {
@@ -101672,7 +101672,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L342",
+      "source_location": "L309",
       "weight": 1.0
     },
     {
@@ -101683,7 +101683,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L350",
+      "source_location": "L317",
       "weight": 1.0
     },
     {
@@ -101694,7 +101694,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L351",
+      "source_location": "L318",
       "weight": 1.0
     },
     {
@@ -101705,7 +101705,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L352",
+      "source_location": "L319",
       "weight": 1.0
     },
     {
@@ -101716,7 +101716,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L353",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -101727,7 +101727,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L354",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -101738,7 +101738,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L409",
+      "source_location": "L376",
       "weight": 1.0
     },
     {
@@ -101749,7 +101749,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L416",
+      "source_location": "L383",
       "weight": 1.0
     },
     {
@@ -101760,7 +101760,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L423",
+      "source_location": "L390",
       "weight": 1.0
     },
     {
@@ -101771,7 +101771,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L464",
+      "source_location": "L431",
       "weight": 1.0
     },
     {
@@ -101782,7 +101782,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L465",
+      "source_location": "L432",
       "weight": 1.0
     },
     {
@@ -101793,7 +101793,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L496",
+      "source_location": "L463",
       "weight": 1.0
     },
     {
@@ -101804,7 +101804,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L501",
+      "source_location": "L468",
       "weight": 1.0
     },
     {
@@ -121208,7 +121208,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L335",
+      "source_location": "L302",
       "weight": 1.0
     },
     {
@@ -121219,7 +121219,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L359",
+      "source_location": "L326",
       "weight": 1.0
     },
     {
@@ -121230,7 +121230,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L372",
+      "source_location": "L339",
       "weight": 1.0
     },
     {
@@ -121241,7 +121241,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L382",
+      "source_location": "L349",
       "weight": 1.0
     },
     {
@@ -121252,7 +121252,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L401",
+      "source_location": "L368",
       "weight": 1.0
     },
     {
@@ -121274,7 +121274,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L454",
+      "source_location": "L421",
       "weight": 1.0
     },
     {
@@ -121285,7 +121285,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L484",
+      "source_location": "L451",
       "weight": 1.0
     },
     {
@@ -121296,7 +121296,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L526",
+      "source_location": "L493",
       "weight": 1.0
     },
     {
@@ -121307,7 +121307,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L574",
+      "source_location": "L541",
       "weight": 1.0
     },
     {
@@ -121318,7 +121318,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L582",
+      "source_location": "L549",
       "weight": 1.0
     },
     {
@@ -121329,7 +121329,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L632",
+      "source_location": "L599",
       "weight": 1.0
     },
     {
@@ -121340,7 +121340,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/app/Services/ReportDocumentService.php",
-      "source_location": "L642",
+      "source_location": "L609",
       "weight": 1.0
     },
     {
@@ -126389,7 +126389,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L217",
+      "source_location": "L212",
       "weight": 1.0
     },
     {
@@ -126400,7 +126400,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L243",
+      "source_location": "L238",
       "weight": 1.0
     },
     {
@@ -126411,7 +126411,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "backend/tests/Feature/TopupPaymentMethodReportTest.php",
-      "source_location": "L262",
+      "source_location": "L257",
       "weight": 1.0
     },
     {
@@ -133876,5 +133876,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "c01517fba3ba80686fe87fd7a49081b0039929ed"
+  "built_at_commit": "9283c6aa2567aeb6847aa502cab2ceb5108e9372"
 }

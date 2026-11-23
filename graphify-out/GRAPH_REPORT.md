@@ -1,7 +1,7 @@
 # Graph Report - evVolta  (2026-11-23)
 
 ## Corpus Check
-- 369 files · ~187,783 words
+- 369 files · ~187,653 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 41 file(s) not represented in the graph (top: (none) 27, .example 4, .conf 4)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c01517fb`
+- Built from commit: `9283c6aa`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
